@@ -16,7 +16,7 @@ This section exists to keep the three neighboring repos conceptually separate.
 - `../doctrine`
   - What it is to us: the authoring language and compiler substrate for Rally agent doctrine.
   - What we are borrowing: source-owned `.prompt` files, deterministic Markdown emission, typed inputs and outputs, workflow law, currentness, route-only turns, review semantics, and flow visualization.
-  - What it is not to us: a complete runtime runner. Doctrine gives us authored semantics, not the full filesystem-native orchestration machine we want.
+  - What it is not to us: a complete runtime runner or the home of the Rally standard library. Doctrine gives us authored semantics, not the full filesystem-native orchestration machine we want.
 
 - `../paperclip_agents`
   - What it is to us: the first real set of use cases and pressure tests for the system.
@@ -44,6 +44,7 @@ That repo root is not configurable at runtime and is not split into separate wor
 Rally should simply expect the directories it needs to exist there:
 
 - `flows/`
+- `stdlib/`
 - `skills/`
 - `mcps/`
 - `runs/`
@@ -61,6 +62,11 @@ Compiled Markdown exists only as generated compatibility readback, not as an aut
 ### 4. No Side Doors Into Agents
 
 If instruction prose reaches an agent, it must come from the declared `.prompt` graph for that flow.
+For Codex, Rally should enforce this through the adapter launch contract rather than trusting defaults:
+
+- set `project_doc_max_bytes = 0` so Codex does not auto-discover ambient `AGENTS.md` or `AGENTS.override.md`
+- inject the compiled agent doctrine explicitly instead of relying on ambient project-doc discovery
+- fail closed if Rally cannot prove what instruction surface the adapter is actually seeing
 
 Rally should explicitly ban:
 
@@ -84,12 +90,14 @@ After that:
 - skills available to agents are materialized into home from repo-root `skills/`
 - MCP definitions available to agents are materialized into home from repo-root `mcps/`
 - checked out repos, worktrees, env files, and generated artifacts that agents need live in home
+- adapter-local state must live in home
 - agents do not escape home
 
 No machine-global skills.
 No machine-global MCP config.
 No reaching out into arbitrary filesystem locations.
 No assuming ambient machine state beyond what the setup step placed in home.
+For Codex specifically, Rally should launch with `CODEX_HOME` pointed at the flow home.
 
 ### 6. One Active Run Per Flow
 
@@ -114,12 +122,43 @@ It should feel like a developer tool, not a SaaS product wearing terminal clothe
 
 Use `paperclip_agents` as pressure and examples, but do not let lessons, poker, PRD-factory, `psmobile`, or current role names become framework primitives.
 
-### 10. Doctrine Will Move With Rally
+### 10. Elegance And Simplicity Beat Scope-Cutting
+
+Rally should prefer the most elegant and simple correct design, not the smallest design that can be defended in the moment.
+
+We should not keep cutting core ideas down just because they are bigger than a narrow v1 instinct.
+If a design element is central to the shape, clarity, or long-term elegance of Rally, we should preserve it and implement it cleanly instead of reflexively minimizing it away.
+
+### 11. Doctrine Will Move With Rally
 
 Rally will ship a mandatory Doctrine-native standard library, and we should expect to make supporting changes in Doctrine to support it cleanly.
 
 We should not work around missing Doctrine support by pushing core Rally semantics into ad hoc runtime hacks.
 If Rally needs Doctrine-native capabilities to stay clean, we should make room to add them in Doctrine.
+
+Doctrine is still the compiler, not the Rally standard library and not the Rally runner.
+Generic enabling features can move into Doctrine.
+The Rally standard library itself lives in Rally.
+The boundary is explicit:
+
+- Doctrine owns generic language and compiler support
+- Rally owns the standard library contents, runtime, adapter contract, CLI, logs, sessions, and run structure
+- `paperclip_agents` remains use-case pressure, not framework law
+
+### 12. No Hidden Global Rally State
+
+Rally-owned state lives in the repo root where Rally is run.
+
+Rally must not create its own control-plane state in hidden dot directories such as `~/.rally`, `~/.config`, or similar side locations.
+An adapter that cannot keep its Rally-owned state in the flow home is not an acceptable Rally adapter.
+For Codex, that means setting `CODEX_HOME` to the flow home directory.
+
+### 13. No GUI, Board, Company, Or Registry Carryover
+
+Rally is not a GUI product shell, a board manager, a company control plane, or a registry product.
+
+We are keeping runtime rigor from Paperclip.
+We are not carrying over the surrounding product shape.
 
 ## Working Thesis
 
@@ -130,7 +169,7 @@ The key idea is simple:
 - Doctrine owns authored agent and flow doctrine through `.prompt` files.
 - The filesystem owns the real runtime source of truth.
 - Codex CLI and similar adapters are the actual execution engines.
-- Rally is the thin runtime that runs from repo root, executes a start-of-flow home-setup script, materializes the declared agent artifacts into that home, injects only the allowed home-local skills and MCP definitions, resumes sessions honestly, appends handoffs, and moves work from one agent to the next.
+- Rally is the thin runtime that runs from repo root, executes a start-of-flow home-setup script, materializes the declared agent artifacts into that home, launches adapters with an explicit contract such as `cwd`, `CODEX_HOME`, disabled ambient project-doc loading, and explicit instruction injection, injects only the allowed home-local skills and MCP definitions, resumes sessions honestly, appends handoffs, and moves work from one agent to the next.
 
 That is a very different center of gravity from Paperclip.
 
@@ -180,7 +219,7 @@ Rally is provisionally:
 - filesystem-first, not database-first
 - Doctrine-native, not handwritten-Markdown-first
 - adapter-based, with Codex CLI as the primary initial runtime
-- repo-root-native, with fixed `flows/`, `skills/`, `mcps/`, and `runs/` directories
+- repo-root-native, with fixed `flows/`, `stdlib/`, `skills/`, `mcps/`, and `runs/` directories
 - general-purpose, not specialized to any one product domain
 
 ## What Rally Is Not
@@ -194,6 +233,74 @@ Rally is not:
 - a magic no-files automation system
 - a workspace-mode repo manager
 - a domain framework for lessons, poker, mobile, PRDs, or core-dev specifically
+
+## Authoritative Ownership Boundary
+
+This section is the single source of truth for what belongs in Doctrine, what belongs in Rally, and what belongs in neither.
+If another section seems to disagree, this section wins.
+
+### Doctrine owns
+
+Doctrine is the authoring language and compiler.
+It owns generic authored semantics and generic compiler support.
+
+- `.prompt` authoring
+- imports, composition, inheritance, package/import-root behavior, and similar reusable authoring mechanics
+- typed workflow semantics such as currentness, invalidation, review, route-only behavior, trust surfaces, and other generic artifact-truth law
+- compilation into `AGENTS.md` and any other generated doctrine artifacts
+- machine-readable emitted structures Rally may need, such as flow graphs or other generic compiler outputs
+- generic lifecycle constructs only if they are reusable language or compiler semantics rather than Rally-only runtime glue
+- any generic enabling feature Rally needs in order to keep the design clean
+
+Doctrine does not own Rally's standard library contents.
+Doctrine enables those contents by compiling them.
+
+### Rally owns
+
+Rally is the runner, the runtime contract, and the operator surface.
+It owns materialization, execution, observation, and recovery.
+
+- `stdlib/rally/` and the mandatory Rally standard library contents
+- repo-root layout such as `flows/`, `stdlib/`, `skills/`, `mcps/`, and `runs/`
+- `flow.yaml` and the runtime contract it expresses
+- run creation, active-run locking, and archive behavior
+- the setup script contract and prepared flow home
+- `run.yaml`, `state.yaml`, `home/issue.md`, `issue_history/`, logs, sessions, and other runtime sidecars
+- adapter launch details such as `cwd`, `CODEX_HOME`, config overrides, explicit instruction injection, timeout handling, and resume behavior
+- skill and MCP materialization plus runtime realization checks
+- CLI commands, terminal renderer behavior, archaeology surfaces, and operator-facing failure handling
+
+Rally is allowed to express some of its shared behavior in Doctrine because the Rally standard library is Doctrine-native.
+That does not move runtime ownership into Doctrine.
+
+### `paperclip_agents` owns nothing in the framework
+
+`paperclip_agents` is use-case pressure, not platform law.
+It gives us examples, tests, and sharp requirements.
+It does not get to define universal Rally primitives or universal Doctrine primitives.
+
+### What must not happen
+
+- Doctrine must not become the Rally runner
+- Doctrine must not own repo-root runtime structure, sessions, logs, adapter launch, or CLI behavior
+- Rally must not become a second compiler or a second authored instruction language
+- Rally must not solve missing generic compiler support with permanent ad hoc semantic hacks if the right answer is a Doctrine feature
+- proprietary `paperclip_agents` roles, domain concepts, or workflow quirks must not become framework requirements
+
+### Decision rule
+
+Use this test whenever ownership is unclear:
+
+- if it changes the meaning of authored doctrine generically, it belongs in Doctrine
+- if it decides when work actually runs, sleeps, wakes, resumes, retries, or is scheduled, it belongs in Rally
+- if it changes how a run is materialized, launched, resumed, logged, rendered, or archived, it belongs in Rally
+- if it is a shared Rally behavior expressed in Doctrine, it belongs in `stdlib/rally/`, compiled by Doctrine, and executed by Rally
+- if it only exists because of a particular sample domain or a proprietary agent family, it belongs in that flow or example, not in the framework
+
+### Version and compatibility rule
+
+Rally should declare the Doctrine support it requires.
+If that support is missing, Rally should fail loudly instead of silently degrading into a different semantic model.
 
 ## What We Want To Keep From Paperclip
 
@@ -235,9 +342,17 @@ Paperclip's session logic is careful about cwd compatibility. Rally should keep 
 
 Paperclip models wake, run, failure, timeout, recovery, and retry as real runtime states. Rally should do the same, but on disk.
 
+For Rally specifically, agent timeout should be explicit, operator-visible, and terminal:
+
+- each agent gets its own required timeout setting
+- timeout is not sleep
+- timeout is not a silent retry trigger
+- if an agent times out, the run ends in blocker or error state with a human-readable timeout explanation
+
 ## What We Want To Keep From Doctrine
 
 Doctrine already gives Rally a large fraction of the authored semantics we need.
+Per the ownership boundary above, we should keep Doctrine focused on generic language and compiler support rather than letting it absorb Rally runtime ownership.
 
 ### 1. Source-owned prompt authoring
 
@@ -333,13 +448,18 @@ The filesystem model still needs a crash-safe activation and lock story, but it 
 
 ### 4. How to inject only the allowed skills and MCPs into the real runtime
 
-This needs to be deterministic and inspectable.
+This needs to be deterministic and inspectable, and it needs to be separated from the stronger claim of full built-in tool isolation.
 
-### 5. How to recover after abort, crash, or operator interruption
+### 5. How to enforce adapter-side instruction isolation honestly
 
-We need restart semantics that do not corrupt the run ledger.
+The no-side-door promise depends on a real adapter launch contract, not just on Rally's intent.
+For Codex, that means redirecting `CODEX_HOME` into the flow home, disabling ambient project-doc discovery, and explicitly injecting compiled doctrine.
 
-### 6. How to separate semantic truth from volatile runtime plumbing
+### 6. How to recover after abort, crash, or operator interruption
+
+We need operator-driven restart semantics that do not corrupt the run ledger and do not require a background recovery control plane.
+
+### 7. How to separate semantic truth from volatile runtime plumbing
 
 A pure single-file dream is attractive, but process IDs, locks, and adapter session metadata are runtime plumbing. Rally needs a clean rule for what is semantic truth and what is disposable machine state.
 
@@ -456,6 +576,10 @@ A strong starting point is:
           <nn-agent-slug>/
             AGENTS.md
             ...
+  stdlib/
+    rally/
+      prompts/
+        ...
   skills/
     <skill-slug>/
       SKILL.md
@@ -511,6 +635,7 @@ A strong starting point is:
 ### Why this shape
 
 - `flows/<flow-slug>` is durable authored source plus compiled readback.
+- `stdlib/rally/` is the Rally-owned Doctrine standard library. It lives in this repo, not in the Doctrine compiler repo.
 - `skills/` and `mcps/` are stable repo-root capability libraries, not configurable global roots.
 - `runs/<run-id>` is concrete execution state.
 - `runs/<run-id>/home/` is the only world agents live in.
@@ -520,6 +645,7 @@ A strong starting point is:
 - `issue_history/` stores full-copy backups of `home/issue.md` at handoff points so the run can be read archaeologically over time.
 - numbered agent directory names make canonical flow position visible in logs, snapshots, and session records.
 - `logs/` is the per-run excavatable trace mirror, separate from whatever canonical Codex session directories exist elsewhere.
+- for Codex, those canonical adapter directories should also be localized under home by setting `CODEX_HOME` to the flow home
 - `state.yaml` is the small machine-readable summary of current status.
 - `home/sessions/*.json` is adapter/runtime state, not authored truth.
 - `home/agents/<agent>` is the per-run copy of that agent's compiled build output.
@@ -533,6 +659,17 @@ A strong starting point is:
 ## Hard Rule: Instruction Content Comes From `.prompt` Only
 
 Rally should make this mechanically true, not culturally aspirational.
+It is not something the Codex adapter gives us automatically by default.
+Rally has to enforce it through its adapter launch contract.
+This section defines the instruction-surface rule.
+The later Codex adapter section is the Rally-owned implementation contract for that rule.
+
+For Codex, the minimum required contract is:
+
+- `CODEX_HOME=<flow-home>`
+- `project_doc_max_bytes = 0`
+- explicit injection of the compiled agent doctrine through Codex's explicit instructions channel
+- explicit `cwd` chosen by Rally
 
 The runtime should reject or ignore any attempt to add instruction prose from:
 
@@ -560,6 +697,7 @@ That means:
 
 If a flow needs three repos, two worktrees, and env wiring, the setup script does that up front.
 The agents then operate inside the prepared home rather than inventing their own repo-management behavior mid-run.
+For Codex, Rally should also treat home confinement as a launch policy plus runtime validation, not as something guaranteed by ambient defaults alone.
 
 ## Provisional Rule: Single Semantic Ledger, Minimal Runtime Sidecars
 
@@ -576,12 +714,19 @@ The best current interpretation is:
 
 This gives us the human simplicity of a single readable ledger without forcing session IDs, process locks, or adapter internals into Markdown, while still preserving archaeological checkpoints of how the issue evolved.
 
+Potential future consideration:
+
+- `home/issue.md` may eventually prove to be carrying too many concerns at once: operator brief, live handoff ledger, and archaeology trail.
+- We are explicitly not splitting that surface right now.
+- Keep the simple single-ledger model until real usage proves it is muddy.
+
 ## Mandatory Rally Standard Library
 
 Rally should ship a mandatory standard library written in Doctrine.
 
 Every Rally flow and every Rally agent should inherit from that standard library.
 This is how Rally gets consistent runtime behavior without inventing a second non-Doctrine policy layer.
+The ownership split here is intentional: the standard library is authored in Doctrine, but it lives in Rally under `stdlib/rally/` and is executed by the Rally runtime.
 
 The important thing to specify now is that the standard library is:
 
@@ -589,6 +734,7 @@ The important thing to specify now is that the standard library is:
 - Doctrine-native
 - inherited by all Rally agents
 - the home for shared Rally runtime conventions
+- stored in this repo under `stdlib/rally/`, not in the Doctrine compiler repo
 
 We should not try to fully author that standard library in this doc.
 
@@ -607,6 +753,7 @@ Those end outcomes should be treated as standard Rally conventions:
   - the flow is complete and ends with a human-readable summary of what work was completed
 - sleep
   - the flow is not done, but it wants Rally to wake it again after a requested duration such as two minutes, five minutes, or ten minutes
+  - in the simple current model, the running Rally process can just block for that duration and then wake the flow again
 
 This should stay flow-driven.
 Rally does not need extra config fields for end agents or terminal conditions.
@@ -624,12 +771,14 @@ start_agent: 01_core_dev_lead
 setup_home_script: setup/prepare_home.sh
 agents:
   01_core_dev_lead:
+    timeout_sec: 1800
     allowed_skills:
       - github-access
       - publish-followthrough
     allowed_mcps:
       - db
   02_bugfix_engineer:
+    timeout_sec: 1200
     allowed_skills:
       - mobile-sim
       - github-access
@@ -640,9 +789,21 @@ runtime:
   adapter_args:
     model: gpt-5.4
     reasoning_effort: high
+    project_doc_max_bytes: 0
 ```
 
 The key point is that this file should declare runtime availability, not authored semantic preference or extra instruction prose.
+
+Each agent entry should have a required timeout setting.
+That timeout is part of the runtime contract, not an optional hint.
+If an agent exceeds its timeout, Rally should stop the run and record a clear blocker or error outcome rather than trying to sleep, auto-retry, or continue ambiguously.
+
+For Codex, the launch contract should also be explicit here rather than ambient:
+
+- `cwd` comes from Rally
+- `CODEX_HOME` points at the flow home
+- ambient project-doc discovery is disabled
+- compiled doctrine is injected explicitly rather than discovered implicitly
 
 Doctrine can still say which skills are required or advisory in the prompt sense.
 Rally should decide which skills are materially available in the runtime.
@@ -657,7 +818,7 @@ The agent keys in `flow.yaml` should match the numbered agent directory names.
 That keeps the canonical authored order visible everywhere Rally surfaces agent identity.
 
 There is no separate workspace root, repo ref, or skills-root config here.
-The flow runs in a prepared home, and Rally itself assumes repo-root `skills/` and `mcps/` as the authored capability libraries.
+The flow runs in a prepared home, and Rally itself assumes repo-root `stdlib/`, `skills/`, and `mcps/` as the authored capability libraries.
 
 The setup script contract should also include the path to `home/issue.md`.
 That lets the script append flow-specific runtime notes, such as prepared branches, checked out repos, or local environment facts that the downstream agents should know.
@@ -753,18 +914,25 @@ At a high level:
 - blocker or done
   - stop the run, preserve the files, and clear active-flow state
 - sleep
-  - preserve the run, record the requested wake time, and leave it resumable
+  - append the sleep request to `home/issue.md`, record it in logs/state, block the current runner for the requested duration, and then wake the flow again
+  - if the process stops during that wait, preserve the run and let the operator decide whether to resume it later
 
 Abort and resume should be first-class:
 
 - abort marks the run stopped but preserves all files
 - resume reloads `run.yaml`, `state.yaml`, `home/issue.md`, and any compatible `home/sessions/*.json`
 
+Crash handling should stay explicit and operator-driven:
+
+- Rally should not build a background reaper or auto-resume loop in the current design
+- if a run stops unexpectedly, Rally should preserve the run and record the failure context in logs
+- when the operator later resumes that run, Rally should append a crash note to `home/issue.md` with the last known running agent and any known failure context
+
 ## Proposed Run Logs And Trace Capture
 
 Runner logging is a core product surface, not an afterthought.
 
-Codex will still emit its normal canonical session directories wherever Codex emits them.
+Codex will still emit its normal canonical session directories under the configured `CODEX_HOME`, which Rally should point at the flow home.
 Rally should not fight that.
 But Rally should also capture a per-run mirror of everything observable so the operator can excavate and debug one run from one directory.
 
@@ -792,9 +960,10 @@ Proposed run-local log surfaces:
 The important rule is completeness:
 if the operator could have seen it happen in the runner, Rally should mirror it into the run-local trace log.
 
-The important second rule is replayability:
+The important second rule is history-backed rendering:
 the terminal renderer should read from this structured event history, not just tail stdout.
-That is what makes it possible to toggle tool calls and reasoning traces on and off across the full history instead of only for future output.
+That is what makes it possible to toggle tool calls and reasoning traces on and off across the visible history instead of only for future output.
+This architecture leaves room for a dedicated replay command later if we want one, but that is not part of the current design.
 
 ## Proposed CLI Shape
 
@@ -828,13 +997,15 @@ Refuse loudly and make the operator choose the next move.
 
 ### `rally resume`
 
-Reopens an existing run, reloads its history, resumes any compatible agent sessions, and opens the same live renderer on top of the full stored event history.
+Reopens an existing run because the operator chose to resume it, reloads its history, resumes any compatible agent sessions, and opens the same live renderer on top of the stored event history.
+This is also the explicit recovery path after crashes or interrupted runs.
+We may later allow an optional operator resume note that gets appended to `home/issue.md`, but that is not required for the core design.
 
 ### `rally archive`
 
-Closes out a stopped or completed run, moves it under `runs/archive/`, clears any stale active-flow state that should not survive archival, and leaves the repo ready for the next issue.
+Explicitly archives a stopped or completed run, moves it under `runs/archive/`, clears any stale active-flow state that should not survive archival, and leaves the repo ready for the next issue.
 
-The point of `archive` is to make "this issue is done, set me up cleanly for the next one" a first-class operator action.
+The point of `archive` is to make "this issue is done, set me up cleanly for the next one" an explicit operator action rather than an automatic cleanup behavior.
 
 ## Proposed Terminal Renderer
 
@@ -844,8 +1015,8 @@ It should be a smart renderer backed by the full run event history.
 ### Renderer behavior
 
 - `rally run` and `rally resume` should both open the same renderer
-- on startup, the renderer replays the existing run history from `logs/events.jsonl`
-- after replay, it follows live events as they arrive
+- on startup, the renderer loads the existing run history from `logs/events.jsonl`
+- after loading history, it follows live events as they arrive
 - because it has the full history model, visibility toggles apply to both past and future events
 
 ### Renderer controls
@@ -910,7 +1081,7 @@ Instead:
 - each flow declares which skills each agent may use
 - Rally sources those skills from repo-root `skills/`
 - Rally materializes only those skills into that run's home-local skill directory
-- the actual adapter sees only those injected home-local skills
+- for Codex, Rally should point `CODEX_HOME` at the flow home so those home-local skills are the user-scope skills Codex sees for that run
 - agents never rely on machine-global skills outside home
 
 This preserves Paperclip's good runtime scoping behavior without needing Paperclip's control plane.
@@ -924,7 +1095,7 @@ Rally should treat MCP definitions the same way it treats skills: repo-owned, ex
 - each flow declares which MCPs each agent may use
 - Rally sources those definitions from repo-root `mcps/`
 - Rally materializes only the allowed MCPs into `home/mcps/`
-- the Codex adapter assembles those materialized definitions into the adapter config it launches with
+- the Codex adapter assembles those materialized definitions into the adapter config it launches with, rather than relying on any global `~/.codex/config.toml`
 - skills that depend on MCPs do not auto-enable them; the flow must explicitly allow both the skill and the MCP
 
 Possible `server.toml` shape:
@@ -948,6 +1119,7 @@ url = "https://mcp.figma.com/mcp"
 
 Sessions should be stored per run and per agent.
 The intended model is one persistent Codex session per agent per run whenever resume compatibility holds.
+For Codex, Rally should treat the flow home as `CODEX_HOME`, so canonical Codex session state is localized into that run instead of drifting into a global home.
 
 Example:
 
@@ -976,6 +1148,36 @@ Resume should be allowed only when:
 - the session has not been explicitly invalidated
 
 Otherwise Rally should start a fresh session and record why.
+
+## Codex Adapter Contract (Rally-Owned)
+
+Because adapter invocation belongs to Rally, the Codex launch contract is a Rally-owned design surface, not a Doctrine feature.
+After inspecting the local Codex code, Rally should treat this boundary as explicit and non-negotiable.
+
+The important finding is that Codex does have useful controls, but it does not give Rally's desired isolation story by default.
+
+Required adapter contract for the Codex adapter:
+
+- set `CODEX_HOME` to the flow home directory, not to `~/.codex` or any other global location
+- treat Codex-written files under that flow home as adapter internals, not as Rally semantic truth
+- set `project_doc_max_bytes = 0` so Codex does not auto-discover ambient `AGENTS.md` or `AGENTS.override.md` files from the cwd ancestry
+- choose `cwd` explicitly from Rally instead of inheriting ambient operator state
+- inject the compiled agent doctrine explicitly through Codex's explicit instructions channel, rather than relying on ambient project-doc discovery
+- assemble Codex MCP config explicitly from Rally's allowlisted MCP definitions
+- fail closed if Rally cannot prove what instruction surface Codex is actually seeing
+
+What this means in practice:
+
+- Rally can localize Codex state into the flow home
+- Rally can disable Codex's default ambient project-doc loading
+- Rally can strictly control which MCP definitions it injects
+- Rally cannot casually claim that the full built-in Codex tool surface is per-agent allowlist-scoped today
+
+Current conclusion:
+
+- the no-side-door promise can be made much more real for instruction surfaces if Rally owns the Codex launch contract
+- the no-side-door promise is weaker if Rally leaves Codex on its defaults
+- full capability isolation is a stricter claim than instruction isolation and may require additional Codex support
 
 ## Proposed Wake And Resume Protocol
 
@@ -1010,83 +1212,88 @@ This is runtime control context about the session and the latest state transitio
 The intervening agent list should come from the actual run history, not from guesswork.
 In v1, Rally can derive that from handoff entries or `issue_history/` snapshots since the agent's last seen checkpoint.
 
-## Doctrine Changes Rally Likely Needs
+## Required Supporting Changes In Doctrine
 
 This section should be treated as a required design surface, not a maybe-later note.
 We expect Rally to need supporting changes in Doctrine, and we want to make those changes instead of building permanent workarounds in Rally.
-
-## Required Supporting Changes In Doctrine
-
-Placeholder section.
-
 This section exists so future Rally design and implementation work has an explicit home for Doctrine-side requirements.
+It is intentionally still a placeholder with direction rather than a fully authored requirement list.
 Do not work around core Doctrine gaps just because this section is still incomplete.
 
 What belongs here:
 
 - Doctrine features Rally clearly needs for a clean design
-- Doctrine parser, compiler, or runtime semantics that the Rally standard library depends on
-- inheritance, flow, sleep, wake, blocker, and completion support that should live in Doctrine rather than in ad hoc Rally glue
-- any changes needed so Rally's mandatory Doctrine-native standard library is clean, explicit, and maintainable
+- Doctrine parser, compiler, or generic authored-semantics support that the Rally standard library depends on
+- generic lifecycle and workflow constructs that should live in Doctrine rather than in ad hoc Rally glue
+- any change needed so Rally's mandatory Doctrine-native standard library is clean, explicit, and maintainable
 
 We are not fully specifying those changes yet.
 We are explicitly reserving space for them because we expect they will be necessary.
 
 Doctrine is close, but not all the way there.
+Per the ownership boundary above, the key rule is that Doctrine changes here must stay generic compiler and language support, not Rally runtime ownership.
 
-### 1. A first-class runtime flow or run primitive
+What does not belong here:
 
-Doctrine currently gives us authored semantics, not an execution object.
+- repo-root layout such as `flows/`, `runs/`, `skills/`, and `mcps/`
+- `flow.yaml`, `run.yaml`, `state.yaml`, `home/issue.md`, logs, sessions, or locks
+- adapter launch rules such as `cwd`, `CODEX_HOME`, config overrides, MCP assembly, or explicit instruction injection
+- CLI commands, terminal rendering, archive behavior, or crash recovery policy
+- runtime home enforcement, no-escape checks, or other runner-side validation that belongs to Rally
 
-Rally likely needs Doctrine support for something like:
+### 1. Import-root and packaging support for the Rally standard library
 
-- `flow`
-- `start_agent`
-- recursive flow calls or child flow creation
-- abort/resume semantics
-- a Rally standard library inheritance model for shared wake, blocker, done, and sleep conventions
+Rally needs a reusable standard library under `stdlib/rally/`.
+Doctrine should make it straightforward to import and compose that library without brittle path hacks.
 
-### 2. A first-class runtime capability/tool layer
+Likely needs:
 
-Doctrine's current guidance strongly prefers skills over ad hoc tools, which is good, but Rally may still need a runtime layer for:
+- package or import-root semantics that make standard-library usage clean
+- stable resolution rules for shared Doctrine modules
+- authoring ergonomics that do not force Rally into wrapper-only composition tricks
 
-- shell-command policy
-- adapter/runtime toggles
-- MCP enablement
-- environment bindings
-- non-skill execution capabilities
+### 2. Generic lifecycle constructs for authored flow behavior
 
-Maybe this becomes a Doctrine primitive, or maybe Rally keeps it in `flow.yaml`. That remains open.
+Rally wants wake, resume, sleep, blocker, and done behavior to be Doctrine-native conventions, not just prose habits.
+If those conventions need real authored semantics, Doctrine should supply the generic building blocks.
 
-### 3. A first-class ledger or run artifact concept
+Likely needs:
 
-Doctrine already models outputs and trusted carriers, but Rally may want a more explicit notion of:
+- reusable lifecycle/result constructs that can be used beyond Rally
+- a clean authored way to express flow-control outcomes without smuggling them through raw Markdown
+- standard-library-friendly inheritance or composition support for those outcomes
 
-- append-only run ledger
-- current run summary
-- child-flow references
-- abort/resume records
-- wake/resume checkpoint records
+### 3. Machine-readable emitted structures Rally can consume
 
-### 4. Agent home and runtime environment binding
+Rally should not scrape human-readable Markdown to reconstruct compiler meaning.
+If Rally depends on authored semantics beyond plain readback, Doctrine should emit those structures directly.
 
-Rally likely needs a real way to express that an agent's runtime view is bound to:
+Likely needs:
 
-- a home directory
-- home-relative working directories
-- an allowed skill set
-- an allowed MCP set
-- a particular run
+- machine-readable flow graph or equivalent emitted structure
+- machine-readable visibility into authored routes, currentness, review wiring, and similar generic semantics
+- output formats stable enough for Rally to depend on explicitly
 
-That is runtime territory more than pure authored doctrine today.
+### 4. Capability declarations that stay authored, not runtime-wired
 
-### 5. Strong runtime enforcement of the no-side-door rule
+Rally needs a clean authored way for doctrine to refer to required or advisory capabilities, while Rally still owns actual runtime materialization.
 
-Rally should probably verify that the materialized agent home only contains generated instruction artifacts derived from the declared `.prompt` graph, plus runtime plumbing and injected skills and MCP definitions.
+Likely needs:
 
-### 6. Strong runtime enforcement of the no-escape rule
+- doctrinal capability references that do not hardwire adapter-specific config
+- enough structure that Rally can intersect authored requirements with runtime allowlists
+- generic semantics that could serve multiple runners, not just Rally
 
-Rally should also verify that agents only operate inside the prepared home and only see home-local skills, MCP definitions, and assets.
+### 5. Currentness and review extensions if Rally truly needs them
+
+Doctrine already has strong workflow law.
+If Rally standard-library patterns expose gaps there, those extensions belong here, but only if they are generic authored semantics.
+
+Possible needs:
+
+- additional typed carriers for current artifact or current mode
+- stronger review-family or adjudication support
+- other generic workflow semantics that improve more than just Rally
 
 ## Biggest Open Questions
 
@@ -1108,11 +1315,13 @@ If we ever add one, it should be an index/cache over files.
 Provisional answer:
 Mostly yes, but `run.yaml` and `state.yaml` will probably still be useful for compact machine summary.
 `issue_history/` is also useful as archaeological backup, but not as the live truth surface.
+Potential future concern:
+`home/issue.md` may later prove to be carrying too many jobs at once, but we are deliberately keeping the simple single-ledger model for now.
 
 ### 4. Where should flow definitions live?
 
 Provisional answer:
-Under the Rally repo root in `flows/`, with sibling `skills/`, `mcps/`, and `runs/`, not hidden inside a DB or opaque runtime store.
+Under the Rally repo root in `flows/`, with sibling `stdlib/`, `skills/`, `mcps/`, and `runs/`, not hidden inside a DB or opaque runtime store.
 
 ### 5. Should compiled Doctrine live in the flow definition or only in the run?
 
@@ -1181,9 +1390,12 @@ Rally v1 should stay narrow.
 - smart terminal renderer with reasoning and tool-call toggles
 - three-command operator CLI: `run`, `resume`, `archive`
 - mandatory Doctrine-native Rally standard library
+- Rally-owned standard library lives under repo-root `stdlib/`
 - explicit current owner and current artifact
 - one active run per flow
+- no hidden global Rally state
 - no GUI
+- no board/company/registry product carryover
 - no DB as source of truth
 - no budgets, approvals, or plugin platform
 
@@ -1200,18 +1412,23 @@ If this works well, it will prove the core thesis before we spend time on broade
 - define the exact naming scheme and retention rule for `issue_history/` snapshots
 - decide whether `state.yaml` is necessary or whether `run.yaml` can absorb it
 - define the exact contract for the start-of-flow home setup script
+- define the exact source layout and import contract for `stdlib/rally/`
 - define how per-agent runtime artifacts are materialized into home
 - define the exact event schema for `logs/events.jsonl`
 - define the exact renderer line format, colors, and keyboard controls
 - define the exact schema for repo-root `mcps/<mcp-slug>/server.toml`
 - define the exact session sidecar schema
 - define the exact wake and resume message templates per runtime adapter
+- define the exact crash-note behavior on operator-driven resume
+- define the exact Codex adapter launch contract: `cwd`, `CODEX_HOME`, `project_doc_max_bytes = 0`, explicit instruction injection, and MCP config assembly
+- define what capability isolation Rally can honestly promise with Codex today versus what requires Codex changes
 - define the mandatory surface of the Rally Doctrine standard library without fully authoring it here
 - keep the `Required Supporting Changes In Doctrine` section current instead of routing around it
 - define how Rally computes intervening agents since an agent's last wake
 - define the exact adapter-args schema per runtime adapter
 - define the exact activation lock format for one-active-run-per-flow
 - decide what Doctrine extensions belong in Doctrine versus Rally
+- define the explicit Rally-to-Doctrine compatibility contract and failure mode when required compiler support is missing
 - define the runtime guard that rejects instruction side doors
 - choose the first narrow end-to-end demo flow
 
@@ -1224,13 +1441,349 @@ The current best direction is:
 - Paperclip should influence runtime rigor, not product shape.
 - `paperclip_agents` should influence on-disk ergonomics, not framework domain.
 - agent instruction content should come from `.prompt` files only, with no side doors.
-- Rally should assume fixed repo-root `flows/`, `skills/`, `mcps/`, and `runs/`, not configurable workspace roots.
+- Rally should assume fixed repo-root `flows/`, `stdlib/`, `skills/`, `mcps/`, and `runs/`, not configurable workspace roots.
 - each run should get one prepared home, and agents should live entirely inside it.
+- Rally-owned state should live in that repo, not in hidden global directories.
 - each flow should have at most one active run at a time.
 - the operator surface should stay small: one command to run, one to resume, one to archive.
 - per-run logs and the terminal renderer should make excavation and live watching excellent.
+- sleep can stay simple in the current design: block inline and then wake again.
+- crash recovery should stay operator-driven rather than background-automated.
 - shared flow-ending and wake behavior should come from a mandatory Doctrine-native Rally standard library, not extra Rally end-condition config.
+- that standard library should live in Rally, while Doctrine stays the compiler and gains only generic enabling features.
+- for Codex, instruction isolation should come from Rally controlling `CODEX_HOME`, disabling ambient project-doc loading, and explicitly injecting compiled doctrine.
+- full per-agent capability isolation is a stronger claim than instruction isolation and should only be promised where the adapter actually supports it.
+- Rally should not carry over GUI, board, company, or registry product concepts.
 - when Rally needs Doctrine support to stay clean, we should add it to Doctrine and track it explicitly in this doc.
+- Rally and Doctrine need an explicit compatibility contract rather than silent semantic drift.
 - Doctrine should remain the authored language, but Rally will need runtime concepts that Doctrine does not yet own.
 
 That feels like the right center of gravity.
+
+## Exhaustive Design Considerations And Suggested Solutions
+
+This section is meant to be solution-forward.
+It is not just a place to restate open questions.
+It is the current best design judgment after deeper exploration of `../paperclip`, `../doctrine`, and `../paperclip_agents`.
+
+### 1. Authoring Surface vs Build Output vs Live Runtime
+
+Design consideration:
+Rally needs a crisp split between authored `.prompt` source, Doctrine-emitted build output, and the live runtime home.
+
+Suggested solution:
+Treat `flows/<flow>/prompts/` as authored source, `flows/<flow>/build/agents/<agent>/` as Doctrine-owned emitted runtime, and `runs/<run-id>/home/agents/<agent>/` as the per-run live copy.
+Rally should copy build output into home, not reinterpret or post-compile it into a second semantics layer.
+
+### 2. Only `AGENTS.md` Is Formalized By Rally
+
+Design consideration:
+Rally needs one formal runtime contract, but Doctrine may emit additional generated artifacts.
+
+Suggested solution:
+Formalize only `AGENTS.md`.
+Allow any other Doctrine-generated artifact to exist in build output and get copied into home, but only because Doctrine emitted it and `AGENTS.md` tells the agent to use it.
+Do not prescribe artifact names, directory shapes, or conventions beyond that.
+
+### 3. Mandatory Doctrine-Native Rally Standard Library
+
+Design consideration:
+Rally needs shared behavior, but it should come from Doctrine, not an ad hoc runtime policy layer.
+
+Suggested solution:
+Ship a mandatory Rally standard library written in Doctrine and require all Rally flows and agents to inherit from it.
+That standard library should live in Rally under `stdlib/rally/`, not in the Doctrine compiler repo.
+That standard library should own the shared conventions for wake/resume, handoff shape, blocker/done/sleep outcomes, route-only behavior, currentness, and skill/capability law.
+
+### 4. Composition First, Inheritance Second
+
+Design consideration:
+Doctrine inheritance is powerful but sharp-edged; broad parent changes force child accounting churn.
+
+Suggested solution:
+Build the Rally standard library mostly as composable imported Doctrine modules and reusable named declarations.
+Use inheritance for narrow, high-value deltas where explicit parent-child accounting is worth the cost.
+
+### 5. Doctrine Must Gain Support Instead Of Rally Working Around It
+
+Design consideration:
+Several Rally requirements are not yet first-class in shipped Doctrine.
+
+Suggested solution:
+Treat Doctrine-side support as expected work, not as something Rally should dodge.
+Keep the ownership boundary explicit:
+
+- Doctrine gets generic compiler and authored-semantics support
+- Rally keeps the runner, the runtime contract, and the Rally standard library contents
+- `paperclip_agents` remains pressure and examples, not universal framework law
+
+The likely Doctrine work is generic enabling support such as:
+
+- package and import-root support for `stdlib/rally/`
+- machine-readable emitted structures Rally can consume without scraping Markdown
+- doctrine-native lifecycle constructs for wake, resume, sleep, blocker, and done when those need real authored semantics
+- currentness, review, or capability-declaration extensions if the standard library exposes real generic gaps
+
+What should not move into Doctrine:
+
+- run directories and runtime files
+- adapter launch rules
+- CLI and renderer behavior
+- home confinement or no-side-door enforcement logic
+
+### 6. One Issue, One Current Owner, Same-Issue Reassignment
+
+Design consideration:
+The strongest reusable pattern in the sample agent families is not “many agents”; it is one current owner with explicit reassignment inside the same issue.
+
+Suggested solution:
+Make linear same-issue ownership a stdlib convention.
+One agent owns the issue at a time.
+Lead-like behavior is route-only reassignment and process repair, not a parallel side-channel.
+
+### 7. Canonical Agent Numbering Is Identity, Not Execution Order
+
+Design consideration:
+Numbered agents are useful for debugging and archaeology, but execution order should not be inferred from roster position.
+
+Suggested solution:
+Keep the numbered-directory convention.
+Treat the number as canonical authored identity only.
+Never let Rally infer real execution order from numbering, file order, or roster order.
+Execution should always come from explicit routes and actual handoffs.
+
+### 8. Handoffs Must Be Structured And Readable On Their Own
+
+Design consideration:
+The next owner should not need to reconstruct state from scattered side files.
+
+Suggested solution:
+Put the default handoff block shape in the Rally standard library.
+Require Rally flows and agents to inherit that default shape, while still allowing narrow flow-specific extension where needed.
+Every handoff should be self-contained enough that the next agent can continue from the issue alone.
+At minimum, it should carry current artifact, what changed, what to use now, and next owner.
+
+### 9. Currentness Must Be Typed, Not Just Described
+
+Design consideration:
+If current artifact, invalidations, active mode, or trigger reason live only in prose, drift will accumulate.
+
+Suggested solution:
+Push currentness into Doctrine-native typed carriers and outputs.
+Rally should prefer one current artifact at a time.
+If Rally later truly needs multiple simultaneous live artifacts, add a Doctrine-native workset or multi-current construct instead of encoding it in ad hoc runtime JSON.
+
+### 10. Review Semantics Should Be Reused, Not Rebuilt
+
+Design consideration:
+Doctrine already has unusually strong review and review-family semantics.
+
+Suggested solution:
+Reuse `review` and `review_family` wherever a Rally lane is actually adjudicative.
+Blocker classification, exact failing gates, carried mode, trigger reason, and deterministic next-owner review routing should come from Doctrine review semantics, not a new Rally-only mini-framework.
+
+### 11. Skills And MCPs Need Both Declaration And Runtime Realization
+
+Design consideration:
+Configured capabilities and actually callable capabilities are not the same thing.
+
+Suggested solution:
+Keep dual surfaces:
+
+- doctrinal capability references in agent doctrine
+- runtime allowlists in Rally flow config
+
+Then add a runtime realization check that probes the actual callable surface the run sees.
+Rally should fail closed when a required capability is missing or miswired.
+
+### 12. Timeouts Must Be Required, Per-Agent, And Terminal
+
+Design consideration:
+Long-running agents need explicit runtime bounds, and timeout behavior must be obvious instead of emergent.
+
+Suggested solution:
+Require each agent to declare its own timeout in `flow.yaml`.
+Treat timeout as a terminal blocker or error condition for the run.
+Do not reinterpret timeout as sleep, silent retry, or best-effort continuation.
+When a timeout happens, append a human-readable timeout record to `home/issue.md`, snapshot the issue for archaeology, and stop the run cleanly.
+
+### 13. Per-Agent Sessions Should Also Be Task-Scoped
+
+Design consideration:
+Resumable sessions are more precise when they are keyed by both agent and task/run context, not just “whatever session this agent had last.”
+
+Suggested solution:
+Persist both per-agent runtime state and per-task session state.
+Resume only when the saved session still matches the run home and cwd identity.
+If Rally needs timer-based wakes later, give those wakes stable synthetic task keys rather than pretending they are generic resumes.
+
+### 14. Resume Prompting Should Be Delta-Oriented
+
+Design consideration:
+Resumed sessions should not be treated like fresh starts.
+
+Suggested solution:
+Keep separate initial-wake and resume envelopes.
+The resume envelope should be small and factual:
+
+- who resumed the agent
+- which agents operated since last wake
+- what changed in the issue since last checkpoint
+- a directive to check the latest issue and continue following doctrine
+
+Do not reinject the whole world on resume.
+
+### 15. Fresh-Session Rotation Must Be A First-Class Escape Hatch
+
+Design consideration:
+Long-lived sessions become stale, bloated, or invalid.
+
+Suggested solution:
+Give Rally explicit fresh-session controls:
+
+- force fresh session
+- clear/reset session
+- rotate after compaction thresholds
+
+When a session is rotated, preserve continuity with a short human-readable handoff note rather than silently discarding history.
+
+### 16. Sleep Can Stay Inline And Simple
+
+Design consideration:
+The current runner executes one agent at a time, so a wake queue would add complexity without buying much.
+
+Suggested solution:
+When an agent emits `sleep`, append that fact to `home/issue.md`, record the requested duration in logs/state, block the runner for that duration, and then wake the same flow again.
+If the process exits during that wait, preserve the run and let the operator decide whether to resume it.
+Do not build a wake queue, wake coalescer, or background scheduler in the current design.
+
+### 17. Crash Recovery Should Stay Explicit And Operator-Driven
+
+Design consideration:
+Crashes and interruptions are normal, but automatic recovery machinery can easily become overbuilt and dishonest.
+
+Suggested solution:
+Do not build a complex startup reaper in the current design.
+If a run stops unexpectedly, preserve the run, capture the failure context in logs, and let the operator choose whether to resume it.
+When the operator does resume, append a crash note into `home/issue.md` with the last known running agent and known failure context.
+
+### 18. Run Metadata, Append-Only Events, And Raw Transcript Should Stay Separate
+
+Design consideration:
+The cleanest operator/debug surface is not one giant log file.
+
+Suggested solution:
+Keep three distinct surfaces:
+
+- run metadata in `run.yaml` / `state.yaml`
+- append-only structured event history in `logs/events.jsonl`
+- flattened human-readable render output in `logs/rendered.log`
+
+This is the right shape for replay, filtering, archaeology, and exact recovery.
+
+### 19. The Renderer Should Be History-Backed, Not A Dumb Tail
+
+Design consideration:
+If the renderer only tails stdout, toggles and deep inspection will always be shallow.
+
+Suggested solution:
+Back the renderer from the structured event log.
+That is what makes whole-history toggles like `T` for tool calls and `R` for reasoning traces actually work.
+The renderer should be elegant in real time, and the same architecture can support replay later if we want it.
+But a separate replay command is not part of the current design requirement.
+
+### 20. The CLI Should Stay Small But Fail Loud
+
+Design consideration:
+The operator surface should be minimal, but the runtime must not silently paper over ambiguity.
+
+Suggested solution:
+Keep the primary CLI to `run`, `resume`, and `archive`.
+Make `run` conservative and fail loudly on clearly dirty or ambiguous state.
+Do not auto-heal confusing state in the background.
+If additional recovery verbs are needed later, they should be explicit operator commands rather than hidden fallback behavior.
+
+### 21. Archive And Closeout Should Stay Explicit Operator Commands
+
+Design consideration:
+Closeout should not be magical or automatic.
+
+Suggested solution:
+Inspect dirty/untracked/ahead/unmerged state when the operator runs the closeout command.
+Archive should preserve files, report what is dirty, clear active-flow state only when appropriate, and refuse destructive cleanup.
+Never silently delete uncertain state.
+
+### 22. Portable Structure And Ephemeral Runtime State Must Stay Separate
+
+Design consideration:
+Reusable structure and live local runtime residue are different classes of data.
+
+Suggested solution:
+Treat prompts, build output, issue history, and selected definitions as portable structure.
+Treat sessions, logs, local paths, and secrets as ephemeral runtime residue that should not be exported or reused by default.
+
+### 23. Runtime State Should Stay Bundle-Shaped Inside The Repo
+
+Design consideration:
+Paperclip is right that runtime state should be grouped coherently instead of smeared across arbitrary surfaces.
+
+Suggested solution:
+Keep Rally's authored and operator-visible runtime state in the repo-root structure: `flows/`, `skills/`, `mcps/`, and especially `runs/`.
+Within `runs/<run-id>/`, keep sessions, logs, issue history, renderer state, and other runtime artifacts grouped as one excavatable bundle.
+If Codex itself stores canonical session state elsewhere, Rally should record stable references back into the run rather than moving Rally's own source of truth out of the repo.
+
+### 24. No Overlays, No Hidden Support Planes
+
+Design consideration:
+Cross-cutting reuse is real, but hidden overlay systems create side doors.
+
+Suggested solution:
+Reject Paperclip-style overlay thinking for Rally runtime instructions.
+If doctrine is shared, it should be shared through `.prompt` imports and the Rally standard library, not through special support-doc activation systems.
+
+### 25. No GUI, Board, Company, Or Registry Carryover
+
+Design consideration:
+Paperclip solves real runtime problems, but much of its product surface is outside Rally's core need.
+
+Suggested solution:
+Explicitly reject:
+
+- multi-company control planes
+- board-centric UI management
+- ClipHub/template-registry product layers
+- DB-first state as source of truth
+- close-management UI as a prerequisite for core runtime correctness
+
+Copy the runtime rigor, not the product shell.
+
+### 26. Adapter Isolation Must Be Explicit And Verified
+
+Design consideration:
+The no-side-door promise only holds if the adapter launch contract really suppresses ambient instruction sources and localizes adapter state.
+
+Suggested solution:
+For the Codex adapter:
+
+- set `CODEX_HOME` to the flow home directory, not a global location
+- disable ambient project-doc discovery with `project_doc_max_bytes = 0`
+- choose `cwd` explicitly from Rally
+- inject compiled agent doctrine explicitly through Codex's explicit instructions channel instead of relying on ambient `AGENTS.md` discovery
+- assemble MCP config explicitly from Rally's allowlisted definitions
+- do not claim per-agent built-in tool isolation unless the adapter really supports it
+
+Instruction isolation is an adapter contract.
+It is not something Rally should assume from defaults.
+
+## High-Level Roadmap
+
+Placeholder section.
+
+### Phase 1: Illustrative Best-Case Flow
+
+Build one example set of best-case Rally agents around a single illustrative flow.
+
+The point of this phase is not that the whole system works.
+The point is that this flow expresses the standard we are aiming at.
+
+When this illustrative flow works end to end with the level of quality, elegance, logging, Doctrine-native behavior, and runtime ergonomics described in this doc, that is Rally's MVP bar.
