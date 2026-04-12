@@ -1,0 +1,3 @@
+command = "uvx"
+args = ["fixture-repo-mcp", "--repo", "home/repos/tiny_issue_service"]
+transport = "stdio"

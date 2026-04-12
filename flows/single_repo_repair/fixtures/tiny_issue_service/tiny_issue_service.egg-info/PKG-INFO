@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: tiny-issue-service
+Version: 0.1.0
+Summary: Tiny seeded-bug fixture repo for the Rally placeholder flow.
+Requires-Python: >=3.11

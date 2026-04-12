@@ -1,0 +1,54 @@
+import rally.turn_results
+
+
+output RepairPlan: "Repair Plan"
+    target: File
+        path: "artifacts/repair_plan.md"
+    shape: MarkdownDocument
+    requirement: Required
+    "Write the current repair plan that defines the narrow seeded-bug seam."
+
+
+output VerificationReport: "Verification Report"
+    target: File
+        path: "artifacts/verification.md"
+    shape: MarkdownDocument
+    requirement: Required
+    "Write the deterministic local verification record for the seeded-bug repair."
+
+
+output ScopeLeadTurnResult: "Scope Lead Turn Result"
+    target: TurnResponse
+    shape: rally.turn_results.RallyTurnResultJson
+    requirement: Required
+
+    purpose: "Purpose"
+        "End the scope-lead turn with one structured Rally turn result."
+        "Use `handoff` on the planning turn and `done` on the final closeout turn."
+
+
+output ChangeEngineerTurnResult: "Change Engineer Turn Result"
+    target: TurnResponse
+    shape: rally.turn_results.RallyTurnResultJson
+    requirement: Required
+
+    purpose: "Purpose"
+        "End the change-engineer turn with one structured Rally turn result."
+
+
+output ProofEngineerTurnResult: "Proof Engineer Turn Result"
+    target: TurnResponse
+    shape: rally.turn_results.RallyTurnResultJson
+    requirement: Required
+
+    purpose: "Purpose"
+        "End the proof-engineer turn with one structured Rally turn result."
+
+
+output AcceptanceCriticTurnResult: "Acceptance Critic Turn Result"
+    target: TurnResponse
+    shape: rally.turn_results.RallyTurnResultJson
+    requirement: Required
+
+    purpose: "Purpose"
+        "End the acceptance-critic turn with one structured Rally turn result."

@@ -463,6 +463,19 @@ We need operator-driven restart semantics that do not corrupt the run ledger and
 
 A pure single-file dream is attractive, but process IDs, locks, and adapter session metadata are runtime plumbing. Rally needs a clean rule for what is semantic truth and what is disposable machine state.
 
+## Built-In Turn Memory And Self-Improvement
+
+Rally should treat memory and self-improvement as a core runtime feature, not as a special optional ability that only some agents know how to use.
+
+The required shape is intentionally simple for now:
+
+- Rally should support a turn-start memory check so an agent can see relevant prior learnings before continuing work
+- Rally should support a turn-end learning write so reusable lessons from that turn can be kept for later turns
+
+This is a requirement statement, not an architecture freeze.
+Do not treat this note as a decision about storage model, schema, retrieval policy, ranking, or agent-facing API shape yet.
+It also is not the first implementation priority; the point of documenting it now is to make sure Rally leaves room for it as a built-in system behavior.
+
 ## Proposed Core Concepts
 
 Rally should start with a small vocabulary.
@@ -765,9 +778,33 @@ The important rule is that if a downstream turn depends on a current artifact, i
 If that artifact has meaningful shape, the flow may attach a Doctrine `document` or `schema`.
 The standard library does not need a giant universal input model to make this work.
 
-### Provisional Standard Library Sketch
+### Current Standard Library Shape
 
-The first-pass standard library should be sketched concretely enough that we know what we are building, while still staying intentionally small.
+The authored Rally half of this design is now implemented in this repo.
+
+What is done today:
+
+- `stdlib/rally/prompts/rally/handoffs.prompt`
+- `stdlib/rally/prompts/rally/currentness.prompt`
+- `stdlib/rally/prompts/rally/turn_results.prompt`
+- `stdlib/rally/schemas/rally_turn_result.schema.json`
+- `stdlib/rally/examples/rally_turn_result.example.json`
+- `flows/_stdlib_smoke/prompts/AGENTS.prompt` wired to `final_output:`
+
+What that means:
+
+- Rally now has one shared authored handoff/currentness surface
+- Rally now has one tiny shared authored final-turn result contract surface
+- the smoke flow proves the authored shape compiles with `final_output:` on concrete agents
+- that authored shape was compile-checked against the local Doctrine branch carrying `final_output` support
+
+What is not done yet:
+
+- Rally runner-side consumption of the final turn result
+- adapter-side schema injection and result dispatch
+- ledger append / closeout / blocker / sleep runtime behavior
+
+The current implemented standard library stays intentionally small.
 
 Likely source layout:
 
@@ -812,6 +849,7 @@ What those modules should roughly own:
 The intended usage pattern is:
 
 - a flow declares its own concrete artifact outputs
+- that same flow declares its own `TurnResponse` final output using the shared `rally.turn_results` JSON shape
 - that same flow reuses the Rally stdlib handoff output
 - the producing turn carries one current artifact through the stdlib handoff carrier
 - the downstream turn declares the artifact it depends on as an explicit input
@@ -1093,7 +1131,7 @@ The happy path should look like this:
 9. Rally writes a timestamped full-copy backup of `home/issue.md` into `runs/<run-id>/issue_history/`.
 10. Rally updates `state.yaml`, current owner, current artifact, and session sidecars.
 11. The next agent runs in the same prepared home, again using that agent's own compatible resumed session when possible and an initial wake otherwise.
-12. The flow eventually emits one of the standard library end outcomes such as blocker, done, or sleep, and Rally responds accordingly.
+12. The flow eventually emits one structured final turn result such as `blocker`, `done`, or `sleep`, and Rally responds accordingly.
 
 At a high level:
 
@@ -1711,6 +1749,7 @@ The current best direction is:
 - each flow should have at most one active run at a time.
 - the operator surface should stay small: one command to run, one to resume, one to archive.
 - per-run logs and the terminal renderer should make excavation and live watching excellent.
+- built-in turn-start memory and turn-end learning should be a Rally runtime concern, not a special agent-only skill, but the exact implementation can be designed later.
 - sleep can stay simple in the current design: block inline and then wake again.
 - crash recovery should stay operator-driven rather than background-automated.
 - shared handoff and currentness behavior should come from a mandatory
@@ -2069,22 +2108,51 @@ It is not something Rally should assume from defaults.
 
 ### Phase 1: Build The Rally Standard Library
 
-Build the first mandatory Rally standard library under `stdlib/rally/`.
+Status:
+the authored standard-library half of this phase is now done in this repo.
 
-This phase should establish the smallest shared Doctrine contract that all later Rally flows inherit:
+What is implemented:
 
 - shared handoff output shape for one-current-artifact turns
 - shared handoff output shape for `current none` turns
 - trusted currentness carrier convention
-- the import and composition pattern Rally flows will use to adopt those conventions
+- one tiny shared `rally.turn_results` final-output contract module
+- schema and example assets for that shared final-output contract
+- the import and composition pattern Rally flows use to adopt those conventions
+- `_stdlib_smoke` authored with `final_output:` on concrete agents
 
-In parallel, Rally should define the shared end-of-turn result schema that the
-Codex adapter will enforce as strict final JSON for each turn.
+What remains in this phase:
 
-The goal of this phase is to lock the Rally-authored doctrine surface before we start writing placeholder flows against unstable conventions.
-If the standard library is still muddy, the example flow will only bake in noise.
+- Rally runner-side loading of the resolved `final_output` contract from Doctrine
+- adapter-side schema injection such as Codex `final_output_json_schema`
+- runtime dispatch of `handoff`, `done`, `blocker`, and `sleep`
+
+The authored doctrine surface is now locked enough to move on to runtime wiring.
+The remaining work is runtime and adapter integration, not more stdlib shape invention.
 
 ### Phase 2: Build One Placeholder Seeded-Bug Flow
+
+Status:
+the authored placeholder-flow half of this phase is now done in this repo.
+
+What is implemented:
+
+- `flows/placeholder_seeded_bug/flow.yaml`
+- `flows/placeholder_seeded_bug/setup/prepare_home.sh`
+- `flows/placeholder_seeded_bug/prompts/AGENTS.prompt`
+- `flows/placeholder_seeded_bug/prompts/shared/`
+- `flows/placeholder_seeded_bug/prompts/roles/`
+- `flows/placeholder_seeded_bug/fixtures/briefs/seeded_bug.md`
+- `flows/placeholder_seeded_bug/fixtures/tiny_issue_service/`
+- `flows/placeholder_seeded_bug/build/agents/.../AGENTS.md`
+- `skills/repo-search/`
+- `skills/pytest-local/`
+- `mcps/fixture-repo/server.toml`
+
+What remains in this phase:
+
+- no additional authored surfaces
+- runtime execution belongs to Phase 3
 
 After the standard library exists, build one placeholder illustrative flow around a seeded bug in a small sample repo.
 
@@ -2100,6 +2168,7 @@ The intended story is:
 
 The point of this phase is not that the full runtime already works end to end.
 The point is to write the canonical placeholder flow surfaces that later runtime work must satisfy.
+Those authored surfaces now exist on disk under `flows/placeholder_seeded_bug/`.
 
 Use four generic agents with numbered directories so the authored order is obvious and the flow stays domain-neutral:
 
@@ -2148,6 +2217,272 @@ Keep the first placeholder flow deliberately narrow:
 - no external-auth MCPs when a small local MCP is enough to exercise the path
 - no sleep scheduling unless the placeholder honestly needs it
 - no fancy domain logic beyond what is needed to require code change, verification, and review
+- no flow-graph artifacts as part of this phase deliverable
 
 The MVP bar remains the same in spirit:
 once the runtime catches up to these two phases, someone should be able to open one run directory and understand exactly what was asked, what home was prepared, what each agent saw, what changed, what proof ran, what the critic decided, and why the run ended, without any hidden control plane.
+
+### Phase 3: Build The First Runnable Codex Vertical Slice
+
+Phase 3 is the first runtime phase.
+Its job is to prove that Rally can actually execute the authored assets from Phase 1 and Phase 2 without changing those authored assets to fit a weaker runtime.
+
+The core rule for this phase is:
+Phase 1 and Phase 2 are inputs.
+Phase 3 is the first real runner.
+
+What Phase 3 owns:
+
+- one real CLI entrypoint for Rally
+- one real runtime package under `src/rally/`
+- one real runnable Codex adapter path
+- one real seeded-bug flow execution path from `run` to terminal outcome
+- one-active-run-per-flow enforcement
+- home preparation, home materialization, ledger append, session sidecars, and run-local logging
+- `run` and `resume` as real commands
+- `archive` may remain a thin follow-on command after the vertical slice lands
+- Rally consumes precompiled Doctrine build output in this phase and fails loudly if required build output is missing
+
+This phase should stay intentionally narrow:
+
+- one adapter: Codex
+- one concrete flow family: the Phase 2 seeded-bug flow
+- one prepared home per run
+- one active owner at a time
+- no GUI
+- no database
+- no background scheduler
+- no Doctrine compile orchestration
+- no claim of stronger built-in tool isolation than Codex can actually prove
+
+#### Checked-In Repo Structure For Phase 3
+
+Phase 3 should create the following checked-in structure:
+
+```text
+<rally-repo-root>/
+  pyproject.toml
+  src/
+    rally/
+      __init__.py
+      __main__.py
+      cli.py
+      flow_loader.py
+      run_store.py
+      issue_ledger.py
+      home_materializer.py
+      event_log.py
+      runner.py
+      adapters/
+        __init__.py
+        codex/
+          __init__.py
+          launcher.py
+          result_contract.py
+          session_store.py
+  tests/
+    unit/
+      test_flow_loader.py
+      test_run_store.py
+      test_issue_ledger.py
+      test_home_materializer.py
+      test_codex_result_contract.py
+    e2e/
+      test_seeded_bug_happy_path.py
+      test_seeded_bug_resume.py
+  flows/
+    _stdlib_smoke/
+      ...
+    placeholder_seeded_bug/
+      flow.yaml
+      fixtures/
+        briefs/
+          seeded_bug.md
+        tiny_issue_service/
+          ...
+      setup/
+        prepare_home.sh
+      prompts/
+        AGENTS.prompt
+        shared/
+          inputs.prompt
+          outputs.prompt
+          review.prompt
+          skills.prompt
+        roles/
+          scope_lead.prompt
+          change_engineer.prompt
+          proof_engineer.prompt
+          acceptance_critic.prompt
+      build/
+        agents/
+          01_scope_lead/
+            AGENTS.md
+            ...
+          02_change_engineer/
+            AGENTS.md
+            ...
+          03_proof_engineer/
+            AGENTS.md
+            ...
+          04_acceptance_critic/
+            AGENTS.md
+            ...
+  skills/
+    repo-search/
+      SKILL.md
+      ...
+    pytest-local/
+      SKILL.md
+      ...
+  mcps/
+    fixture-repo/
+      server.toml
+  stdlib/
+    rally/
+      ...
+  runs/
+    active/
+    archive/
+```
+
+Notes for this structure:
+
+- `src/rally/` is the first real Rally runtime package and should stay small.
+- `pyproject.toml` should expose a real CLI entrypoint so Phase 3 can run as `rally ...`.
+- `flows/placeholder_seeded_bug/fixtures/tiny_issue_service/` is a phase-local sample target repo used to exercise the runtime. It is not a framework primitive.
+- `flows/placeholder_seeded_bug/` is the authored flow from Phase 2 and remains the only required runnable flow in this phase.
+- `flows/placeholder_seeded_bug/build/` is an input to the runner in this phase, not something Rally generates.
+- `skills/repo-search/`, `skills/pytest-local/`, and `mcps/fixture-repo/` exist only to exercise allowlist materialization and adapter wiring with a tiny local surface.
+- `runs/` is runtime-created state. Only placeholder directories such as `active/` and `archive/` need to exist in git.
+
+#### Runtime-Created Run Structure For Phase 3
+
+For one concrete run of `flows/placeholder_seeded_bug/`, Rally should create the following runtime structure:
+
+```text
+<rally-repo-root>/
+  runs/
+    active/
+      placeholder_seeded_bug.lock
+    <run-id>/
+      run.yaml
+      state.yaml
+      logs/
+        events.jsonl
+        rendered.log
+        agents/
+          01_scope_lead.jsonl
+          02_change_engineer.jsonl
+          03_proof_engineer.jsonl
+          04_acceptance_critic.jsonl
+        adapter_launch/
+          01_scope_lead.json
+          02_change_engineer.json
+          03_proof_engineer.json
+          04_acceptance_critic.json
+      issue_history/
+        0001-<timestamp>-01_scope_lead-to-02_change_engineer.md
+        0002-<timestamp>-02_change_engineer-to-03_proof_engineer.md
+        0003-<timestamp>-03_proof_engineer-to-04_acceptance_critic.md
+        0004-<timestamp>-04_acceptance_critic-to-01_scope_lead.md
+      home/
+        issue.md
+        artifacts/
+          repair_plan.md
+          verification.md
+        agents/
+          01_scope_lead/
+            AGENTS.md
+            ...
+          02_change_engineer/
+            AGENTS.md
+            ...
+          03_proof_engineer/
+            AGENTS.md
+            ...
+          04_acceptance_critic/
+            AGENTS.md
+            ...
+        skills/
+          repo-search/
+            SKILL.md
+            ...
+          pytest-local/
+            SKILL.md
+            ...
+        mcps/
+          fixture-repo/
+            server.toml
+        repos/
+          tiny_issue_service/
+            ...
+        sessions/
+          01_scope_lead.json
+          02_change_engineer.json
+          03_proof_engineer.json
+          04_acceptance_critic.json
+```
+
+Notes for this runtime structure:
+
+- `placeholder_seeded_bug.lock` is the one-active-run-per-flow proof point for this phase.
+- `run.yaml` is the stable identity surface for the run.
+- `state.yaml` is the small machine-readable current-status surface.
+- `logs/events.jsonl` is the merged structured event stream for the run.
+- `logs/agents/*.jsonl` are filtered per-agent slices.
+- `logs/adapter_launch/*.json` is the explicit proof surface for the Codex launch contract used on each turn.
+- `home/issue.md` remains the live human-readable ledger.
+- `issue_history/` stores full-file snapshots after each handoff append.
+- `home/artifacts/repair_plan.md` and `home/artifacts/verification.md` are the first concrete current-artifact examples for this flow.
+- `home/repos/tiny_issue_service/` is the writable working copy of the sample repo prepared by `setup/prepare_home.sh`.
+- `home/agents/` is a per-run copy of the compiled Doctrine build output.
+- `home/skills/` and `home/mcps/` are the only runtime capability surfaces Rally intentionally presents to agents.
+- adapter-owned Codex residue may also appear somewhere under `home/` because `CODEX_HOME` points there, but Rally must not depend on opaque adapter-private file names to explain the run.
+
+#### Required Behavior In Phase 3
+
+Phase 3 should prove the following behavior end to end:
+
+- `rally run placeholder_seeded_bug --brief-file flows/placeholder_seeded_bug/fixtures/briefs/seeded_bug.md` creates a new run directory, acquires the active-flow lock, writes the operator brief to `home/issue.md`, and runs the seeded-bug flow.
+- Rally reads `flows/placeholder_seeded_bug/flow.yaml` and consumes `flows/placeholder_seeded_bug/build/agents/...` as already-compiled input.
+- `setup/prepare_home.sh` runs once, prepares `home/repos/tiny_issue_service/`, and may append setup notes below the original operator brief.
+- Rally copies the compiled agent build output into `home/agents/` and materializes only the allowlisted skills and MCP definitions into `home/skills/` and `home/mcps/`.
+- Rally launches Codex with an explicit contract on every turn: chosen `cwd`, `CODEX_HOME=<run-home>`, ambient project-doc discovery disabled, compiled doctrine injected explicitly, and the shared final-turn JSON schema attached explicitly.
+- Rally validates the final turn result against the shared `rally.turn_results` contract before using it for runtime behavior.
+- On `handoff`, Rally appends to `home/issue.md`, snapshots the full ledger into `issue_history/`, updates `state.yaml`, and wakes the next owner in the same home.
+- On `done` or `blocker`, Rally records the final state, preserves the run directory, and clears the active-flow lock.
+- On interruption, Rally preserves the run directory and session sidecars, and `rally resume <run-id>` continues the same run rather than creating a replacement run.
+- `sleep` support may exist in runner logic and unit coverage, but the seeded-bug end-to-end flow does not need to exercise `sleep` in this phase.
+
+#### Acceptance Criteria For Phase 3
+
+Phase 3 is complete only when all of the following are true:
+
+1. `rally run placeholder_seeded_bug --brief-file flows/placeholder_seeded_bug/fixtures/briefs/seeded_bug.md` succeeds from a clean repo state when `flows/placeholder_seeded_bug/build/` is present.
+2. During execution, Rally creates exactly one active-flow lock at `runs/active/placeholder_seeded_bug.lock`, and that lock is cleared when the run reaches `done` or `blocker`.
+3. The run directory contains `run.yaml`, `state.yaml`, `logs/events.jsonl`, `home/issue.md`, `issue_history/`, `home/agents/`, `home/skills/`, `home/mcps/`, `home/repos/tiny_issue_service/`, and `home/sessions/`.
+4. The original operator brief remains at the top of `home/issue.md`, and setup notes plus handoffs are appended below it rather than prepended above it.
+5. The run produces `home/artifacts/repair_plan.md` and `home/artifacts/verification.md`, and those artifacts are the surfaces referenced by the seeded-bug handoffs.
+6. After every handoff append, Rally writes a full-copy snapshot into `issue_history/` with a monotonic timestamped filename.
+7. `logs/adapter_launch/*.json` proves that every Codex turn used Rally-chosen `cwd`, `CODEX_HOME` rooted in the run home, disabled ambient project-doc discovery, explicit compiled-doctrine injection, and an explicit final-output JSON schema.
+8. Only allowlisted skills and MCP definitions appear in `home/skills/` and `home/mcps/`; repo-root entries not named in `flow.yaml` do not appear there.
+9. A seeded-bug happy path completes through the authored ownership chain `01_scope_lead -> 02_change_engineer -> 03_proof_engineer -> 04_acceptance_critic -> 01_scope_lead` and ends in a terminal `done`.
+10. An interrupted run after at least one handoff can be completed with `rally resume <run-id>` without changing the run id, deleting prior logs, or rewriting prior ledger history.
+11. A failure path such as invalid final JSON, missing compiled build output, missing current artifact, or attempted home escape fails loudly, preserves the run directory for archaeology, and does not silently continue.
+12. A canary ambient instruction source outside the compiled flow build output does not appear in the injected instruction payload or in the run-home agent surfaces, proving the no-side-door contract for this phase.
+13. Rally creates no Rally-owned state outside the repo root during the run. There is no hidden Rally control plane under `~/.rally`, `~/.config`, or similar global locations.
+14. Unit coverage exists for the runner branch that handles `sleep`, even though the seeded-bug end-to-end flow does not use `sleep`.
+
+#### Explicit Non-Goals For Phase 3
+
+Phase 3 should not widen into any of the following:
+
+- a second runtime adapter
+- a second fully supported flow family
+- Doctrine compilation orchestration
+- parallel-agent execution
+- background wake scheduling
+- archive/cleanup ergonomics beyond what is needed to preserve the finished run honestly
+- GUI, board, company, registry, or plugin-platform surface area
+- broad built-in tool isolation claims beyond what the Codex adapter can truly prove

@@ -1,0 +1,18 @@
+skill RepoSearchSkill: "repo-search"
+    purpose: "Find the exact repo files, symbols, tests, and paths that matter for the seeded pagination bug."
+
+    use_when: "Use When"
+        "Use this when the turn needs exact file-level grounding in `repos/tiny_issue_service`."
+
+    provides: "Provides"
+        "A fast path to the seeded bug location, the local test surface, and the exact files the next owner should read."
+
+
+skill PytestLocalSkill: "pytest-local"
+    purpose: "Run deterministic local pytest verification in the prepared fixture repo."
+
+    use_when: "Use When"
+        "Use this when the turn needs a local repro, a local verification pass, or an exact failing test command."
+
+    provides: "Provides"
+        "The stable local verification command for `repos/tiny_issue_service`."

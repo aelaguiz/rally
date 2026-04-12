@@ -1,0 +1,4 @@
+workflow AcceptanceCriticJob: "Your Job"
+    "Review the current repair plan and verification record together."
+    "Lead with findings, then land exactly one verdict: accept or changes requested."
+    "Name the exact next owner and keep the verification record as the durable current basis for that route."
