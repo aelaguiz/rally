@@ -1,4 +1,4 @@
-"""Pagination helpers for the seeded-bug placeholder flow."""
+"""Pagination helpers for the Rally single-repo repair flow."""
 
 
 def paginate_issues(items: list[str], page: int, page_size: int) -> list[str]:

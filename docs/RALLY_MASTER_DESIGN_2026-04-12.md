@@ -2130,21 +2130,21 @@ What remains in this phase:
 The authored doctrine surface is now locked enough to move on to runtime wiring.
 The remaining work is runtime and adapter integration, not more stdlib shape invention.
 
-### Phase 2: Build One Placeholder Seeded-Bug Flow
+### Phase 2: Build One Single-Repo Repair Flow
 
 Status:
-the authored placeholder-flow half of this phase is now done in this repo.
+the authored single-repo-repair flow for this phase is now done in this repo.
 
 What is implemented:
 
-- `flows/placeholder_seeded_bug/flow.yaml`
-- `flows/placeholder_seeded_bug/setup/prepare_home.sh`
-- `flows/placeholder_seeded_bug/prompts/AGENTS.prompt`
-- `flows/placeholder_seeded_bug/prompts/shared/`
-- `flows/placeholder_seeded_bug/prompts/roles/`
-- `flows/placeholder_seeded_bug/fixtures/briefs/seeded_bug.md`
-- `flows/placeholder_seeded_bug/fixtures/tiny_issue_service/`
-- `flows/placeholder_seeded_bug/build/agents/.../AGENTS.md`
+- `flows/single_repo_repair/flow.yaml`
+- `flows/single_repo_repair/setup/prepare_home.sh`
+- `flows/single_repo_repair/prompts/AGENTS.prompt`
+- `flows/single_repo_repair/prompts/shared/`
+- `flows/single_repo_repair/prompts/roles/`
+- `flows/single_repo_repair/fixtures/briefs/single_repo_repair.md`
+- `flows/single_repo_repair/fixtures/tiny_issue_service/`
+- `flows/single_repo_repair/build/agents/.../AGENTS.md`
 - `skills/repo-search/`
 - `skills/pytest-local/`
 - `mcps/fixture-repo/server.toml`
@@ -2154,7 +2154,7 @@ What remains in this phase:
 - no additional authored surfaces
 - runtime execution belongs to Phase 3
 
-After the standard library exists, build one placeholder illustrative flow around a seeded bug in a small sample repo.
+After the standard library exists, build one enduring illustrative flow around a seeded bug in a small sample repo.
 
 The intended story is:
 
@@ -2167,8 +2167,8 @@ The intended story is:
 - the lead closes the run
 
 The point of this phase is not that the full runtime already works end to end.
-The point is to write the canonical placeholder flow surfaces that later runtime work must satisfy.
-Those authored surfaces now exist on disk under `flows/placeholder_seeded_bug/`.
+The point is to write the canonical single-repo repair flow surfaces that later runtime work must satisfy.
+Those authored surfaces now exist on disk under `flows/single_repo_repair/`.
 
 Use four generic agents with numbered directories so the authored order is obvious and the flow stays domain-neutral:
 
@@ -2193,7 +2193,7 @@ Use four generic agents with numbered directories so the authored order is obvio
 
 This is basically the good part of the `paperclip_agents` core-dev route, stripped of GitHub, company state, and product-specific role names.
 
-The placeholder should be authored so later runtime work can prove all of these without changing the flow shape:
+The example flow should be authored so later runtime work can prove all of these without changing the flow shape:
 
 - `.prompt` is the only authored instruction source
 - Doctrine emits build output from that source
@@ -2210,12 +2210,12 @@ The placeholder should be authored so later runtime work can prove all of these 
 - run-local logs are good enough that one run directory explains what happened without any hidden database or dashboard
 - `run`, `resume`, and `archive` later satisfy the authored flow contract rather than forcing the flow to change shape
 
-Keep the first placeholder flow deliberately narrow:
+Keep the first enduring example flow deliberately narrow:
 
 - no GitHub publish or follow-through behavior
 - no multiple target repos inside home
 - no external-auth MCPs when a small local MCP is enough to exercise the path
-- no sleep scheduling unless the placeholder honestly needs it
+- no sleep scheduling unless the example flow honestly needs it
 - no fancy domain logic beyond what is needed to require code change, verification, and review
 - no flow-graph artifacts as part of this phase deliverable
 
@@ -2236,7 +2236,7 @@ What Phase 3 owns:
 - one real CLI entrypoint for Rally
 - one real runtime package under `src/rally/`
 - one real runnable Codex adapter path
-- one real seeded-bug flow execution path from `run` to terminal outcome
+- one real single-repo repair flow execution path from `run` to terminal outcome
 - one-active-run-per-flow enforcement
 - home preparation, home materialization, ledger append, session sidecars, and run-local logging
 - `run` and `resume` as real commands
@@ -2246,7 +2246,7 @@ What Phase 3 owns:
 This phase should stay intentionally narrow:
 
 - one adapter: Codex
-- one concrete flow family: the Phase 2 seeded-bug flow
+- one concrete flow family: the Phase 2 single-repo repair flow
 - one prepared home per run
 - one active owner at a time
 - no GUI
@@ -2293,11 +2293,11 @@ Phase 3 should create the following checked-in structure:
   flows/
     _stdlib_smoke/
       ...
-    placeholder_seeded_bug/
+    single_repo_repair/
       flow.yaml
       fixtures/
         briefs/
-          seeded_bug.md
+          single_repo_repair.md
         tiny_issue_service/
           ...
       setup/
@@ -2350,21 +2350,21 @@ Notes for this structure:
 
 - `src/rally/` is the first real Rally runtime package and should stay small.
 - `pyproject.toml` should expose a real CLI entrypoint so Phase 3 can run as `rally ...`.
-- `flows/placeholder_seeded_bug/fixtures/tiny_issue_service/` is a phase-local sample target repo used to exercise the runtime. It is not a framework primitive.
-- `flows/placeholder_seeded_bug/` is the authored flow from Phase 2 and remains the only required runnable flow in this phase.
-- `flows/placeholder_seeded_bug/build/` is an input to the runner in this phase, not something Rally generates.
+- `flows/single_repo_repair/fixtures/tiny_issue_service/` is a phase-local sample target repo used to exercise the runtime. It is not a framework primitive.
+- `flows/single_repo_repair/` is the authored flow from Phase 2 and remains the only required runnable flow in this phase.
+- `flows/single_repo_repair/build/` is an input to the runner in this phase, not something Rally generates.
 - `skills/repo-search/`, `skills/pytest-local/`, and `mcps/fixture-repo/` exist only to exercise allowlist materialization and adapter wiring with a tiny local surface.
 - `runs/` is runtime-created state. Only placeholder directories such as `active/` and `archive/` need to exist in git.
 
 #### Runtime-Created Run Structure For Phase 3
 
-For one concrete run of `flows/placeholder_seeded_bug/`, Rally should create the following runtime structure:
+For one concrete run of `flows/single_repo_repair/`, Rally should create the following runtime structure:
 
 ```text
 <rally-repo-root>/
   runs/
     active/
-      placeholder_seeded_bug.lock
+      single_repo_repair.lock
     <run-id>/
       run.yaml
       state.yaml
@@ -2426,7 +2426,7 @@ For one concrete run of `flows/placeholder_seeded_bug/`, Rally should create the
 
 Notes for this runtime structure:
 
-- `placeholder_seeded_bug.lock` is the one-active-run-per-flow proof point for this phase.
+- `single_repo_repair.lock` is the one-active-run-per-flow proof point for this phase.
 - `run.yaml` is the stable identity surface for the run.
 - `state.yaml` is the small machine-readable current-status surface.
 - `logs/events.jsonl` is the merged structured event stream for the run.
@@ -2444,8 +2444,8 @@ Notes for this runtime structure:
 
 Phase 3 should prove the following behavior end to end:
 
-- `rally run placeholder_seeded_bug --brief-file flows/placeholder_seeded_bug/fixtures/briefs/seeded_bug.md` creates a new run directory, acquires the active-flow lock, writes the operator brief to `home/issue.md`, and runs the seeded-bug flow.
-- Rally reads `flows/placeholder_seeded_bug/flow.yaml` and consumes `flows/placeholder_seeded_bug/build/agents/...` as already-compiled input.
+- `rally run single_repo_repair --brief-file flows/single_repo_repair/fixtures/briefs/single_repo_repair.md` creates a new run directory, acquires the active-flow lock, writes the operator brief to `home/issue.md`, and runs the single-repo repair flow.
+- Rally reads `flows/single_repo_repair/flow.yaml` and consumes `flows/single_repo_repair/build/agents/...` as already-compiled input.
 - `setup/prepare_home.sh` runs once, prepares `home/repos/tiny_issue_service/`, and may append setup notes below the original operator brief.
 - Rally copies the compiled agent build output into `home/agents/` and materializes only the allowlisted skills and MCP definitions into `home/skills/` and `home/mcps/`.
 - Rally launches Codex with an explicit contract on every turn: chosen `cwd`, `CODEX_HOME=<run-home>`, ambient project-doc discovery disabled, compiled doctrine injected explicitly, and the shared final-turn JSON schema attached explicitly.
@@ -2459,8 +2459,8 @@ Phase 3 should prove the following behavior end to end:
 
 Phase 3 is complete only when all of the following are true:
 
-1. `rally run placeholder_seeded_bug --brief-file flows/placeholder_seeded_bug/fixtures/briefs/seeded_bug.md` succeeds from a clean repo state when `flows/placeholder_seeded_bug/build/` is present.
-2. During execution, Rally creates exactly one active-flow lock at `runs/active/placeholder_seeded_bug.lock`, and that lock is cleared when the run reaches `done` or `blocker`.
+1. `rally run single_repo_repair --brief-file flows/single_repo_repair/fixtures/briefs/single_repo_repair.md` succeeds from a clean repo state when `flows/single_repo_repair/build/` is present.
+2. During execution, Rally creates exactly one active-flow lock at `runs/active/single_repo_repair.lock`, and that lock is cleared when the run reaches `done` or `blocker`.
 3. The run directory contains `run.yaml`, `state.yaml`, `logs/events.jsonl`, `home/issue.md`, `issue_history/`, `home/agents/`, `home/skills/`, `home/mcps/`, `home/repos/tiny_issue_service/`, and `home/sessions/`.
 4. The original operator brief remains at the top of `home/issue.md`, and setup notes plus handoffs are appended below it rather than prepended above it.
 5. The run produces `home/artifacts/repair_plan.md` and `home/artifacts/verification.md`, and those artifacts are the surfaces referenced by the seeded-bug handoffs.

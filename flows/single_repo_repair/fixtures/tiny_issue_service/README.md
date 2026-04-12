@@ -1,6 +1,6 @@
 # tiny_issue_service
 
-This fixture repo exists only to give the Rally placeholder seeded-bug flow a
+This fixture repo exists only to give the Rally single-repo repair flow a
 concrete target repo on disk.
 
 ## Seeded bug

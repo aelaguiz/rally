@@ -5,8 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tiny-issue-service"
 version = "0.1.0"
-description = "Tiny seeded-bug fixture repo for the Rally placeholder flow."
+description = "Tiny seeded-bug fixture repo for the Rally single-repo repair flow."
 requires-python = ">=3.11"
+dependencies = ["pytest>=8.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
