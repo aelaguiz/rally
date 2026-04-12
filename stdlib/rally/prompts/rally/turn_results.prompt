@@ -1,0 +1,16 @@
+json schema RallyTurnResultSchema: "Rally Turn Result Schema"
+    profile: OpenAIStructuredOutput
+    file: "schemas/rally_turn_result.schema.json"
+
+
+output shape RallyTurnResultJson: "Rally Turn Result JSON"
+    kind: JsonObject
+    schema: RallyTurnResultSchema
+    example_file: "examples/rally_turn_result.example.json"
+
+    explanation: "Outcome Semantics"
+        "`kind` selects the runner action."
+        "Use `handoff` only when the turn also emitted a separate authored Rally handoff output."
+        "Use `done` with `summary` to close the run."
+        "Use `blocker` with `reason` to stop the run cleanly."
+        "Use `sleep` with `reason` and `sleep_duration_seconds` to pause and wake the same owner again later."

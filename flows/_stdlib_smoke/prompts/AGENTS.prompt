@@ -1,5 +1,6 @@
 import rally.handoffs
 import rally.currentness
+import rally.turn_results
 
 
 input WorkBrief: "Work Brief"
@@ -24,6 +25,33 @@ output RepairPlan: "Repair Plan"
     "Write the current repair plan to a flow-owned artifact."
 
 
+output PlanAuthorTurnResult: "Plan Author Turn Result"
+    target: TurnResponse
+    shape: rally.turn_results.RallyTurnResultJson
+    requirement: Required
+
+    purpose: "Purpose"
+        "End the plan-author turn with one structured Rally turn result."
+
+
+output RouteRepairTurnResult: "Route Repair Turn Result"
+    target: TurnResponse
+    shape: rally.turn_results.RallyTurnResultJson
+    requirement: Required
+
+    purpose: "Purpose"
+        "End the route-repair turn with one structured Rally turn result."
+
+
+output CloseoutTurnResult: "Closeout Turn Result"
+    target: TurnResponse
+    shape: rally.turn_results.RallyTurnResultJson
+    requirement: Required
+
+    purpose: "Purpose"
+        "End the closeout turn with one structured Rally turn result."
+
+
 workflow PlanAuthorWorkflow[rally.currentness.RallyCarryCurrentArtifactConvention]: "Plan Author Workflow"
     inherit when_to_use
     inherit law_form
@@ -44,7 +72,9 @@ agent PlanAuthor:
         WorkBrief
     outputs: "Outputs"
         RepairPlan
+        PlanAuthorTurnResult
         rally.handoffs.RallyCurrentArtifactHandoff
+    final_output: PlanAuthorTurnResult
 
 
 workflow RouteRepairWorkflow[rally.currentness.RallyNoCurrentArtifactConvention]: "Route Repair Workflow"
@@ -67,4 +97,18 @@ agent RouteRepair:
     inputs: "Inputs"
         RoutingFacts
     outputs: "Outputs"
+        RouteRepairTurnResult
         rally.handoffs.RallyNoCurrentArtifactHandoff
+    final_output: RouteRepairTurnResult
+
+
+workflow CloseoutWorkflow: "Closeout Workflow"
+    "End the smoke with one terminal done result."
+
+
+agent Closeout:
+    role: "End the smoke with a terminal done result."
+    workflow: CloseoutWorkflow
+    outputs: "Outputs"
+        CloseoutTurnResult
+    final_output: CloseoutTurnResult

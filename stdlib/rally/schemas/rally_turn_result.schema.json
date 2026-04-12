@@ -1,0 +1,43 @@
+{
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "const": "handoff" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "summary"],
+      "properties": {
+        "kind": { "const": "done" },
+        "summary": { "type": "string" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reason"],
+      "properties": {
+        "kind": { "const": "blocker" },
+        "reason": { "type": "string" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reason", "sleep_duration_seconds"],
+      "properties": {
+        "kind": { "const": "sleep" },
+        "reason": { "type": "string" },
+        "sleep_duration_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  ]
+}

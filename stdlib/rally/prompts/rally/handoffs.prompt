@@ -11,10 +11,6 @@ output shape RallyHandoffCommentText: "Rally Handoff Comment Text"
     kind: CommentText
 
 
-output shape RallyLifecycleStatusText: "Rally Lifecycle Status Text"
-    kind: CommentText
-
-
 output RallyCurrentArtifactHandoff: "Rally Current Artifact Handoff"
     target: RallyIssueLedgerAppend
     shape: RallyHandoffCommentText

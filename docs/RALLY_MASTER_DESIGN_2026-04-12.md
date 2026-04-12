@@ -774,16 +774,21 @@ Likely source layout:
 ```text
 stdlib/
   rally/
+    examples/
+      rally_turn_result.example.json
     prompts/
       rally/
         handoffs.prompt
         currentness.prompt
+        turn_results.prompt
+    schemas/
+      rally_turn_result.schema.json
 ```
 
 With the assumed Doctrine cross-root import contract, `stdlib/rally/prompts/`
 is the configured additional prompt root and `stdlib/rally/prompts/rally/` is
 the actual importable package path. Future flows therefore import
-`rally.handoffs` and `rally.currentness`.
+`rally.handoffs`, `rally.currentness`, and `rally.turn_results`.
 
 What those modules should roughly own:
 
@@ -798,6 +803,11 @@ What those modules should roughly own:
   - the reusable convention for `current artifact ... via ...`
   - the reusable convention for `current none`
   - any very small helper workflows or declarations needed so Rally flows do not hand-author the carrier pattern from scratch every time
+
+- `turn_results.prompt`
+  - the shared JSON-schema-backed final turn result shape for Rally-managed turns
+  - the minimal tagged runtime outcome union Rally expects from the adapter
+  - no durable handoff prose, no ledger target, and no scheduler keywords
 
 The intended usage pattern is:
 
@@ -837,8 +847,12 @@ They live in the Doctrine-authored Rally standard library and should answer:
 - who owns next
 
 End-of-turn results are the turn-ending assistant response contract.
-They are not issue-ledger prose and they are not part of the handoff stdlib.
+They are not issue-ledger prose and they are not part of the handoff/currentness contracts.
 They tell Rally what runtime action to take after the agent turn ends.
+
+Rally should still keep one tiny shared authored module for this contract so
+flows do not drift.
+That module is `rally.turn_results`.
 
 The Doctrine-side feature Rally wants here is a generic authored final-output
 designation such as `final_output:` that points at an existing `output`
@@ -864,13 +878,14 @@ The minimum tagged outcome family should be:
 
 - `handoff`
   - the turn produced a normal same-issue handoff result
-  - Rally appends the authored handoff block to `home/issue.md` and routes to the declared next owner
+  - the final JSON only says that Rally should take the handoff path
+  - Rally appends the separate authored handoff block to `home/issue.md` and routes from that trusted handoff content
 - `done`
   - the flow is complete
-  - Rally appends a final closeout block and marks the run done
+  - Rally appends a Rally-generated final closeout block and marks the run done
 - `blocker`
   - the flow is ending in blocker or error state
-  - Rally appends the blocker record and stops the run cleanly
+  - Rally appends a Rally-generated blocker record and stops the run cleanly
 - `sleep`
   - the flow is not done and wants the runner to wake it again later
   - Rally records the request, blocks inline in the simple model, and later wakes the same flow again
@@ -884,57 +899,41 @@ Initial required end-of-turn JSON shape:
 
 ```json
 {
-  "type": "object",
   "oneOf": [
     {
+      "type": "object",
       "properties": {
-        "kind": { "const": "handoff" },
-        "what_changed": { "type": "string" },
-        "use_now": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "next_owner": { "type": "string" },
-        "current_artifact": { "type": "string" }
+        "kind": { "const": "handoff" }
       },
-      "required": ["kind", "what_changed", "use_now", "next_owner"],
+      "required": ["kind"],
       "additionalProperties": false
     },
     {
+      "type": "object",
       "properties": {
         "kind": { "const": "done" },
-        "completed_work": { "type": "string" },
-        "use_now": {
-          "type": "array",
-          "items": { "type": "string" }
-        }
+        "summary": { "type": "string" }
       },
-      "required": ["kind", "completed_work", "use_now"],
+      "required": ["kind", "summary"],
       "additionalProperties": false
     },
     {
+      "type": "object",
       "properties": {
         "kind": { "const": "blocker" },
-        "blocker_reason": { "type": "string" },
-        "use_now": {
-          "type": "array",
-          "items": { "type": "string" }
-        }
+        "reason": { "type": "string" }
       },
-      "required": ["kind", "blocker_reason", "use_now"],
+      "required": ["kind", "reason"],
       "additionalProperties": false
     },
     {
+      "type": "object",
       "properties": {
         "kind": { "const": "sleep" },
-        "sleep_reason": { "type": "string" },
-        "sleep_duration_seconds": { "type": "integer", "minimum": 1 },
-        "use_now": {
-          "type": "array",
-          "items": { "type": "string" }
-        }
+        "reason": { "type": "string" },
+        "sleep_duration_seconds": { "type": "integer", "minimum": 1 }
       },
-      "required": ["kind", "sleep_reason", "sleep_duration_seconds", "use_now"],
+      "required": ["kind", "reason", "sleep_duration_seconds"],
       "additionalProperties": false
     }
   ]
@@ -1716,6 +1715,8 @@ The current best direction is:
 - crash recovery should stay operator-driven rather than background-automated.
 - shared handoff and currentness behavior should come from a mandatory
   Doctrine-native Rally standard library.
+- the shared final turn result contract should live in one tiny Rally-owned
+  Doctrine module such as `rally.turn_results`, separate from handoff/currentness.
 - end-of-turn behavior should come from an explicit structured return contract
   that Rally passes to the adapter as a strict JSON schema, not from invented
   Doctrine lifecycle keywords.
@@ -1766,9 +1767,9 @@ Rally needs shared behavior, but it should come from Doctrine, not an ad hoc run
 Suggested solution:
 Ship a mandatory Rally standard library written in Doctrine and require all Rally flows and agents to inherit from it.
 That standard library should live in Rally under `stdlib/rally/`, not in the Doctrine compiler repo.
-That standard library should start by owning the shared conventions for current artifact handoff, `current none` route-only handoff, and trusted currentness carriers.
-It should not own end-of-turn runtime control results.
-Those should come from the separate final-output contract described above.
+That standard library should start by owning the shared conventions for current artifact handoff, `current none` route-only handoff, trusted currentness carriers, and one tiny shared `rally.turn_results` final-output contract module.
+It should not own lifecycle keywords or scheduler semantics.
+Those should stay in Rally runtime behavior, not in Doctrine syntax.
 It should stay light-touch.
 It should not define a universal framework-level artifact family or file taxonomy.
 Concrete artifacts remain flow-owned outputs.
