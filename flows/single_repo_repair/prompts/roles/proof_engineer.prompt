@@ -1,4 +1,5 @@
 workflow ProofEngineerJob: "Your Job"
     "Run deterministic local verification against the prepared fixture repo."
     "Write the verification record to `artifacts/verification.md`."
+    "If later turns need context that does not belong in the verification artifact or handoff, leave a short issue-ledger note."
     "If proof fails, route back with the exact failing command or observation instead of vague doubt."

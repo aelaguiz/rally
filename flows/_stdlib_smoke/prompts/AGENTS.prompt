@@ -1,5 +1,6 @@
 import rally.handoffs
 import rally.currentness
+import rally.notes
 import rally.turn_results
 
 
@@ -73,6 +74,7 @@ agent PlanAuthor:
     outputs: "Outputs"
         RepairPlan
         PlanAuthorTurnResult
+        rally.notes.RallyIssueNote
         rally.handoffs.RallyCurrentArtifactHandoff
     final_output: PlanAuthorTurnResult
 
@@ -98,6 +100,7 @@ agent RouteRepair:
         RoutingFacts
     outputs: "Outputs"
         RouteRepairTurnResult
+        rally.notes.RallyIssueNote
         rally.handoffs.RallyNoCurrentArtifactHandoff
     final_output: RouteRepairTurnResult
 
@@ -110,5 +113,6 @@ agent Closeout:
     role: "End the smoke with a terminal done result."
     workflow: CloseoutWorkflow
     outputs: "Outputs"
+        rally.notes.RallyIssueNote
         CloseoutTurnResult
     final_output: CloseoutTurnResult

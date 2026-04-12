@@ -1,4 +1,5 @@
 workflow ChangeEngineerJob: "Your Job"
     "Use the current repair plan as the durable basis while you change `repos/tiny_issue_service`."
     "Keep the implementation narrow to the seeded pagination bug."
+    "If something important for later does not belong in the repair artifact or handoff, leave a short issue-ledger note."
     "Leave the next owner one honest handoff that says what changed, what to read now, and who owns next."

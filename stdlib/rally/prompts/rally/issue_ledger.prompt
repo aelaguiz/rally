@@ -1,0 +1,7 @@
+output target RallyIssueLedgerAppend: "Rally Issue Ledger Append"
+    destination: "Destination"
+        "Append this rendered block to the live `home/issue.md` ledger for the current run."
+
+    append_policy: "Append Policy"
+        "Rally owns the concrete file path, ordering, and snapshot behavior."
+        "The authored contract only decides the block shape and fields."

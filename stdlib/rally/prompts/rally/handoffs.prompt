@@ -1,10 +1,4 @@
-output target RallyIssueLedgerAppend: "Rally Issue Ledger Append"
-    destination: "Destination"
-        "Append this rendered block to the live `home/issue.md` ledger for the current run."
-
-    append_policy: "Append Policy"
-        "Rally owns the concrete file path, ordering, and snapshot behavior."
-        "The authored contract only decides the block shape and fields."
+import rally.issue_ledger
 
 
 output shape RallyHandoffCommentText: "Rally Handoff Comment Text"
@@ -12,7 +6,7 @@ output shape RallyHandoffCommentText: "Rally Handoff Comment Text"
 
 
 output RallyCurrentArtifactHandoff: "Rally Current Artifact Handoff"
-    target: RallyIssueLedgerAppend
+    target: rally.issue_ledger.RallyIssueLedgerAppend
     shape: RallyHandoffCommentText
     requirement: Required
 
@@ -38,7 +32,7 @@ output RallyCurrentArtifactHandoff: "Rally Current Artifact Handoff"
 
 
 output RallyNoCurrentArtifactHandoff: "Rally No-Current Handoff"
-    target: RallyIssueLedgerAppend
+    target: rally.issue_ledger.RallyIssueLedgerAppend
     shape: RallyHandoffCommentText
     requirement: Required
 

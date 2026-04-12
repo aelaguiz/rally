@@ -1,0 +1,22 @@
+import rally.issue_ledger
+
+
+output shape RallyIssueNoteText: "Rally Issue Note Text"
+    kind: CommentText
+
+
+output RallyIssueNote: "Rally Issue Note"
+    target: rally.issue_ledger.RallyIssueLedgerAppend
+    shape: RallyIssueNoteText
+    requirement: Advisory
+
+    purpose: "Purpose"
+        "Leave a durable note in the live issue ledger when it would help a downstream owner or a later turn of the same owner."
+        "Use this for context that matters, but is not itself the routing or currentness contract."
+
+    guardrails: "Guardrails"
+        "Do not use an issue note instead of a handoff when the turn is actually routing work to a next owner."
+        "Do not rely on a note to carry `current_artifact`, `use_now`, or `next_owner` truth."
+
+    standalone_read: "Standalone Read"
+        "A later reader should be able to read this note alone and understand the context worth preserving."

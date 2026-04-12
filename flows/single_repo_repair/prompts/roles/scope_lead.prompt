@@ -1,4 +1,5 @@
 workflow ScopeLeadJob: "Your Job"
     "Read the operator brief before you touch the repo."
     "Decide the narrow repair seam and write the durable repair plan to `artifacts/repair_plan.md`."
+    "If context would help a downstream owner or your later closeout turn and does not belong in the artifact or handoff, leave a short issue-ledger note."
     "When accepted proof returns later, read the accepted verification record and close the run cleanly instead of reopening the same work."
