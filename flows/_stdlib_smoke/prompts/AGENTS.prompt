@@ -1,0 +1,70 @@
+import rally.handoffs
+import rally.currentness
+
+
+input WorkBrief: "Work Brief"
+    source: Prompt
+    shape: MarkdownDocument
+    requirement: Required
+    "Use the prompt brief as the work description for the smoke flow."
+
+
+input RoutingFacts: "Routing Facts"
+    source: Prompt
+    shape: JsonObject
+    requirement: Required
+    "Use the routing facts that say whether the smoke should demonstrate the shared no-current local-repair path."
+
+
+output RepairPlan: "Repair Plan"
+    target: File
+        path: "artifacts/repair_plan.md"
+    shape: MarkdownDocument
+    requirement: Required
+    "Write the current repair plan to a flow-owned artifact."
+
+
+workflow PlanAuthorWorkflow[rally.currentness.RallyCarryCurrentArtifactConvention]: "Plan Author Workflow"
+    inherit when_to_use
+    inherit law_form
+    inherit carrier_rule
+    inherit pickup_rule
+
+    smoke_note: "Smoke Note"
+        "This smoke keeps `artifacts/repair_plan.md` as the durable current artifact."
+
+    law:
+        current artifact RepairPlan via rally.handoffs.RallyCurrentArtifactHandoff.current_artifact
+
+
+agent PlanAuthor:
+    role: "Draft the repair plan and leave one current-artifact handoff."
+    workflow: PlanAuthorWorkflow
+    inputs: "Inputs"
+        WorkBrief
+    outputs: "Outputs"
+        RepairPlan
+        rally.handoffs.RallyCurrentArtifactHandoff
+
+
+workflow RouteRepairWorkflow[rally.currentness.RallyNoCurrentArtifactConvention]: "Route Repair Workflow"
+    inherit when_to_use
+    inherit law_form
+    inherit pickup_rule
+
+    smoke_note: "Smoke Note"
+        "This smoke proves the no-current handoff path while ownership stays local."
+
+    law:
+        active when RoutingFacts.needs_route_repair
+        current none
+        stop "No durable artifact is current yet, so the same owner keeps the issue until repair completes."
+
+
+agent RouteRepair:
+    role: "Leave the shared no-current handoff when the smoke is only repairing locally."
+    workflow: RouteRepairWorkflow
+    inputs: "Inputs"
+        RoutingFacts
+    outputs: "Outputs"
+        rally.handoffs.RallyNoCurrentArtifactHandoff

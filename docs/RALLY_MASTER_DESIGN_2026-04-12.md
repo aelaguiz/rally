@@ -249,7 +249,7 @@ It owns generic authored semantics and generic compiler support.
 - typed workflow semantics such as currentness, invalidation, review, route-only behavior, trust surfaces, and other generic artifact-truth law
 - compilation into `AGENTS.md` and any other generated doctrine artifacts
 - machine-readable emitted structures Rally may need, such as flow graphs or other generic compiler outputs
-- generic lifecycle constructs only if they are reusable language or compiler semantics rather than Rally-only runtime glue
+- generic final-turn contract designation and related emitted metadata when Rally needs a clean authored way to name the turn-ending response contract
 - any generic enabling feature Rally needs in order to keep the design clean
 
 Doctrine does not own Rally's standard library contents.
@@ -738,25 +738,212 @@ The important thing to specify now is that the standard library is:
 
 We should not try to fully author that standard library in this doc.
 
-What it should minimally define is the common Doctrine contract for:
+What it should minimally define is the smallest shared Doctrine contract that keeps Rally flows disciplined without turning the standard library into a second framework inside the framework.
 
-- normal wake and resume behavior
-- blocker or error termination
-- normal completion
-- sleep and later wake-up
+The first job of the standard library is not a universal artifact taxonomy.
+It is a small portable currentness and handoff convention:
 
-Those end outcomes should be treated as standard Rally conventions:
+- productive turns emit explicit Doctrine `output` artifacts
+- one artifact is explicitly current when a turn ends, or the turn uses `current none`
+- that currentness is carried through a trusted handoff field
+- downstream turns read declared `input` artifacts instead of reconstructing truth from prose alone
 
-- blocker or error
-  - something is wrong and the flow is ending with a human-readable explanation of why
-- done
-  - the flow is complete and ends with a human-readable summary of what work was completed
-- sleep
-  - the flow is not done, but it wants Rally to wake it again after a requested duration such as two minutes, five minutes, or ten minutes
-  - in the simple current model, the running Rally process can just block for that duration and then wake the flow again
+That means the standard library should start with light-touch conventions for:
+
+- shared handoff output shape for turns that leave one current artifact
+- shared handoff output shape for route-only or blocked turns that leave no current artifact
+- a trusted `current_artifact` carrier field and the currentness law that uses it
+- the minimal companion fields that make the handoff readable on its own, such as what changed, what to use now, and next owner
+
+The standard library should not standardize every artifact body.
+It should not bless one framework-level plan, report, or similar universal file shape.
+Those concrete artifacts stay flow-owned outputs.
+If a flow wants `repair_plan.md`, `verification.md`, `acceptance_verdict.md`, or something else, that is the flow's choice, not a Rally primitive.
+
+Inputs should stay only lightly standardized.
+The important rule is that if a downstream turn depends on a current artifact, it declares that artifact as an `input`.
+If that artifact has meaningful shape, the flow may attach a Doctrine `document` or `schema`.
+The standard library does not need a giant universal input model to make this work.
+
+### Provisional Standard Library Sketch
+
+The first-pass standard library should be sketched concretely enough that we know what we are building, while still staying intentionally small.
+
+Likely source layout:
+
+```text
+stdlib/
+  rally/
+    prompts/
+      rally/
+        handoffs.prompt
+        currentness.prompt
+```
+
+With the assumed Doctrine cross-root import contract, `stdlib/rally/prompts/`
+is the configured additional prompt root and `stdlib/rally/prompts/rally/` is
+the actual importable package path. Future flows therefore import
+`rally.handoffs` and `rally.currentness`.
+
+What those modules should roughly own:
+
+- `handoffs.prompt`
+  - the Rally-owned output target for appending a handoff or status block into the live issue ledger
+  - one shared output shape for turns that leave one current artifact
+  - one shared output shape for route-only, blocked, or review turns that leave no current artifact
+  - the minimal shared fields: what changed, current artifact when one exists, what to use now, and next owner
+  - the trusted carrier fields that downstream turns may rely on
+
+- `currentness.prompt`
+  - the reusable convention for `current artifact ... via ...`
+  - the reusable convention for `current none`
+  - any very small helper workflows or declarations needed so Rally flows do not hand-author the carrier pattern from scratch every time
+
+The intended usage pattern is:
+
+- a flow declares its own concrete artifact outputs
+- that same flow reuses the Rally stdlib handoff output
+- the producing turn carries one current artifact through the stdlib handoff carrier
+- the downstream turn declares the artifact it depends on as an explicit input
+- route-only or blocked turns use the stdlib no-current handoff plus `current none`
+
+That means a flow-owned artifact might be something like an analysis note, implementation artifact, verification artifact, or acceptance artifact.
+The Rally standard library does not decide that artifact's body or filename.
+It only decides how the turn carries forward current truth about that artifact.
+
+The intended authored shape should be roughly:
+
+```text
+flow-owned output artifact
+  + stdlib handoff output
+  + stdlib currentness convention
+  = portable pickup truth for the next owner
+```
+
+That is enough structure for the first example flows.
+It gives Rally strong output and pickup discipline without locking the whole framework into a giant predeclared artifact system.
+
+### Handoffs Versus End-Of-Turn Results
+
+Decision:
+Rally will use two separate surfaces, not one overloaded lifecycle surface.
+
+Handoffs are durable issue-ledger content for the next owner.
+They live in the Doctrine-authored Rally standard library and should answer:
+
+- what changed
+- what artifact is current now when one exists
+- what to use now
+- who owns next
+
+End-of-turn results are the turn-ending assistant response contract.
+They are not issue-ledger prose and they are not part of the handoff stdlib.
+They tell Rally what runtime action to take after the agent turn ends.
+
+The Doctrine-side feature Rally wants here is a generic authored final-output
+designation such as `final_output:` that points at an existing `output`
+contract.
+That feature can stay generic and optional in Doctrine.
+Doctrine can support both prose and JSON final outputs in general.
+
+Rally's policy layer is stricter:
+
+- for Rally-managed end-of-turn control, the agent must declare a final output
+- that final output must resolve to a `TurnResponse` output
+- that final output must be backed by a JSON schema
+- Rally passes that schema to the adapter as the required final turn contract
+- Rally interprets the returned JSON into runtime behavior
+
+For Codex, this means Rally should use the adapter's existing strict JSON
+final-output path rather than inventing Doctrine lifecycle keywords.
+For Rally-on-Codex, JSON mode for this final turn return is required, not
+optional.
+Free-form final text is insufficient for end-of-turn control flow.
+
+The minimum tagged outcome family should be:
+
+- `handoff`
+  - the turn produced a normal same-issue handoff result
+  - Rally appends the authored handoff block to `home/issue.md` and routes to the declared next owner
+- `done`
+  - the flow is complete
+  - Rally appends a final closeout block and marks the run done
+- `blocker`
+  - the flow is ending in blocker or error state
+  - Rally appends the blocker record and stops the run cleanly
+- `sleep`
+  - the flow is not done and wants the runner to wake it again later
+  - Rally records the request, blocks inline in the simple model, and later wakes the same flow again
+
+The important rule is that this surface should be machine-shaped, not
+prose-shaped.
+For example, sleep should carry a typed numeric duration such as seconds, not a
+free-text phrase like "five minutes."
+
+Initial required end-of-turn JSON shape:
+
+```json
+{
+  "type": "object",
+  "oneOf": [
+    {
+      "properties": {
+        "kind": { "const": "handoff" },
+        "what_changed": { "type": "string" },
+        "use_now": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "next_owner": { "type": "string" },
+        "current_artifact": { "type": "string" }
+      },
+      "required": ["kind", "what_changed", "use_now", "next_owner"],
+      "additionalProperties": false
+    },
+    {
+      "properties": {
+        "kind": { "const": "done" },
+        "completed_work": { "type": "string" },
+        "use_now": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["kind", "completed_work", "use_now"],
+      "additionalProperties": false
+    },
+    {
+      "properties": {
+        "kind": { "const": "blocker" },
+        "blocker_reason": { "type": "string" },
+        "use_now": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["kind", "blocker_reason", "use_now"],
+      "additionalProperties": false
+    },
+    {
+      "properties": {
+        "kind": { "const": "sleep" },
+        "sleep_reason": { "type": "string" },
+        "sleep_duration_seconds": { "type": "integer", "minimum": 1 },
+        "use_now": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["kind", "sleep_reason", "sleep_duration_seconds", "use_now"],
+      "additionalProperties": false
+    }
+  ]
+}
+```
 
 This should stay flow-driven.
-Rally does not need extra config fields for end agents or terminal conditions.
+Rally does not need extra config fields for end agents or terminal conditions,
+but it does need one explicit adapter return contract for the end of each turn.
 The flow ends when it ends, and it does so through the mandatory Doctrine-native standard library conventions.
 
 ## Proposed `flow.yaml`
@@ -1164,7 +1351,67 @@ Required adapter contract for the Codex adapter:
 - choose `cwd` explicitly from Rally instead of inheriting ambient operator state
 - inject the compiled agent doctrine explicitly through Codex's explicit instructions channel, rather than relying on ambient project-doc discovery
 - assemble Codex MCP config explicitly from Rally's allowlisted MCP definitions
+- require a strict final-turn JSON schema for Rally-managed turn completion so
+  end-of-turn control flow does not depend on parsing free-form text
 - fail closed if Rally cannot prove what instruction surface Codex is actually seeing
+
+### Structured Final Turn Return
+
+After inspecting the local Codex code, Rally should treat strict JSON final turn
+returns as a real existing adapter capability, not as a future hope.
+
+Relevant implementation notes from Codex:
+
+- per-turn turn context already carries `final_output_json_schema`
+- session updates can override that schema per turn before the turn starts
+- prompt construction forwards that schema as the prompt `output_schema`
+- the model request path turns that schema into strict JSON output format
+- Codex validates the final return against that schema rather than relying on
+  prompt prose alone
+- Codex's own guardian/review path already uses this mechanism as a real shipped
+  structured-output pattern
+
+The concrete evidence in the current Codex codebase is:
+
+- `TurnContext.final_output_json_schema` in `codex-rs/core/src/codex.rs`
+- per-turn application in `new_turn_from_configuration(...)`
+- prompt assembly via `Prompt { output_schema: ... }`
+- request serialization that emits:
+  - `text.format.name = "codex_output_schema"`
+  - `text.format.type = "json_schema"`
+  - `text.format.strict = true`
+  - `text.format.schema = <provided schema>`
+- shipped test proof in `codex-rs/core/tests/suite/json_result.rs`
+- shipped production precedent in `codex-rs/core/src/guardian/prompt.rs` and
+  `codex-rs/core/src/guardian/review_session.rs`
+
+Rally should use that exact path.
+It should not rely on prompt prose alone when the adapter already supports a
+strict final JSON contract.
+
+Doctrine only needs to expose the authored final-output contract cleanly.
+Rally can impose the stricter policy on top:
+
+- the generic Doctrine feature can remain optional overall
+- Rally-managed turns that need machine-readable completion must declare a
+  final output
+- Rally requires that final output to resolve to `TurnResponse`
+- Rally requires that final output to be JSON-schema-backed
+- Rally passes the resolved schema into Codex as
+  `final_output_json_schema`
+- Codex enforces conformance at generation time
+- Rally consumes the validated JSON result and maps it to `handoff`, `done`,
+  `blocker`, or `sleep`
+
+For Codex specifically, the rule should be:
+
+- every Rally-managed turn that needs an end-of-turn result must supply
+  `final_output_json_schema`
+- that schema must describe the full tagged end-of-turn result union
+- Rally should reject adapter output that does not satisfy the schema instead of
+  trying to recover from free-form prose
+- if an adapter cannot enforce an equivalent strict structured return, Rally
+  should treat that adapter as missing required capability for this contract
 
 What this means in practice:
 
@@ -1224,7 +1471,7 @@ What belongs here:
 
 - Doctrine features Rally clearly needs for a clean design
 - Doctrine parser, compiler, or generic authored-semantics support that the Rally standard library depends on
-- generic lifecycle and workflow constructs that should live in Doctrine rather than in ad hoc Rally glue
+- generic final-output designation and emitted-contract support that should live in Doctrine rather than in ad hoc Rally glue
 - any change needed so Rally's mandatory Doctrine-native standard library is clean, explicit, and maintainable
 
 We are not fully specifying those changes yet.
@@ -1252,16 +1499,30 @@ Likely needs:
 - stable resolution rules for shared Doctrine modules
 - authoring ergonomics that do not force Rally into wrapper-only composition tricks
 
-### 2. Generic lifecycle constructs for authored flow behavior
+### 2. Generic final-output designation for authored turn completion
 
-Rally wants wake, resume, sleep, blocker, and done behavior to be Doctrine-native conventions, not just prose habits.
-If those conventions need real authored semantics, Doctrine should supply the generic building blocks.
+Rally does need a generic authored way to declare the final return contract for
+a turn, but that should not mean adding scheduler keywords such as `sleep`,
+`wake`, `resume`, `done`, or `blocker` directly to Doctrine.
+The cleaner design is:
+
+- Doctrine adds a generic final-output designation such as `final_output:`
+  that points at an existing `output`
+- that referenced output can stay ordinary prose in Doctrine generally, or
+  schema-backed JSON when a host needs machine-readable structure
+- Rally resolves that authored contract and applies stricter host policy on top
+- the adapter returns strict JSON when Rally requires machine-readable turn
+  completion
+- Rally interprets the returned JSON into runtime behavior
 
 Likely needs:
 
-- reusable lifecycle/result constructs that can be used beyond Rally
-- a clean authored way to express flow-control outcomes without smuggling them through raw Markdown
-- standard-library-friendly inheritance or composition support for those outcomes
+- a generic `final_output:`-style authored surface or equivalent
+- support for JSON-schema-backed `TurnResponse` final outputs
+- standard-library-friendly composition so Rally can reuse one shared
+  end-of-turn contract across flows
+- emitted machine-readable structure that lets Rally recover the authored final
+  output contract and schema without scraping readback Markdown
 
 ### 3. Machine-readable emitted structures Rally can consume
 
@@ -1421,6 +1682,10 @@ If this works well, it will prove the core thesis before we spend time on broade
 - define the exact wake and resume message templates per runtime adapter
 - define the exact crash-note behavior on operator-driven resume
 - define the exact Codex adapter launch contract: `cwd`, `CODEX_HOME`, `project_doc_max_bytes = 0`, explicit instruction injection, and MCP config assembly
+- define the exact shared end-of-turn JSON schema Rally will require from the
+  adapter
+- define how Doctrine's authored final-return contract maps onto adapter schema
+  injection such as Codex `final_output_json_schema`
 - define what capability isolation Rally can honestly promise with Codex today versus what requires Codex changes
 - define the mandatory surface of the Rally Doctrine standard library without fully authoring it here
 - keep the `Required Supporting Changes In Doctrine` section current instead of routing around it
@@ -1449,9 +1714,17 @@ The current best direction is:
 - per-run logs and the terminal renderer should make excavation and live watching excellent.
 - sleep can stay simple in the current design: block inline and then wake again.
 - crash recovery should stay operator-driven rather than background-automated.
-- shared flow-ending and wake behavior should come from a mandatory Doctrine-native Rally standard library, not extra Rally end-condition config.
+- shared handoff and currentness behavior should come from a mandatory
+  Doctrine-native Rally standard library.
+- end-of-turn behavior should come from an explicit structured return contract
+  that Rally passes to the adapter as a strict JSON schema, not from invented
+  Doctrine lifecycle keywords.
 - that standard library should live in Rally, while Doctrine stays the compiler and gains only generic enabling features.
 - for Codex, instruction isolation should come from Rally controlling `CODEX_HOME`, disabling ambient project-doc loading, and explicitly injecting compiled doctrine.
+- for Codex, Rally should use the existing strict final JSON-schema output path
+  for end-of-turn returns.
+- for Codex, JSON mode for the final turn return should be required whenever
+  Rally needs machine-readable turn completion.
 - full per-agent capability isolation is a stronger claim than instruction isolation and should only be promised where the adapter actually supports it.
 - Rally should not carry over GUI, board, company, or registry product concepts.
 - when Rally needs Doctrine support to stay clean, we should add it to Doctrine and track it explicitly in this doc.
@@ -1493,7 +1766,12 @@ Rally needs shared behavior, but it should come from Doctrine, not an ad hoc run
 Suggested solution:
 Ship a mandatory Rally standard library written in Doctrine and require all Rally flows and agents to inherit from it.
 That standard library should live in Rally under `stdlib/rally/`, not in the Doctrine compiler repo.
-That standard library should own the shared conventions for wake/resume, handoff shape, blocker/done/sleep outcomes, route-only behavior, currentness, and skill/capability law.
+That standard library should start by owning the shared conventions for current artifact handoff, `current none` route-only handoff, and trusted currentness carriers.
+It should not own end-of-turn runtime control results.
+Those should come from the separate final-output contract described above.
+It should stay light-touch.
+It should not define a universal framework-level artifact family or file taxonomy.
+Concrete artifacts remain flow-owned outputs.
 
 ### 4. Composition First, Inheritance Second
 
@@ -1521,7 +1799,9 @@ The likely Doctrine work is generic enabling support such as:
 
 - package and import-root support for `stdlib/rally/`
 - machine-readable emitted structures Rally can consume without scraping Markdown
-- doctrine-native lifecycle constructs for wake, resume, sleep, blocker, and done when those need real authored semantics
+- a generic `final_output:`-style authored designation or equivalent that lets
+  Rally resolve one turn-ending `TurnResponse` contract and, when needed, its
+  JSON schema
 - currentness, review, or capability-declaration extensions if the standard library exposes real generic gaps
 
 What should not move into Doctrine:
@@ -1562,6 +1842,8 @@ Put the default handoff block shape in the Rally standard library.
 Require Rally flows and agents to inherit that default shape, while still allowing narrow flow-specific extension where needed.
 Every handoff should be self-contained enough that the next agent can continue from the issue alone.
 At minimum, it should carry current artifact, what changed, what to use now, and next owner.
+The handoff should carry the current artifact truth and pickup contract, not replace the artifact itself.
+Downstream agents should still read declared artifact inputs rather than treating handoff prose as the full source of truth.
 
 ### 9. Currentness Must Be Typed, Not Just Described
 
@@ -1572,6 +1854,13 @@ Suggested solution:
 Push currentness into Doctrine-native typed carriers and outputs.
 Rally should prefer one current artifact at a time.
 If Rally later truly needs multiple simultaneous live artifacts, add a Doctrine-native workset or multi-current construct instead of encoding it in ad hoc runtime JSON.
+The first standard-library contract here should stay small:
+
+- one trusted `current_artifact` carrier on the shared handoff output
+- one `current artifact ... via ...` or `current none` law per active turn branch
+- flow-owned artifacts declared explicitly as inputs and outputs
+
+That is enough to make current truth portable without imposing one universal artifact schema on every Rally flow.
 
 ### 10. Review Semantics Should Be Reused, Not Rebuilt
 
@@ -1777,13 +2066,87 @@ It is not something Rally should assume from defaults.
 
 ## High-Level Roadmap
 
-Placeholder section.
+### Phase 1: Build The Rally Standard Library
 
-### Phase 1: Illustrative Best-Case Flow
+Build the first mandatory Rally standard library under `stdlib/rally/`.
 
-Build one example set of best-case Rally agents around a single illustrative flow.
+This phase should establish the smallest shared Doctrine contract that all later Rally flows inherit:
 
-The point of this phase is not that the whole system works.
-The point is that this flow expresses the standard we are aiming at.
+- shared handoff output shape for one-current-artifact turns
+- shared handoff output shape for `current none` turns
+- trusted currentness carrier convention
+- the import and composition pattern Rally flows will use to adopt those conventions
 
-When this illustrative flow works end to end with the level of quality, elegance, logging, Doctrine-native behavior, and runtime ergonomics described in this doc, that is Rally's MVP bar.
+In parallel, Rally should define the shared end-of-turn result schema that the
+Codex adapter will enforce as strict final JSON for each turn.
+
+The goal of this phase is to lock the Rally-authored doctrine surface before we start writing placeholder flows against unstable conventions.
+If the standard library is still muddy, the example flow will only bake in noise.
+
+### Phase 2: Build One Placeholder Seeded-Bug Flow
+
+After the standard library exists, build one placeholder illustrative flow around a seeded bug in a small sample repo.
+
+The intended story is:
+
+- the operator gives Rally a brief for a seeded bug
+- Rally prepares one run home
+- a lead agent shapes the work
+- an engineer fixes the code
+- a proof agent verifies it
+- a critic accepts or rejects it
+- the lead closes the run
+
+The point of this phase is not that the full runtime already works end to end.
+The point is to write the canonical placeholder flow surfaces that later runtime work must satisfy.
+
+Use four generic agents with numbered directories so the authored order is obvious and the flow stays domain-neutral:
+
+- `01_scope_lead`
+  - reads the operator brief
+  - decides the exact seam
+  - writes `artifacts/repair_plan.md`
+  - routes the work
+- `02_change_engineer`
+  - works in `home/repos/<sample-repo>`
+  - makes the code change
+  - runs small local checks
+  - hands off the current basis clearly
+- `03_proof_engineer`
+  - runs deterministic verification
+  - writes `artifacts/verification.md`
+  - either clears the gate or routes back with an exact failure
+- `04_acceptance_critic`
+  - gives a findings-first `accept` or `changes requested` verdict
+- `01_scope_lead`
+  - wakes again only to finish with a clean `done` closeout
+
+This is basically the good part of the `paperclip_agents` core-dev route, stripped of GitHub, company state, and product-specific role names.
+
+The placeholder should be authored so later runtime work can prove all of these without changing the flow shape:
+
+- `.prompt` is the only authored instruction source
+- Doctrine emits build output from that source
+- Rally copies that build output into `runs/<run-id>/home/agents/...` with no handwritten overlay docs
+- `flow.yaml` is the runtime contract for numbered agents, per-agent timeouts, allowed skills, at least one allowed MCP, and explicit Codex launch settings
+- `setup/prepare_home.sh` is the contract for preparing the only world the agents see, including the target repo, any needed setup artifacts, `home/issue.md`, home-local skills, and home-local MCP config
+- the run keeps one live semantic ledger in `home/issue.md`, starting with the operator brief exactly as entered and appending setup notes and handoffs after that
+- handoffs stay structured and durable rather than chatty, carrying fields equivalent to what changed, use now, current basis, proof location, and next owner
+- one owner is active at a time, and the next owner can pick up from the run home plus the ledger without hidden state
+- the flow uses real current artifacts, not just the mutable repo, with `artifacts/repair_plan.md` and `artifacts/verification.md` as the first concrete examples
+- proof is independent from implementation
+- critic review is findings-first and emits only `accept` or `changes requested` with an exact next owner
+- Codex state is localized into the flow home, ambient project-doc discovery is disabled, and compiled doctrine is injected explicitly rather than discovered from repo ancestry
+- run-local logs are good enough that one run directory explains what happened without any hidden database or dashboard
+- `run`, `resume`, and `archive` later satisfy the authored flow contract rather than forcing the flow to change shape
+
+Keep the first placeholder flow deliberately narrow:
+
+- no GitHub publish or follow-through behavior
+- no multiple target repos inside home
+- no external-auth MCPs when a small local MCP is enough to exercise the path
+- no sleep scheduling unless the placeholder honestly needs it
+- no fancy domain logic beyond what is needed to require code change, verification, and review
+
+The MVP bar remains the same in spirit:
+once the runtime catches up to these two phases, someone should be able to open one run directory and understand exactly what was asked, what home was prepared, what each agent saw, what changed, what proof ran, what the critic decided, and why the run ended, without any hidden control plane.

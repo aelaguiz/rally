@@ -1,0 +1,7 @@
+[project]
+name = "rally"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+[tool.doctrine.compile]
+additional_prompt_roots = ["stdlib/rally/prompts"]

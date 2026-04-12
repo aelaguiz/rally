@@ -1,0 +1,64 @@
+output target RallyIssueLedgerAppend: "Rally Issue Ledger Append"
+    destination: "Destination"
+        "Append this rendered block to the live `home/issue.md` ledger for the current run."
+
+    append_policy: "Append Policy"
+        "Rally owns the concrete file path, ordering, and snapshot behavior."
+        "The authored contract only decides the block shape and fields."
+
+
+output shape RallyHandoffCommentText: "Rally Handoff Comment Text"
+    kind: CommentText
+
+
+output shape RallyLifecycleStatusText: "Rally Lifecycle Status Text"
+    kind: CommentText
+
+
+output RallyCurrentArtifactHandoff: "Rally Current Artifact Handoff"
+    target: RallyIssueLedgerAppend
+    shape: RallyHandoffCommentText
+    requirement: Required
+
+    what_changed: "What Changed"
+        "Say what changed in this turn."
+
+    current_artifact: "Current Artifact"
+        "Name the one durable artifact that remains current after this turn."
+
+    use_now: "Use Now"
+        "Name the exact artifact or artifacts the next owner should read now."
+
+    next_owner: "Next Owner"
+        "Name the honest next owner."
+
+    trust_surface:
+        current_artifact
+        use_now
+        next_owner
+
+    standalone_read: "Standalone Read"
+        "A downstream owner should be able to read this handoff alone and understand what changed, which artifact remains current, what to read now, and who owns next."
+
+
+output RallyNoCurrentArtifactHandoff: "Rally No-Current Handoff"
+    target: RallyIssueLedgerAppend
+    shape: RallyHandoffCommentText
+    requirement: Required
+
+    what_changed: "What Changed"
+        "Say what changed in this turn."
+
+    use_now: "Use Now"
+        "Name the exact artifact, handoff, or supporting material the next owner should read now when no durable artifact remains current."
+
+    next_owner: "Next Owner"
+        "Name the honest next owner."
+        "If ownership stays local on this turn, say plainly that it stays local."
+
+    trust_surface:
+        use_now
+        next_owner
+
+    standalone_read: "Standalone Read"
+        "A downstream owner should be able to read this handoff alone and understand that no durable artifact is current, what changed, what to use now, and who owns next."

@@ -1,0 +1,32 @@
+import rally.handoffs
+
+
+workflow RallyCarryCurrentArtifactConvention: "Rally Current Artifact Convention"
+    when_to_use: "When To Use"
+        "Use this convention when one durable artifact remains current at the end of the turn."
+        "Emit `rally.handoffs.RallyCurrentArtifactHandoff` alongside the flow-owned artifact output that stays current."
+
+    law_form: "Law Form"
+        "Author one explicit workflow-law line in the consuming flow:"
+        "`current artifact <FlowOwnedArtifact> via rally.handoffs.RallyCurrentArtifactHandoff.current_artifact`"
+
+    carrier_rule: "Carrier Rule"
+        "Keep the shared handoff trustworthy by carrying `current_artifact`, `use_now`, and `next_owner` on the shared Rally handoff output."
+
+    pickup_rule: "Pickup Rule"
+        "The downstream owner still declares the durable artifact as an input."
+        "The handoff carries pickup truth; it does not replace the artifact."
+
+
+workflow RallyNoCurrentArtifactConvention: "Rally No-Current Convention"
+    when_to_use: "When To Use"
+        "Use this convention when the turn ends honestly with no durable artifact still current."
+        "Emit `rally.handoffs.RallyNoCurrentArtifactHandoff` for route-only, blocked, or review outcomes that keep no current artifact."
+
+    law_form: "Law Form"
+        "Author one explicit workflow-law or review outcome line in the consuming flow:"
+        "`current none`"
+
+    pickup_rule: "Pickup Rule"
+        "Use the no-current handoff to tell the next owner what changed, what to read now, and who owns next."
+        "Do not pretend a durable artifact is current just to make routing easier."
