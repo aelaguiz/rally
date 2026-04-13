@@ -29,6 +29,11 @@ name = "poem_loop"
 entrypoint = "flows/poem_loop/prompts/AGENTS.prompt"
 output_dir = "flows/poem_loop/build/agents"
 
+[[tool.doctrine.emit.targets]]
+name = "rally-kernel"
+entrypoint = "skills/rally-kernel/prompts/SKILL.prompt"
+output_dir = "skills/rally-kernel/build"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

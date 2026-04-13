@@ -32,7 +32,7 @@ from rally.domain.turn_result import (
     TurnResult,
 )
 from rally.errors import RallyConfigError, RallyStateError, RallyUsageError
-from rally.services.flow_build import ensure_flow_agents_built
+from rally.services.flow_build import ensure_flow_assets_built
 from rally.services.flow_loader import load_flow_code, load_flow_definition
 from rally.services.home_materializer import materialize_run_home, prepare_run_home_shell
 from rally.services.issue_editor import (
@@ -88,7 +88,7 @@ def run_flow(
     flow_code = load_flow_code(repo_root=repo_root, flow_name=request.flow_name)
 
     with flow_lock(repo_root=repo_root, flow_code=flow_code):
-        ensure_flow_agents_built(repo_root=repo_root, flow_name=request.flow_name)
+        ensure_flow_assets_built(repo_root=repo_root, flow_name=request.flow_name)
         flow = load_flow_definition(repo_root=repo_root, flow_name=request.flow_name)
         _maybe_archive_replaced_run(
             repo_root=repo_root,
@@ -131,7 +131,7 @@ def resume_run(
     run_record = load_run_record(run_dir=run_dir)
 
     with flow_lock(repo_root=repo_root, flow_code=run_record.flow_code):
-        ensure_flow_agents_built(repo_root=repo_root, flow_name=run_record.flow_name)
+        ensure_flow_assets_built(repo_root=repo_root, flow_name=run_record.flow_name)
         flow = load_flow_definition(repo_root=repo_root, flow_name=run_record.flow_name)
         if request.restart:
             return _restart_run(

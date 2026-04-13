@@ -27,3 +27,5 @@ htmlcov/
 # Local reference repos
 /for_reference_only/
 .codex
+skills/**/build
+**/legacy

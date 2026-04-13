@@ -16,8 +16,8 @@ from rally.services.issue_editor import edit_issue_file_in_editor, resolve_inter
 from rally.services.issue_ledger import snapshot_issue_log
 from rally.services.run_events import RunEventRecorder
 from rally.services.run_store import find_run_dir
+from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
 
-_MANDATORY_SKILLS = ("rally-kernel",)
 _HOME_READY_MARKER = ".rally_home_ready"
 
 
@@ -297,11 +297,8 @@ def _remove_path(path: Path) -> None:
 def _copy_allowed_skills_and_mcps(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:
     skill_sources: dict[str, Path] = {}
     for skill_name in _allowed_skill_names(flow):
-        source = repo_root / "skills" / skill_name
-        if not source.is_dir():
-            raise RallyConfigError(f"Allowed skill does not exist: `{source}`.")
-        _validate_skill_bundle(source=source, skill_name=skill_name)
-        skill_sources[skill_name] = source
+        bundle = resolve_skill_bundle_source(repo_root=repo_root, skill_name=skill_name)
+        skill_sources[skill_name] = bundle.runtime_source_dir()
 
     _sync_named_directories(target_root=run_home / "skills", sources_by_name=skill_sources)
 
@@ -347,7 +344,7 @@ def _allowed_skill_names(flow: FlowDefinition) -> tuple[str, ...]:
     return tuple(
         sorted(
             {
-                *(_MANDATORY_SKILLS),
+                *(MANDATORY_SKILL_NAMES),
                 *(skill for agent in flow.agents.values() for skill in agent.allowed_skills),
             }
         )
@@ -415,24 +412,6 @@ def _run_setup_script(
             code="SETUP OK",
             message=f"Setup script `{flow.setup_home_script.name}` finished.",
         )
-
-
-def _validate_skill_bundle(*, source: Path, skill_name: str) -> None:
-    skill_file = source / "SKILL.md"
-    if not skill_file.is_file():
-        raise RallyConfigError(f"Allowed skill is missing `SKILL.md`: `{skill_file}`.")
-
-    lines = skill_file.read_text(encoding="utf-8").splitlines()
-    if len(lines) < 3 or lines[0].strip() != "---":
-        raise RallyConfigError(
-            f"Skill `{skill_name}` must start with YAML frontmatter so Codex can load it."
-        )
-    if not any(line.strip() == "---" for line in lines[1:]):
-        raise RallyConfigError(
-            f"Skill `{skill_name}` is missing the closing YAML frontmatter marker."
-        )
-
-
 def _render_toml_value(value: object) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"

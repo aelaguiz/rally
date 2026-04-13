@@ -24,8 +24,8 @@ from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_t
 class RunnerTests(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
-        self._build_patcher = patch("rally.services.runner.ensure_flow_agents_built", autospec=True)
-        self.ensure_flow_agents_built = self._build_patcher.start()
+        self._build_patcher = patch("rally.services.runner.ensure_flow_assets_built", autospec=True)
+        self.ensure_flow_assets_built = self._build_patcher.start()
         self.addCleanup(self._build_patcher.stop)
 
     def test_run_flow_creates_pending_run_until_issue_exists(self) -> None:
@@ -237,7 +237,7 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_demo_repo(repo_root=repo_root)
-            self.ensure_flow_agents_built.side_effect = RallyConfigError("build failed")
+            self.ensure_flow_assets_built.side_effect = RallyConfigError("build failed")
 
             with self.assertRaisesRegex(RallyConfigError, "build failed"):
                 run_flow(
@@ -247,7 +247,7 @@ class RunnerTests(unittest.TestCase):
                 )
 
             self.assertFalse((repo_root / "runs" / "active" / "DMO-1").exists())
-            self.ensure_flow_agents_built.assert_called_once_with(repo_root=repo_root, flow_name="demo")
+            self.ensure_flow_assets_built.assert_called_once_with(repo_root=repo_root, flow_name="demo")
 
     def test_resume_run_renders_trace_details_on_tty_and_keeps_plain_log_compact(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -513,6 +513,7 @@ class RunnerTests(unittest.TestCase):
                 (run_dir / "home" / "skills" / "repo-search" / "SKILL.md").read_text(encoding="utf-8"),
                 updated_skill,
             )
+            self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
             self.assertTrue((run_dir / "home" / "mcps" / "fixture-repo" / "server.toml").is_file())
             config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
             self.assertIn("project_doc_max_bytes = 2048", config_text)
@@ -555,6 +556,7 @@ class RunnerTests(unittest.TestCase):
 
             self.assertEqual(first_result.status, RunStatus.BLOCKED)
             self.assertTrue((run_dir / "home" / "skills" / "repo-search" / "SKILL.md").is_file())
+            self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
             self.assertTrue((run_dir / "home" / "mcps" / "fixture-repo" / "server.toml").is_file())
 
             flow_text = flow_path.read_text(encoding="utf-8")
@@ -597,10 +599,36 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(second_result.status, RunStatus.DONE)
             self.assertFalse((run_dir / "home" / "skills" / "repo-search").exists())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
+            self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
             self.assertFalse((run_dir / "home" / "mcps" / "fixture-repo").exists())
             config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
             self.assertEqual(config_text, "project_doc_max_bytes = 0\n")
             self.assertNotIn('mcp_servers."fixture-repo"', config_text)
+
+    def test_run_flow_rejects_doctrine_skill_without_emitted_build(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            shutil.rmtree(repo_root / "skills" / "rally-kernel" / "build")
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Fix the pagination bug.\n", encoding="utf-8")
+                return IssueEditorResult(status="saved", cleaned_text="Fix the pagination bug.\n")
+
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                with self.assertRaisesRegex(RallyConfigError, "missing emitted `build/SKILL.md`"):
+                    run_flow(
+                        repo_root=repo_root,
+                        request=RunRequest(flow_name="demo"),
+                        subprocess_run=_FakeCodexRun([]),
+                    )
 
     def test_resume_run_does_not_rerun_setup_after_home_is_ready(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1704,33 +1732,19 @@ class RunnerTests(unittest.TestCase):
         with_setup_script: bool = False,
         max_command_turns: int = 8,
     ) -> None:
-        (repo_root / "skills" / "repo-search").mkdir(parents=True)
-        (repo_root / "skills" / "repo-search" / "SKILL.md").write_text(
-            textwrap.dedent(
-                """\
-                ---
-                name: repo-search
-                description: "Use `rg` to find the exact files and tests for the current task."
-                ---
-
-                # Repo Search
-                """
-            ),
-            encoding="utf-8",
+        self._write_markdown_skill(
+            repo_root=repo_root,
+            skill_name="repo-search",
+            heading="Repo Search",
+            description="Use `rg` to find the exact files and tests for the current task.",
         )
-        (repo_root / "skills" / "rally-kernel").mkdir(parents=True)
-        (repo_root / "skills" / "rally-kernel" / "SKILL.md").write_text(
-            textwrap.dedent(
-                """\
-                ---
-                name: rally-kernel
-                description: "Leave Rally notes and end the turn with valid final JSON."
-                ---
-
-                # Rally Kernel
-                """
-            ),
-            encoding="utf-8",
+        self._write_doctrine_skill(
+            repo_root=repo_root,
+            skill_name="rally-kernel",
+            prompt_title="Rally Kernel",
+            emitted_heading="Rally Kernel",
+            description="Leave Rally notes and end the turn with valid final JSON.",
+            include_reference=True,
         )
         (repo_root / "stdlib" / "rally" / "schemas").mkdir(parents=True)
         (repo_root / "stdlib" / "rally" / "examples").mkdir(parents=True)
@@ -1820,6 +1834,76 @@ class RunnerTests(unittest.TestCase):
         shutil.copytree(source_root / "flows" / "poem_loop", repo_root / "flows" / "poem_loop")
         shutil.copytree(source_root / "skills" / "rally-kernel", repo_root / "skills" / "rally-kernel")
         shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
+
+    def _write_markdown_skill(
+        self,
+        *,
+        repo_root: Path,
+        skill_name: str,
+        heading: str,
+        description: str,
+    ) -> None:
+        skill_root = repo_root / "skills" / skill_name
+        skill_root.mkdir(parents=True, exist_ok=True)
+        (skill_root / "SKILL.md").write_text(
+            textwrap.dedent(
+                f"""\
+                ---
+                name: {skill_name}
+                description: "{description}"
+                ---
+
+                # {heading}
+                """
+            ),
+            encoding="utf-8",
+        )
+
+    def _write_doctrine_skill(
+        self,
+        *,
+        repo_root: Path,
+        skill_name: str,
+        prompt_title: str,
+        emitted_heading: str,
+        description: str,
+        include_reference: bool = False,
+    ) -> None:
+        skill_root = repo_root / "skills" / skill_name
+        (skill_root / "prompts").mkdir(parents=True, exist_ok=True)
+        (skill_root / "prompts" / "SKILL.prompt").write_text(
+            textwrap.dedent(
+                f"""\
+                skill package DemoSkill: "{prompt_title}"
+                    metadata:
+                        name: "{skill_name}"
+                        description: "{description}"
+                    "A test Doctrine skill."
+                """
+            ),
+            encoding="utf-8",
+        )
+        build_root = skill_root / "build"
+        build_root.mkdir(parents=True, exist_ok=True)
+        (build_root / "SKILL.md").write_text(
+            textwrap.dedent(
+                f"""\
+                ---
+                name: {skill_name}
+                description: "{description}"
+                ---
+
+                # {emitted_heading}
+                """
+            ),
+            encoding="utf-8",
+        )
+        if include_reference:
+            (build_root / "references").mkdir(parents=True, exist_ok=True)
+            (build_root / "references" / "note_examples.md").write_text(
+                "# Note examples\n",
+                encoding="utf-8",
+            )
 
     def _write_compiled_agent(
         self,
