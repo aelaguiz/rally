@@ -23,6 +23,7 @@ def append_issue_note(
     repo_root: Path,
     run_id: str,
     note_markdown: str,
+    turn_index: int | None = None,
     now: datetime | None = None,
 ) -> IssueNoteAppendResult:
     note_body = _normalize_note_body(note_markdown)
@@ -33,6 +34,7 @@ def append_issue_note(
         source="rally issue note",
         detail_lines=(),
         body=note_body,
+        turn_index=turn_index,
         now=now,
     )
 
@@ -67,10 +69,13 @@ def append_issue_event(
     source: str,
     detail_lines: Iterable[str],
     body: str | None = None,
+    turn_index: int | None = None,
     now: datetime | None = None,
 ) -> IssueNoteAppendResult:
     if not run_id.strip():
         raise RallyStateError("Run id must not be empty.")
+    if turn_index is not None and turn_index < 1:
+        raise RallyStateError("Turn index must be 1 or greater when present.")
 
     timestamp = now or datetime.now(UTC)
     issue_file = _resolve_issue_file(repo_root=repo_root, run_id=run_id)
@@ -83,6 +88,7 @@ def append_issue_event(
         source=source,
         detail_lines=list(detail_lines),
         body=body,
+        turn_index=turn_index,
         timestamp=timestamp,
     )
     updated_issue = _append_block(current_text=issue_file.read_text(encoding="utf-8"), block=block)
@@ -167,15 +173,22 @@ def _format_issue_block(
     source: str,
     detail_lines: list[str],
     body: str | None,
+    turn_index: int | None,
     timestamp: datetime,
 ) -> str:
     rendered_time = timestamp.astimezone(UTC).isoformat().replace("+00:00", "Z")
     lines = [
         f"## {title}",
         f"- Run ID: `{run_id}`",
-        f"- Time: `{rendered_time}`",
-        f"- Source: `{source}`",
     ]
+    if turn_index is not None:
+        lines.append(f"- Turn: `{turn_index}`")
+    lines.extend(
+        [
+            f"- Time: `{rendered_time}`",
+            f"- Source: `{source}`",
+        ]
+    )
     lines.extend(f"- {line}" for line in detail_lines)
     if body:
         lines.extend(("", body))
@@ -183,11 +196,9 @@ def _format_issue_block(
 
 
 def _append_block(*, current_text: str, block: str) -> str:
-    if not current_text:
-        return block
-    if current_text.endswith("\n"):
-        return f"{current_text}\n{block}"
-    return f"{current_text}\n\n{block}"
+    if not current_text.strip():
+        return f"{current_text}{block}"
+    return f"{current_text.rstrip('\n')}\n\n---\n\n{block}"
 
 
 def _write_snapshot(*, issue_file: Path, timestamp: datetime) -> Path:

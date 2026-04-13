@@ -20,18 +20,15 @@ from rally.errors import RallyConfigError
 SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS = frozenset({1})
 
 
-def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
-    flow_root = repo_root / "flows" / flow_name
-    flow_file = flow_root / "flow.yaml"
-    if not flow_file.is_file():
-        raise RallyConfigError(f"Flow definition does not exist: `{flow_file}`.")
+def load_flow_code(*, repo_root: Path, flow_name: str) -> str:
+    _flow_root, flow_file, payload = _load_flow_payload(repo_root=repo_root, flow_name=flow_name)
+    _require_matching_flow_name(flow_name=flow_name, flow_file=flow_file, payload=payload)
+    return _require_string(payload, "code", context="flow.yaml")
 
-    payload = _load_yaml_mapping(flow_file)
-    flow_payload_name = _require_string(payload, "name", context="flow.yaml")
-    if flow_payload_name != flow_name:
-        raise RallyConfigError(
-            f"Flow name mismatch in `{flow_file}`: expected `{flow_name}`, found `{flow_payload_name}`."
-        )
+
+def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
+    flow_root, flow_file, payload = _load_flow_payload(repo_root=repo_root, flow_name=flow_name)
+    _require_matching_flow_name(flow_name=flow_name, flow_file=flow_file, payload=payload)
     flow_code = _require_string(payload, "code", context="flow.yaml")
 
     build_agents_dir = flow_root / "build" / "agents"
@@ -111,6 +108,22 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
         agents=agents,
         adapter=AdapterConfig(name=adapter_name, prompt_input_command=prompt_input_command, args=adapter_args),
     )
+
+
+def _load_flow_payload(*, repo_root: Path, flow_name: str) -> tuple[Path, Path, Mapping[str, Any]]:
+    flow_root = repo_root / "flows" / flow_name
+    flow_file = flow_root / "flow.yaml"
+    if not flow_file.is_file():
+        raise RallyConfigError(f"Flow definition does not exist: `{flow_file}`.")
+    return flow_root, flow_file, _load_yaml_mapping(flow_file)
+
+
+def _require_matching_flow_name(*, flow_name: str, flow_file: Path, payload: Mapping[str, Any]) -> None:
+    flow_payload_name = _require_string(payload, "name", context="flow.yaml")
+    if flow_payload_name != flow_name:
+        raise RallyConfigError(
+            f"Flow name mismatch in `{flow_file}`: expected `{flow_name}`, found `{flow_payload_name}`."
+        )
 
 
 def _load_compiled_agents(*, repo_root: Path, build_agents_dir: Path) -> dict[str, CompiledAgentContract]:

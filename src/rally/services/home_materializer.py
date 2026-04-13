@@ -58,6 +58,7 @@ def materialize_run_home(
         run_id=run_record.id,
         event_recorder=event_recorder,
     )
+    _sync_compiled_agents(run_home=run_home, flow=flow)
     if _home_ready_marker(run_home).is_file():
         return run_home
 
@@ -68,7 +69,6 @@ def materialize_run_home(
             code="HOME",
             message="Preparing run home.",
         )
-    _copy_compiled_agents(run_home=run_home, flow=flow)
     _copy_allowed_skills_and_mcps(repo_root=repo_root, run_home=run_home, flow=flow)
     _write_codex_config(repo_root=repo_root, run_home=run_home, flow=flow)
     _seed_codex_auth(run_home=run_home)
@@ -264,13 +264,26 @@ def _home_ready_marker(run_home: Path) -> Path:
     return run_home / _HOME_READY_MARKER
 
 
-def _copy_compiled_agents(*, run_home: Path, flow: FlowDefinition) -> None:
+def _sync_compiled_agents(*, run_home: Path, flow: FlowDefinition) -> None:
+    agents_dir = run_home / "agents"
+    expected_slugs = {agent.slug for agent in flow.agents.values()}
+    for existing in sorted(agents_dir.iterdir()):
+        if existing.name in expected_slugs:
+            continue
+        _remove_path(existing)
     for agent in flow.agents.values():
-        shutil.copytree(
-            agent.compiled.markdown_path.parent,
-            run_home / "agents" / agent.slug,
-            dirs_exist_ok=True,
-        )
+        target = agents_dir / agent.slug
+        _remove_path(target)
+        shutil.copytree(agent.compiled.markdown_path.parent, target)
+
+
+def _remove_path(path: Path) -> None:
+    if not path.exists() and not path.is_symlink():
+        return
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+        return
+    path.unlink()
 
 
 def _copy_allowed_skills_and_mcps(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:

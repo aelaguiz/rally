@@ -41,7 +41,9 @@ rally run <flow_name> [--new]
 
 What it does today:
 
-- loads the flow through `src/rally/services/flow_loader.py`
+- reads the flow code from `flow.yaml`
+- takes the flow lock and rebuilds that flow's compiled agents through Doctrine
+- loads the rebuilt flow through `src/rally/services/flow_loader.py`
 - creates a real active run
 - when `--new` is passed, asks before it archives the current active run for the same flow
 - creates the run shell under `runs/active/<run-id>/home/`
@@ -49,6 +51,7 @@ What it does today:
 - strips the starter prompt back out before saving the issue
 - still fails loud unless `home/issue.md` ends up with non-empty text
 - prepares the full run home only after `home/issue.md` is ready
+- refreshes `home/agents/` from the current compiled readback before the next turn starts
 - opens a live color stream on a TTY
 - falls back to plain text when stdout is not a TTY
 - keeps running turns through Codex across handoffs
@@ -82,6 +85,7 @@ rally resume <run-id> [--edit]
 What it does today:
 
 - reloads the stored run
+- takes the flow lock and rebuilds that run's flow through Doctrine before loading compiled agents
 - when `--edit` is passed, opens the current `home/issue.md` in place before Rally tries the turn
 - opens the same issue editor path as `rally run` when `home/issue.md` is missing or blank on a real TTY
 - refuses archived runs
@@ -91,6 +95,7 @@ What it does today:
 - reuses the saved Codex session id when one exists
 - opens the same live stream rules as `rally run`
 - keeps going across handoffs until Rally reaches a real stop point
+- refreshes `home/agents/` from the rebuilt compiled readback before the next turn starts
 
 If `--edit` is passed, Rally edits the real `home/issue.md` file.
 It does not seed or strip the starter prompt for that path.
@@ -127,6 +132,7 @@ What it does today:
 - reads note text from one source
 - rejects an empty note body
 - appends a Rally-stamped note block to the run's `home/issue.md`
+- adds `- Turn: \`N\`` automatically when Rally launched the current turn
 - writes a full snapshot into the run's `issue_history/`
 - prints the updated issue path and snapshot path
 
@@ -159,20 +165,30 @@ After that, Rally appends:
 - turn-result records
 - blocked or done status records when they apply
 
+Rally writes one Markdown thematic break, `---`, between Rally-owned blocks.
+It does not add a leading divider at the top of the file.
+
 If an agent returns `kind: sleep`, Rally records that sleep request in the
 turn-result block and then blocks the run.
 It does not write a `Rally Sleeping` record for new chained runs yet.
 
-The current note block format is:
+The current Rally note block format is:
 
 ```md
 ## Rally Note
 - Run ID: `<run-id>`
+- Turn: `<turn-number>`
 - Time: `<utc-iso8601>`
 - Source: `rally issue note`
 
 <note body>
 ```
+
+Turn-scoped runtime blocks use the same optional `- Turn:` metadata line.
+That includes `Rally Turn Result`, `Rally Done`, `Rally Blocked`, and
+`Rally Sleeping` when the block belongs to one active turn.
+Non-turn blocks such as `Rally Run Started` and `user edited issue.md` stay
+unnumbered.
 
 Snapshot behavior today:
 
@@ -192,6 +208,7 @@ The current Codex launch helper is small and real.
 - `RALLY_RUN_ID`
 - `RALLY_FLOW_CODE`
 - `RALLY_AGENT_SLUG`
+- `RALLY_TURN_NUMBER`
 
 The runner uses those values with this Codex launch shape:
 
@@ -207,10 +224,12 @@ codex exec \
 
 The runtime also:
 
-- injects the compiled `AGENTS.md` readback directly on stdin
+- injects the refreshed run-home `AGENTS.md` readback directly on stdin
 - appends runtime prompt inputs when the flow declares a prompt-input command
 - sets `project_doc_max_bytes = 0`
 - saves the Codex session id per agent for later resume
+- uses `RALLY_TURN_NUMBER` so in-turn `rally issue note` calls can stamp the
+  right turn without asking the agent to manage that metadata
 
 ## MCP Readiness Gap
 
@@ -258,8 +277,8 @@ That event stream now covers:
 - Rally lifecycle events such as run create, resume, home prep, setup, prompt-input load, launch, and final turn status
 - Codex session start or resume events
 - assistant output lines when Codex emits text chunks
-- reasoning lines when Codex emits reasoning chunks
-- tool start, success, and failure summaries when Codex exposes tool events
+- reasoning summary lines when Codex emits reasoning items
+- tool start, success, and failure summaries when Codex exposes item events
 - token-use summaries
 - stderr lines, warnings, and hard errors
 
@@ -291,12 +310,18 @@ The color rules are still simple:
 
 - timestamps: dim
 - Rally lifecycle: cyan
-- agent labels: blue
-- reasoning: dim white
-- tools: yellow
+- agent labels: per-agent background colors in flow order on a TTY
+- reasoning summaries: magenta, with indented detail lines when Codex sends more than one summary line
+- tool traces: bright blue, with indented detail lines for short args, results, exit codes, or changed paths
 - final success state: green
 - warnings: amber
 - failures: red
+
+`logs/rendered.log` still keeps the plain one-line format. The rich detail rows
+only show up in the live TTY stream.
+
+Rally shows the reasoning summary that `codex exec --json` exposes today. It
+does not show raw chain-of-thought.
 
 ## Remaining Gaps
 

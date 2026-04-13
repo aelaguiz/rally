@@ -6,7 +6,16 @@ import unittest
 from pathlib import Path
 
 from rally.services.run_events import RunEvent, RunEventRecorder, render_plain_event_line
-from rally.terminal.display import DisplayContext, build_terminal_display
+from rally.terminal.display import (
+    AgentDisplayIdentity,
+    DisplayContext,
+    _agent_style,
+    _build_agent_style_lookup,
+    _detail_lines,
+    _message_style,
+    _render_event_text,
+    build_terminal_display,
+)
 
 
 class RunEventTests(unittest.TestCase):
@@ -76,6 +85,29 @@ class RunEventTests(unittest.TestCase):
         self.assertIn("01_scope_lead", line)
         self.assertIn("DONE", line)
 
+    def test_render_plain_event_line_stays_single_line_when_trace_has_details(self) -> None:
+        line = render_plain_event_line(
+            RunEvent(
+                ts="2026-04-13T19:30:00Z",
+                run_id="DMO-1",
+                flow_code="DMO",
+                source="codex",
+                kind="tool",
+                code="CMD OK",
+                message="rg -n page src",
+                level="info",
+                data={
+                    "trace_class": "tool",
+                    "detail_lines": ["exit code 0", "12 matches"],
+                },
+                agent_key="01_scope_lead",
+            )
+        )
+
+        self.assertIn("rg -n page src", line)
+        self.assertNotIn("exit code 0", line)
+        self.assertNotIn("12 matches", line)
+
     def test_build_terminal_display_uses_rich_on_tty_streams(self) -> None:
         stream = _FakeTtyStream()
         display = build_terminal_display(
@@ -118,6 +150,130 @@ class RunEventTests(unittest.TestCase):
         self.assertIn("model=adapter default", stream.getvalue())
         self.assertIn("thinking=adapter default", stream.getvalue())
 
+    def test_agent_style_lookup_assigns_different_colors_by_flow_order(self) -> None:
+        styles = _build_agent_style_lookup(_display_context().agent_identities)
+
+        self.assertEqual(styles["01_scope_lead"], "bold bright_white on #005f87")
+        self.assertEqual(styles["scope_lead"], "bold bright_white on #005f87")
+        self.assertEqual(styles["02_change_engineer"], "bold bright_white on #5f005f")
+        self.assertNotEqual(styles["01_scope_lead"], styles["02_change_engineer"])
+
+    def test_agent_style_uses_same_color_for_key_and_slug(self) -> None:
+        styles = _build_agent_style_lookup(_display_context().agent_identities)
+        event = RunEvent(
+            ts="2026-04-13T19:30:00Z",
+            run_id="DMO-1",
+            flow_code="DMO",
+            source="codex",
+            kind="assistant",
+            code="ASSIST",
+            message="Agent event.",
+            level="info",
+            data={},
+            agent_key="03_proof_engineer",
+            agent_slug="proof_engineer",
+        )
+
+        self.assertEqual(
+            _agent_style(event, agent_styles=styles),
+            "bold bright_white on #005f5f",
+        )
+        self.assertEqual(styles["03_proof_engineer"], styles["proof_engineer"])
+
+    def test_agent_style_keeps_cyan_for_non_agent_events(self) -> None:
+        styles = _build_agent_style_lookup(_display_context().agent_identities)
+        event = RunEvent(
+            ts="2026-04-13T19:30:00Z",
+            run_id="DMO-1",
+            flow_code="DMO",
+            source="rally",
+            kind="lifecycle",
+            code="RUN",
+            message="Created run.",
+            level="info",
+            data={},
+        )
+
+        self.assertEqual(_agent_style(event, agent_styles=styles), "bold cyan")
+
+    def test_agent_style_falls_back_to_blue_for_unknown_agent(self) -> None:
+        styles = _build_agent_style_lookup(_display_context().agent_identities)
+        event = RunEvent(
+            ts="2026-04-13T19:30:00Z",
+            run_id="DMO-1",
+            flow_code="DMO",
+            source="codex",
+            kind="assistant",
+            code="ASSIST",
+            message="Unknown agent event.",
+            level="info",
+            data={},
+            agent_key="99_unknown_agent",
+        )
+
+        self.assertEqual(
+            _agent_style(event, agent_styles=styles),
+            "bold bright_white on blue",
+        )
+
+    def test_message_style_uses_magenta_for_thinking_traces(self) -> None:
+        event = RunEvent(
+            ts="2026-04-13T19:30:00Z",
+            run_id="DMO-1",
+            flow_code="DMO",
+            source="codex",
+            kind="reasoning",
+            code="THINK",
+            message="Check the route.",
+            level="info",
+            data={"trace_class": "thinking"},
+            agent_key="01_scope_lead",
+        )
+
+        self.assertEqual(_message_style(event), "magenta")
+
+    def test_message_style_uses_bright_blue_for_tool_traces(self) -> None:
+        event = RunEvent(
+            ts="2026-04-13T19:30:00Z",
+            run_id="DMO-1",
+            flow_code="DMO",
+            source="codex",
+            kind="tool",
+            code="CMD OK",
+            message="rg -n page src",
+            level="info",
+            data={"trace_class": "tool"},
+            agent_key="01_scope_lead",
+        )
+
+        self.assertEqual(_message_style(event), "bright_blue")
+
+    def test_rich_render_includes_detail_rows_for_trace_events(self) -> None:
+        styles = _build_agent_style_lookup(_display_context().agent_identities)
+        event = RunEvent(
+            ts="2026-04-13T19:30:00Z",
+            run_id="DMO-1",
+            flow_code="DMO",
+            source="codex",
+            kind="tool",
+            code="CMD OK",
+            message="rg -n page src",
+            level="info",
+            data={
+                "trace_class": "tool",
+                "detail_lines": ["exit code 0", "12 matches"],
+            },
+            agent_key="01_scope_lead",
+            agent_slug="scope_lead",
+        )
+
+        rendered = _render_event_text(event, agent_styles=styles)
+
+        self.assertEqual(_detail_lines(event), ("exit code 0", "12 matches"))
+        self.assertIn("rg -n page src", rendered.plain)
+        self.assertIn("└ exit code 0", rendered.plain)
+        self.assertIn("└ 12 matches", rendered.plain)
+
 
 class _FakeTtyStream(io.StringIO):
     def isatty(self) -> bool:
@@ -138,6 +294,12 @@ def _display_context(
         reasoning_effort=reasoning_effort,
         start_agent_key="01_scope_lead",
         agent_count=4,
+        agent_identities=(
+            AgentDisplayIdentity(key="01_scope_lead", slug="scope_lead"),
+            AgentDisplayIdentity(key="02_change_engineer", slug="change_engineer"),
+            AgentDisplayIdentity(key="03_proof_engineer", slug="proof_engineer"),
+            AgentDisplayIdentity(key="04_acceptance_critic", slug="acceptance_critic"),
+        ),
     )
 
 

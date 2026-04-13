@@ -24,6 +24,8 @@ class SingleRepoRepairPromptInputsTests(unittest.TestCase):
             "Fix the pagination bug.\n"
             "Make the smallest change.\n"
             "\n"
+            "---\n"
+            "\n"
             "## Rally Note\n"
             "- Run ID: `SRR-1`\n"
             "- Source: `rally issue note`\n"
@@ -39,6 +41,19 @@ class SingleRepoRepairPromptInputsTests(unittest.TestCase):
         brief_text = _MODULE._opening_brief_from_issue(issue_text)
 
         self.assertEqual(brief_text, "Fix the pagination bug.")
+
+    def test_opening_brief_keeps_operator_divider_when_no_rally_block_follows(self) -> None:
+        issue_text = (
+            "Fix the pagination bug.\n"
+            "\n"
+            "---\n"
+            "\n"
+            "Keep this divider in the brief.\n"
+        )
+
+        brief_text = _MODULE._opening_brief_from_issue(issue_text)
+
+        self.assertEqual(brief_text, issue_text.rstrip())
 
 
 if __name__ == "__main__":

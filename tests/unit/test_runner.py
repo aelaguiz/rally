@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -16,9 +17,16 @@ from rally.errors import RallyConfigError, RallyUsageError
 from rally.services.issue_editor import IssueEditorResult
 from rally.services.run_store import archive_run, find_run_dir, load_run_state, write_run_state
 from rally.services.runner import resume_run, run_flow
+from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display
 
 
 class RunnerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self._build_patcher = patch("rally.services.runner.ensure_flow_agents_built", autospec=True)
+        self.ensure_flow_agents_built = self._build_patcher.start()
+        self.addCleanup(self._build_patcher.stop)
+
     def test_run_flow_creates_pending_run_until_issue_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -124,6 +132,10 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("Rally Run Started", issue_text)
             self.assertIn("Rally Turn Result", issue_text)
             self.assertIn("Rally Done", issue_text)
+            self.assertIn("## Rally Run Started\n- Run ID: `DMO-1`\n- Time:", issue_text)
+            self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
+            self.assertIn("## Rally Done\n- Run ID: `DMO-1`\n- Turn: `2`", issue_text)
+            self.assertIn("\n---\n\n## Rally Turn Result", issue_text)
             self.assertIn("session-1", session_text)
             self.assertIn('"code": "RUN"', events_text)
             self.assertIn('"code": "SESSION"', agent_log_text)
@@ -133,6 +145,15 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("Handed off", rendered_text)
             self.assertIn("is done: verified", rendered_text)
             self.assertEqual(launch_record["env"]["RALLY_AGENT_SLUG"], "scope_lead")
+            self.assertEqual(launch_record["env"]["RALLY_TURN_NUMBER"], "1")
+            self.assertEqual(
+                json.loads(
+                    (run_dir / "logs" / "adapter_launch" / "turn-002-change_engineer.json").read_text(
+                        encoding="utf-8"
+                    )
+                )["env"]["RALLY_TURN_NUMBER"],
+                "2",
+            )
             self.assertIn("--output-schema", fake_run.calls[0]["command"])
             self.assertIn("-C", fake_run.calls[0]["command"])
             self.assertIn(
@@ -206,6 +227,201 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("Artistic Rationale", prompt_text)
             self.assertIn("### Rally Turn Result", prompt_text)
             self.assertNotIn("\n### Writer Turn Result\n", prompt_text)
+
+    def test_run_flow_rebuild_failure_stops_before_creating_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            self.ensure_flow_agents_built.side_effect = RallyConfigError("build failed")
+
+            with self.assertRaisesRegex(RallyConfigError, "build failed"):
+                run_flow(
+                    repo_root=repo_root,
+                    request=RunRequest(flow_name="demo"),
+                    subprocess_run=_FakeCodexRun([]),
+                )
+
+            self.assertFalse((repo_root / "runs" / "active" / "DMO-1").exists())
+            self.ensure_flow_agents_built.assert_called_once_with(repo_root=repo_root, flow_name="demo")
+
+    def test_resume_run_renders_trace_details_on_tty_and_keeps_plain_log_compact(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            fake_run = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-1",
+                        "stdout_lines": [
+                            {"type": "thread.started", "thread_id": "session-1"},
+                            {
+                                "type": "item.completed",
+                                "item": {
+                                    "id": "item_1",
+                                    "type": "reasoning",
+                                    "text": "Trace the pagination path\nKeep the route narrow",
+                                },
+                            },
+                            {
+                                "type": "item.started",
+                                "item": {
+                                    "id": "item_2",
+                                    "type": "command_execution",
+                                    "command": 'rg -n "page" src',
+                                    "aggregated_output": "",
+                                    "status": "in_progress",
+                                },
+                            },
+                            {
+                                "type": "item.completed",
+                                "item": {
+                                    "id": "item_2",
+                                    "type": "command_execution",
+                                    "command": 'rg -n "page" src',
+                                    "aggregated_output": "12 matches\nsrc/app.py:8",
+                                    "exit_code": 0,
+                                    "status": "completed",
+                                },
+                            },
+                            {
+                                "type": "turn.completed",
+                                "usage": {
+                                    "input_tokens": 1,
+                                    "cached_input_tokens": 0,
+                                    "output_tokens": 1,
+                                },
+                            },
+                        ],
+                        "last_message": {
+                            "kind": "done",
+                            "next_owner": None,
+                            "summary": "verified",
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+
+            stream = _FakeTtyStream()
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            def display_factory(run_record, flow):
+                return build_terminal_display(
+                    stream=stream,
+                    context=DisplayContext(
+                        run_id=run_record.id,
+                        flow_name=flow.name,
+                        flow_code=flow.code,
+                        adapter_name=flow.adapter.name,
+                        model_name="gpt-5.4",
+                        reasoning_effort="medium",
+                        start_agent_key=flow.start_agent_key,
+                        agent_count=len(flow.agents),
+                        agent_identities=tuple(
+                            AgentDisplayIdentity(key=agent.key, slug=agent.slug)
+                            for agent in flow.agents.values()
+                        ),
+                    ),
+                )
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=fake_run,
+                display_factory=display_factory,
+            )
+
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+            tty_text = _strip_ansi(stream.getvalue())
+
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("Trace the pagination path", tty_text)
+            self.assertIn("└ Keep the route narrow", tty_text)
+            self.assertIn('rg -n "page" src', tty_text)
+            self.assertIn("└ exit code 0", tty_text)
+            self.assertIn("└ 12 matches", tty_text)
+            self.assertIn("Trace the pagination path", rendered_text)
+            self.assertIn('rg -n "page" src', rendered_text)
+            self.assertNotIn("Keep the route narrow", rendered_text)
+            self.assertNotIn("exit code 0", rendered_text)
+            self.assertNotIn("12 matches", rendered_text)
+
+    def test_resume_run_refreshes_run_home_agents_before_next_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root, max_command_turns=1)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            first_turn = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-1",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_owner": "change_engineer",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+            first_result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=first_turn,
+            )
+
+            self.assertEqual(first_result.status, RunStatus.BLOCKED)
+            self.assertTrue(first_turn.calls[0]["kwargs"]["input"].startswith("# ScopeLead\n"))
+
+            updated_markdown = "# Fresh ChangeEngineer\n"
+            (repo_root / "flows" / "demo" / "build" / "agents" / "change_engineer" / "AGENTS.md").write_text(
+                updated_markdown,
+                encoding="utf-8",
+            )
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Fix the pagination bug.\n", encoding="utf-8")
+                return IssueEditorResult(status="saved", cleaned_text="Fix the pagination bug.\n")
+
+            second_turn = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-2",
+                        "last_message": {
+                            "kind": "done",
+                            "next_owner": None,
+                            "summary": "verified",
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+            with patch(
+                "rally.services.runner.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.runner.edit_existing_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                second_result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1", edit_issue=True),
+                    subprocess_run=second_turn,
+                )
+
+            self.assertEqual(second_result.status, RunStatus.DONE)
+            self.assertTrue(second_turn.calls[0]["kwargs"]["input"].startswith(updated_markdown))
+            self.assertEqual(
+                (run_dir / "home" / "agents" / "change_engineer" / "AGENTS.md").read_text(encoding="utf-8"),
+                updated_markdown,
+            )
 
     def test_resume_run_uses_saved_session_and_finishes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -300,6 +516,8 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("Sleep turn results are not supported", state.blocker_reason or "")
             self.assertIn("Rally Turn Result", issue_text)
             self.assertIn("Rally Blocked", issue_text)
+            self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
+            self.assertIn("## Rally Blocked\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
             self.assertNotIn("Rally Sleeping", issue_text)
             self.assertIn("SLEEP", rendered_text)
             self.assertIn("BLOCKED", rendered_text)
@@ -1041,6 +1259,9 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(len(fake_run.calls), 1)
             self.assertIn("max_command_turns=1", state.blocker_reason or "")
             self.assertIn("Rally Blocked", issue_text)
+            self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
+            self.assertIn("## Rally Blocked\n- Run ID: `DMO-1`\n- Time:", issue_text)
+            self.assertNotIn("## Rally Blocked\n- Run ID: `DMO-1`\n- Turn:", issue_text)
             self.assertIn("Handed off", rendered_text)
             self.assertIn("max_command_turns=1", rendered_text)
             self.assertFalse((run_dir / "logs" / "adapter_launch" / "turn-002-change_engineer.json").exists())
@@ -1245,6 +1466,15 @@ class _FakeCodexRun:
             stdout=stdout,
             stderr=str(response.get("stderr", "")),
         )
+
+
+class _FakeTtyStream(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+def _strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 if __name__ == "__main__":

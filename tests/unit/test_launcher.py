@@ -22,6 +22,7 @@ class LauncherTests(unittest.TestCase):
                 run_id="FLW-1",
                 flow_code="FLW",
                 agent_slug="scope_lead",
+                turn_index=2,
             )
 
             self.assertEqual(env["CODEX_HOME"], str(run_home.resolve()))
@@ -29,6 +30,7 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(env["RALLY_RUN_ID"], "FLW-1")
             self.assertEqual(env["RALLY_FLOW_CODE"], "FLW")
             self.assertEqual(env["RALLY_AGENT_SLUG"], "scope_lead")
+            self.assertEqual(env["RALLY_TURN_NUMBER"], "2")
 
     def test_build_codex_launch_env_rejects_blank_run_id(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -43,6 +45,7 @@ class LauncherTests(unittest.TestCase):
                     run_id="",
                     flow_code="FLW",
                     agent_slug="scope_lead",
+                    turn_index=1,
                 )
 
     def test_build_codex_launch_env_rejects_blank_flow_code(self) -> None:
@@ -58,6 +61,23 @@ class LauncherTests(unittest.TestCase):
                     run_id="FLW-1",
                     flow_code="",
                     agent_slug="scope_lead",
+                    turn_index=1,
+                )
+
+    def test_build_codex_launch_env_rejects_non_positive_turn_index(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            run_home = repo_root / "runs" / "FLW-1" / "home"
+            run_home.mkdir(parents=True)
+
+            with self.assertRaisesRegex(RallyStateError, "Turn index must be 1 or greater"):
+                build_codex_launch_env(
+                    repo_root=repo_root,
+                    run_home=run_home,
+                    run_id="FLW-1",
+                    flow_code="FLW",
+                    agent_slug="scope_lead",
+                    turn_index=0,
                 )
 
     def test_write_codex_launch_record_captures_command_and_rally_env(self) -> None:
@@ -75,6 +95,7 @@ class LauncherTests(unittest.TestCase):
                     "CODEX_HOME": str(run_dir / "home"),
                     "RALLY_RUN_ID": "FLW-1",
                     "RALLY_FLOW_CODE": "FLW",
+                    "RALLY_TURN_NUMBER": "2",
                     "IGNORED": "value",
                 },
                 timeout_sec=60,
@@ -86,6 +107,7 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(payload["timeout_sec"], 60)
             self.assertIn("CODEX_HOME", payload["env"])
             self.assertIn("RALLY_RUN_ID", payload["env"])
+            self.assertEqual(payload["env"]["RALLY_TURN_NUMBER"], "2")
             self.assertNotIn("IGNORED", payload["env"])
 
 

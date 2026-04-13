@@ -22,12 +22,23 @@ def main() -> None:
 
 
 def _opening_brief_from_issue(issue_text: str) -> str:
+    lines = issue_text.splitlines()
     brief_lines: list[str] = []
-    for line in issue_text.splitlines():
+    for index, line in enumerate(lines):
         if line.startswith("## Rally "):
+            break
+        if line == "---" and _starts_rally_block(lines=lines, start_index=index + 1):
             break
         brief_lines.append(line)
     return "\n".join(brief_lines).rstrip()
+
+
+def _starts_rally_block(*, lines: list[str], start_index: int) -> bool:
+    for line in lines[start_index:]:
+        if not line.strip():
+            continue
+        return line.startswith("## Rally ")
+    return False
 
 
 def _acceptance_facts(*, run_home: Path) -> dict[str, bool]:

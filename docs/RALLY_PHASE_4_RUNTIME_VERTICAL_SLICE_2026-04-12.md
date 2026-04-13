@@ -32,6 +32,7 @@ logging contract.
 
 What is real today:
 
+- per-command Doctrine rebuild for the current flow before Rally loads compiled agents
 - flow loading plus compiled `AGENTS.contract.json` checks
 - flow codes and run ids shaped like `<FLOW_CODE>-<n>`
 - one active run per flow with a flow lock
@@ -81,6 +82,10 @@ What is outside Phase 4:
 
 The current checked-in runtime surface is:
 
+- `src/rally/services/flow_build.py`
+  - rebuilds one flow's compiled agents through Doctrine `emit_docs`
+  - uses one named emit target per flow from Rally's `pyproject.toml`
+  - fails loud if Doctrine is missing, the target is missing, or the compile fails
 - `src/rally/services/flow_loader.py`
   - loads `flow.yaml`
   - requires compiled `build/agents/*`
@@ -91,6 +96,7 @@ The current checked-in runtime surface is:
   - ships real `resume`
   - ships `resume --edit`
   - ships `issue note`
+  - stamps `- Turn: \`N\`` on in-turn notes automatically when Rally launched that turn
 - `src/rally/services/run_store.py`
   - allocates run ids
   - writes `run.yaml` and `state.yaml`
@@ -99,7 +105,7 @@ The current checked-in runtime surface is:
   - owns flow locks
 - `src/rally/services/home_materializer.py`
   - prepares the run-home layout
-  - copies compiled agents
+  - refreshes `home/agents/` from the current compiled readback on each start or resume
   - copies valid skill and MCP bundles
   - writes Codex config
   - seeds auth links
@@ -115,7 +121,7 @@ The current checked-in runtime surface is:
   - shows a richer startup summary with run, flow, model, thinking level, adapter, and agent facts
   - falls back to plain text when needed
 - `src/rally/adapters/codex/launcher.py`
-  - builds `CODEX_HOME`, `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_AGENT_SLUG`
+  - builds `CODEX_HOME`, `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`
   - writes one adapter launch proof file per turn
 - `src/rally/adapters/codex/event_stream.py`
   - normalizes Codex JSONL into Rally event records
@@ -127,9 +133,11 @@ The current checked-in runtime surface is:
   - saves one session id per agent
   - writes per-turn `exec.jsonl`, `stderr.log`, and `last_message.json`
 - `src/rally/services/runner.py`
+  - rebuilds the current flow under the flow lock before loading compiled agents
   - wires run creation, resume, prompt injection, Codex launch, result handling, state writes, and issue/event logging
   - lets a blocked run retry after `resume --edit` saves a non-empty issue
   - appends a `user edited issue.md` diff block to `home/issue.md` when `resume --edit` changed the issue text
+  - appends Rally-owned ledger blocks with Markdown `---` dividers and turn labels on turn-scoped records
   - keeps chaining turns after handoffs until Rally reaches `done`, `blocker`, a runtime failure, a sleep request, or the command turn cap
 
 The live smoke now proves the full `single_repo_repair` loop:

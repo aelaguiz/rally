@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import tempfile
 import textwrap
 import unittest
@@ -102,6 +103,52 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 0)
             self.assertIn("Short note", issue_file.read_text(encoding="utf-8"))
+
+    def test_issue_note_uses_turn_number_from_env_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            with patch("rally.cli._repo_root", return_value=repo_root), patch.dict(
+                os.environ,
+                {"RALLY_TURN_NUMBER": "4"},
+                clear=False,
+            ):
+                exit_code = main(["issue", "note", "--run-id", "FLW-1", "--text", "Short note"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("- Turn: `4`", issue_file.read_text(encoding="utf-8"))
+
+    def test_issue_note_omits_turn_line_without_turn_env(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            with patch("rally.cli._repo_root", return_value=repo_root), patch.dict(
+                os.environ,
+                {},
+                clear=True,
+            ):
+                exit_code = main(["issue", "note", "--run-id", "FLW-1", "--text", "Short note"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertNotIn("- Turn:", issue_file.read_text(encoding="utf-8"))
+
+    def test_issue_note_rejects_invalid_turn_env(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_run(repo_root=repo_root, run_id="FLW-1")
+            stderr = io.StringIO()
+
+            with patch("rally.cli._repo_root", return_value=repo_root), patch.dict(
+                os.environ,
+                {"RALLY_TURN_NUMBER": "not-a-number"},
+                clear=False,
+            ), redirect_stderr(stderr):
+                exit_code = main(["issue", "note", "--run-id", "FLW-1", "--text", "Short note"])
+
+            self.assertEqual(exit_code, 2)
+            self.assertIn("`RALLY_TURN_NUMBER` must be an integer", stderr.getvalue())
 
     def test_issue_note_reads_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

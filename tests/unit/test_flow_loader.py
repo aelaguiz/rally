@@ -7,10 +7,33 @@ import unittest
 from pathlib import Path
 
 from rally.errors import RallyConfigError
-from rally.services.flow_loader import load_flow_definition
+from rally.services.flow_loader import load_flow_code, load_flow_definition
 
 
 class FlowLoaderTests(unittest.TestCase):
+    def test_load_flow_code_reads_flow_yaml_without_compiled_agents(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow_root = repo_root / "flows" / "demo"
+            flow_root.mkdir(parents=True)
+            (flow_root / "flow.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    name: demo
+                    code: DMO
+                    start_agent: 01_scope_lead
+                    agents: {}
+                    runtime:
+                      adapter: codex
+                      max_command_turns: 1
+                      adapter_args: {}
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(load_flow_code(repo_root=repo_root, flow_name="demo"), "DMO")
+
     def test_load_flow_definition_uses_compiled_slug_mapping(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
 

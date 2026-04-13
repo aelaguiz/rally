@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import TextIO
@@ -10,7 +11,7 @@ from rally.domain.run import ResumeRequest, RunRecord, RunRequest
 from rally.errors import RallyError, RallyUsageError
 from rally.services.issue_ledger import append_issue_note
 from rally.services.runner import resume_run, run_flow
-from rally.terminal.display import DisplayContext, build_terminal_display
+from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -84,7 +85,12 @@ def _resume_command(args: argparse.Namespace) -> int:
 def _issue_note_command(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     note_text = _read_note_text(args)
-    result = append_issue_note(repo_root=repo_root, run_id=args.run_id, note_markdown=note_text)
+    result = append_issue_note(
+        repo_root=repo_root,
+        run_id=args.run_id,
+        note_markdown=note_text,
+        turn_index=_turn_index_from_env(),
+    )
     print(
         f"Appended note for run `{result.run_id}` to `{result.issue_file}`. "
         f"Saved snapshot `{result.snapshot_file}`."
@@ -116,6 +122,21 @@ def _read_note_text(args: argparse.Namespace) -> str:
     return note_text
 
 
+def _turn_index_from_env() -> int | None:
+    raw_value = os.environ.get("RALLY_TURN_NUMBER")
+    if raw_value is None:
+        return None
+    if not raw_value.strip():
+        raise RallyUsageError("`RALLY_TURN_NUMBER` must not be empty when set.")
+    try:
+        turn_index = int(raw_value)
+    except ValueError as exc:
+        raise RallyUsageError("`RALLY_TURN_NUMBER` must be an integer when set.") from exc
+    if turn_index < 1:
+        raise RallyUsageError("`RALLY_TURN_NUMBER` must be 1 or greater when set.")
+    return turn_index
+
+
 def _build_display_factory(stream: TextIO):
     def _factory(run_record: RunRecord, flow: FlowDefinition):
         return build_terminal_display(
@@ -129,6 +150,10 @@ def _build_display_factory(stream: TextIO):
                 reasoning_effort=_optional_adapter_string(flow.adapter.args.get("reasoning_effort")),
                 start_agent_key=flow.start_agent_key,
                 agent_count=len(flow.agents),
+                agent_identities=tuple(
+                    AgentDisplayIdentity(key=agent.key, slug=agent.slug)
+                    for agent in flow.agents.values()
+                ),
             ),
         )
 

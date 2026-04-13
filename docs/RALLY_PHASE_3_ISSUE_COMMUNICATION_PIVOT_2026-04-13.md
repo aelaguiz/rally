@@ -35,10 +35,11 @@ Fields that do not apply are `null`.
 - Every Rally-managed agent inherits the shared base agent in `stdlib/rally/prompts/rally/base_agent.prompt`.
 - Every Rally-managed agent gets the shared `rally-kernel` skill.
 - The shared note path is `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"`.
-- Rally injects `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_AGENT_SLUG`.
+- Rally injects `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`.
 - `rally.turn_results` is one flat JSON object with `kind`, `next_owner`, `summary`, `reason`, and `sleep_duration_seconds`.
 - Agents keep unused turn-result fields as `null`.
 - Notes keep context only. Notes never carry `next_owner`, `done`, `blocker`, or `sleep` truth.
+- Rally, not the agent, adds the turn number to in-turn note blocks.
 
 # Shipped Surfaces
 
@@ -56,9 +57,9 @@ Fields that do not apply are `null`.
 - `src/rally/cli.py`
   - ships `rally issue note`
 - `src/rally/services/issue_ledger.py`
-  - owns note append and issue-history snapshots
+  - owns note append, issue-history snapshots, Markdown `---` dividers, and optional turn labels
 - `src/rally/adapters/codex/launcher.py`
-  - builds the required launch env map
+  - builds the required launch env map, including the active turn number for note labeling
 
 # Doctrine Note
 

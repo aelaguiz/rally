@@ -14,6 +14,7 @@ def build_codex_launch_env(
     run_id: str,
     flow_code: str,
     agent_slug: str,
+    turn_index: int,
 ) -> dict[str, str]:
     if not run_id.strip():
         raise RallyStateError("Run id must not be empty.")
@@ -21,6 +22,8 @@ def build_codex_launch_env(
         raise RallyStateError("Flow code must not be empty.")
     if not agent_slug.strip():
         raise RallyStateError("Agent slug must not be empty.")
+    if turn_index < 1:
+        raise RallyStateError("Turn index must be 1 or greater.")
 
     return {
         "CODEX_HOME": str(run_home.resolve()),
@@ -28,6 +31,7 @@ def build_codex_launch_env(
         "RALLY_RUN_ID": run_id,
         "RALLY_FLOW_CODE": flow_code,
         "RALLY_AGENT_SLUG": agent_slug,
+        "RALLY_TURN_NUMBER": str(turn_index),
     }
 
 

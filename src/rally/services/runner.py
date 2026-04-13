@@ -32,7 +32,8 @@ from rally.domain.turn_result import (
     TurnResult,
 )
 from rally.errors import RallyConfigError, RallyStateError, RallyUsageError
-from rally.services.flow_loader import load_flow_definition
+from rally.services.flow_build import ensure_flow_agents_built
+from rally.services.flow_loader import load_flow_code, load_flow_definition
 from rally.services.home_materializer import materialize_run_home, prepare_run_home_shell
 from rally.services.issue_editor import (
     edit_existing_issue_file_in_editor,
@@ -84,9 +85,11 @@ def run_flow(
     subprocess_run: SubprocessRunner = subprocess.run,
     display_factory: DisplayFactory | None = None,
 ) -> RunCommandResult:
-    flow = load_flow_definition(repo_root=repo_root, flow_name=request.flow_name)
+    flow_code = load_flow_code(repo_root=repo_root, flow_name=request.flow_name)
 
-    with flow_lock(repo_root=repo_root, flow_code=flow.code):
+    with flow_lock(repo_root=repo_root, flow_code=flow_code):
+        ensure_flow_agents_built(repo_root=repo_root, flow_name=request.flow_name)
+        flow = load_flow_definition(repo_root=repo_root, flow_name=request.flow_name)
         _maybe_archive_replaced_run(
             repo_root=repo_root,
             flow=flow,
@@ -142,9 +145,10 @@ def resume_run(
     if run_dir.is_relative_to(archive_runs_dir(repo_root)):
         raise RallyUsageError(f"Run `{request.run_id}` is archived and cannot be resumed.")
     run_record = load_run_record(run_dir=run_dir)
-    flow = load_flow_definition(repo_root=repo_root, flow_name=run_record.flow_name)
 
     with flow_lock(repo_root=repo_root, flow_code=run_record.flow_code):
+        ensure_flow_agents_built(repo_root=repo_root, flow_name=run_record.flow_name)
+        flow = load_flow_definition(repo_root=repo_root, flow_name=run_record.flow_name)
         recorder = _build_recorder(
             run_dir=run_dir,
             run_record=run_record,
@@ -617,6 +621,7 @@ def _execute_single_turn(
                 f"Agent: `{agent.key}`",
                 f"Reason: {blocked_state.blocker_reason}",
             ),
+            turn_index=turn_index,
         )
         return _TurnExecutionOutcome(
             state=blocked_state,
@@ -653,6 +658,7 @@ def _execute_single_turn(
             run_id=run_record.id,
             agent=agent,
             turn_result=turn_result,
+            turn_index=turn_index,
             append_sleep_record=False,
         )
         write_run_state(run_dir=run_dir, state=blocked_state)
@@ -675,6 +681,7 @@ def _execute_single_turn(
                 f"Agent: `{agent.key}`",
                 f"Reason: {blocked_state.blocker_reason}",
             ),
+            turn_index=turn_index,
         )
         return _TurnExecutionOutcome(
             state=blocked_state,
@@ -708,6 +715,7 @@ def _execute_single_turn(
         run_id=run_record.id,
         agent=agent,
         turn_result=turn_result,
+        turn_index=turn_index,
     )
 
     result = None
@@ -954,6 +962,7 @@ def _invoke_codex(
             run_id=run_record.id,
             flow_code=run_record.flow_code,
             agent_slug=agent.slug,
+            turn_index=turn_index,
         ),
     }
     write_codex_launch_record(
@@ -1326,6 +1335,7 @@ def _append_issue_records_for_turn_result(
     run_id: str,
     agent: FlowAgent,
     turn_result: TurnResult,
+    turn_index: int,
     append_sleep_record: bool = True,
 ) -> None:
     detail_lines = [f"Agent: `{agent.key}`", f"Result: `{turn_result.kind.value}`"]
@@ -1345,6 +1355,7 @@ def _append_issue_records_for_turn_result(
         title="Rally Turn Result",
         source="rally runtime",
         detail_lines=detail_lines,
+        turn_index=turn_index,
     )
     if isinstance(turn_result, BlockerTurnResult):
         append_issue_event(
@@ -1353,6 +1364,7 @@ def _append_issue_records_for_turn_result(
             title="Rally Blocked",
             source="rally runtime",
             detail_lines=(f"Agent: `{agent.key}`", f"Reason: {turn_result.reason}"),
+            turn_index=turn_index,
         )
     if isinstance(turn_result, SleepTurnResult) and append_sleep_record:
         append_issue_event(
@@ -1365,6 +1377,7 @@ def _append_issue_records_for_turn_result(
                 f"Reason: {turn_result.reason}",
                 f"Sleep Seconds: `{turn_result.sleep_duration_seconds}`",
             ),
+            turn_index=turn_index,
         )
     if isinstance(turn_result, DoneTurnResult):
         append_issue_event(
@@ -1373,6 +1386,7 @@ def _append_issue_records_for_turn_result(
             title="Rally Done",
             source="rally runtime",
             detail_lines=(f"Agent: `{agent.key}`", f"Summary: {turn_result.summary}"),
+            turn_index=turn_index,
         )
 
 

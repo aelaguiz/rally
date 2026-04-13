@@ -29,6 +29,7 @@ class IssueLedgerTests(unittest.TestCase):
             self.assertIn("## Rally Note", issue_text)
             self.assertIn("- Run ID: `FLW-1`", issue_text)
             self.assertIn("- Time: `2026-04-13T19:30:00Z`", issue_text)
+            self.assertIn("Original operator brief.\n\n---\n\n## Rally Note", issue_text)
             self.assertIn("### Note\n- parser fix landed\n", issue_text)
             self.assertEqual(result.snapshot_file.read_text(encoding="utf-8"), issue_text)
 
@@ -101,6 +102,73 @@ class IssueLedgerTests(unittest.TestCase):
             issue_text = issue_file.read_text(encoding="utf-8")
             self.assertIn("### Note\n- keep this line\n", issue_text)
 
+    def test_append_issue_note_adds_turn_line_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            append_issue_note(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                note_markdown="### Note\n- keep this context",
+                turn_index=3,
+                now=datetime(2026, 4, 13, 19, 31, tzinfo=UTC),
+            )
+
+            issue_text = issue_file.read_text(encoding="utf-8")
+            self.assertIn("- Turn: `3`", issue_text)
+
+    def test_append_issue_note_uses_one_divider_between_each_rally_block(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            append_issue_note(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                note_markdown="### Note\n- first",
+                now=datetime(2026, 4, 13, 19, 30, tzinfo=UTC),
+            )
+            append_issue_note(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                note_markdown="### Note\n- second",
+                now=datetime(2026, 4, 13, 19, 31, tzinfo=UTC),
+            )
+
+            issue_text = issue_file.read_text(encoding="utf-8")
+            self.assertEqual(issue_text.count("\n---\n\n## Rally Note\n"), 2)
+
+    def test_append_issue_note_does_not_add_leading_divider_to_empty_issue_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+            issue_file.write_text("", encoding="utf-8")
+
+            append_issue_note(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                note_markdown="### Note\n- first",
+                now=datetime(2026, 4, 13, 19, 30, tzinfo=UTC),
+            )
+
+            issue_text = issue_file.read_text(encoding="utf-8")
+            self.assertTrue(issue_text.startswith("## Rally Note\n"))
+            self.assertFalse(issue_text.startswith("---"))
+
+    def test_append_issue_note_rejects_non_positive_turn_index(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            with self.assertRaisesRegex(RallyStateError, "Turn index must be 1 or greater"):
+                append_issue_note(
+                    repo_root=repo_root,
+                    run_id="FLW-1",
+                    note_markdown="### Note\n- invalid turn",
+                    turn_index=0,
+                )
+
     def test_append_issue_edit_diff_appends_formatted_diff_block_and_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -117,7 +185,7 @@ class IssueLedgerTests(unittest.TestCase):
             issue_text = issue_file.read_text(encoding="utf-8")
             self.assertEqual(result.issue_file, issue_file)
             self.assertTrue(result.snapshot_file.is_file())
-            self.assertIn("## user edited issue.md", issue_text)
+            self.assertIn("\n---\n\n## user edited issue.md", issue_text)
             self.assertIn("- Source: `rally resume --edit`", issue_text)
             self.assertIn("```diff\n--- before/issue.md\n+++ after/issue.md\n", issue_text)
             self.assertIn("-Original operator brief.\n+Updated operator brief.\n", issue_text)

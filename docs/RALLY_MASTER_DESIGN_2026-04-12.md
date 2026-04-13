@@ -202,6 +202,8 @@ It should:
 - begin with the operator's brief exactly as entered
 - remain append-only after that initial brief
 - hold setup notes, serialized notes, normalized final-turn response records, and runner-generated status records
+- use one Markdown `---` divider between Rally-owned blocks after the brief
+- add `- Turn: \`N\`` on turn-scoped blocks without asking the agent to manage that line
 
 Rally does not create a second shared brief file.
 The opening brief lives at the top of `home/issue.md`.
@@ -291,6 +293,7 @@ For the Codex adapter, Rally should enforce this launch contract:
 - disable ambient project-doc discovery with `project_doc_max_bytes = 0`
 - inject `RALLY_RUN_ID=<run-id>` and `RALLY_FLOW_CODE=<flow-code>`
 - inject `RALLY_AGENT_SLUG=<agent-slug>`
+- inject `RALLY_TURN_NUMBER=<turn-number>` for runtime-owned note labeling
 - assemble MCP config explicitly from Rally's allowlisted definitions
 - require a strict final-turn JSON schema for end-of-turn completion
 
@@ -348,7 +351,7 @@ These are the stable runtime surfaces the design depends on:
 | `logs/agents/` | per-agent event mirrors |
 | `logs/rendered.log` | plain operator transcript |
 | `logs/adapter_launch/` | proof of the launch contract per turn |
-| `home/agents/` | per-run copy of compiled agent outputs |
+| `home/agents/` | per-run copy of compiled agent outputs, refreshed on each start or resume |
 | `home/skills/` and `home/mcps/` | materialized allowed capabilities |
 | `home/sessions/` | adapter session sidecars or stable references |
 
@@ -368,6 +371,9 @@ rally issue note --run-id <FLOW_CODE>-<n>
 a TTY and a plain text fallback when the output is not interactive. That
 startup view should show the run id, flow, flow code, model, thinking level,
 adapter, start agent, and agent count.
+Before either command starts the next turn, Rally should rebuild that flow's
+compiled agents through the paired Doctrine emit target and refresh the
+run-home `home/agents/` copy from the rebuilt readback.
 `rally run` creates the run shell first. If `home/issue.md` is missing or
 blank on a real TTY, Rally should open the editor, seed a short issue prompt,
 strip that prompt back out if it is still there, and keep going after save.
@@ -386,6 +392,8 @@ same ledger before the turn resumes. Done and archived runs should still
 refuse resume.
 
 `rally issue note` is the shared durable-note write surface for both agents and operators.
+When Rally launched the active turn, the CLI should add the current turn
+number to the normalized note block automatically.
 It should support:
 
 - stdin
@@ -468,7 +476,7 @@ Phase 3 locks the communication pivot:
 - no separate authored handoff object
 - serialized notes through the Rally kernel skill plus `rally issue note`
 - strict final JSON as the only turn-ending control path
-- `RALLY_RUN_ID` and `RALLY_FLOW_CODE` injected on every Rally-managed launch
+- `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_TURN_NUMBER` injected on every Rally-managed launch
 - the tiny schema-bound helper seam exists on the same adapter stack
 
 The exact Phase 3 deliverables, acceptance criteria, and non-goals live in the Phase 3 doc rather than here.
