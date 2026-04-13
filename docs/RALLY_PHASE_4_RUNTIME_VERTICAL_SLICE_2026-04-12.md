@@ -40,10 +40,13 @@ What is real today:
 - `rally run`
 - `rally run --new`
 - `rally resume`
+- `rally resume --edit`
 - one shared interactive issue-ready gate for `run` and `resume`
 - live operator stream on a TTY with plain fallback off TTY
 - strict final-turn JSON parsing
-- Codex session save and sleep resume
+- chained multi-turn execution across handoffs
+- per-flow `runtime.max_command_turns` caps for one command
+- Codex session save and reuse across chained turns
 - `home/issue.md` plus `issue_history/`
 - the opening brief lives in `home/issue.md`, not a shared sidecar brief file
 - `logs/events.jsonl`
@@ -82,10 +85,11 @@ The current checked-in runtime surface is:
   - loads `flow.yaml`
   - requires compiled `build/agents/*`
   - requires `AGENTS.contract.json`
-  - validates flow codes, prompt-input commands, and the shared turn-result schema
+  - validates flow codes, `runtime.max_command_turns`, prompt-input commands, and the shared turn-result schema
 - `src/rally/cli.py`
   - ships real `run`
   - ships real `resume`
+  - ships `resume --edit`
   - ships `issue note`
 - `src/rally/services/run_store.py`
   - allocates run ids
@@ -108,6 +112,7 @@ The current checked-in runtime surface is:
   - fans them out to whole-run logs, agent logs, and the rendered transcript
 - `src/rally/terminal/display.py`
   - renders the live color stream on a TTY
+  - shows a richer startup summary with run, flow, model, thinking level, adapter, and agent facts
   - falls back to plain text when needed
 - `src/rally/adapters/codex/launcher.py`
   - builds `CODEX_HOME`, `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_AGENT_SLUG`
@@ -123,13 +128,18 @@ The current checked-in runtime surface is:
   - writes per-turn `exec.jsonl`, `stderr.log`, and `last_message.json`
 - `src/rally/services/runner.py`
   - wires run creation, resume, prompt injection, Codex launch, result handling, state writes, and issue/event logging
+  - lets a blocked run retry after `resume --edit` saves a non-empty issue
+  - appends a `user edited issue.md` diff block to `home/issue.md` when `resume --edit` changed the issue text
+  - keeps chaining turns after handoffs until Rally reaches `done`, `blocker`, a runtime failure, a sleep request, or the command turn cap
 
 The live smoke now proves the full `single_repo_repair` loop:
 `scope_lead -> change_engineer -> proof_engineer -> acceptance_critic -> scope_lead -> done`.
+That loop now runs in one Rally command unless a real stop point interrupts it.
 
 The checked-in second narrow flow is `poem_loop`.
 It keeps the human issue and durable notes on `home/issue.md` and keeps the
 only file artifact at `artifacts/poem.md`.
+It also uses the same chained handoff model and per-command turn cap.
 
 # Proof Path
 

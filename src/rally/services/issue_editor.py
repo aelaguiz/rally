@@ -73,17 +73,16 @@ def edit_issue_file_in_editor(
         handle.write(_ISSUE_EDITOR_PROMPT)
 
     try:
-        try:
-            completed = run([*editor_command, str(temp_path)], check=False)
-        except OSError:
-            return IssueEditorResult(status="cancelled", reason="launch_failed")
-
+        launch_result = _run_editor_command(
+            target_path=temp_path,
+            editor_command=editor_command,
+            run=run,
+        )
+        if launch_result.status != "saved":
+            return launch_result
         raw_text = temp_path.read_text(encoding="utf-8")
     finally:
         temp_path.unlink(missing_ok=True)
-
-    if completed.returncode != 0:
-        return IssueEditorResult(status="cancelled", reason="editor_exit")
 
     cleaned_text = clean_issue_editor_text(raw_text)
     if not cleaned_text.strip():
@@ -91,6 +90,29 @@ def edit_issue_file_in_editor(
 
     issue_path.write_text(cleaned_text, encoding="utf-8")
     return IssueEditorResult(status="saved", cleaned_text=cleaned_text)
+
+
+def edit_existing_issue_file_in_editor(
+    *,
+    issue_path: Path,
+    editor_command: Sequence[str],
+    run: EditorRunner = subprocess.run,
+) -> IssueEditorResult:
+    issue_path.parent.mkdir(parents=True, exist_ok=True)
+    issue_path.touch(exist_ok=True)
+
+    launch_result = _run_editor_command(
+        target_path=issue_path,
+        editor_command=editor_command,
+        run=run,
+    )
+    if launch_result.status != "saved":
+        return launch_result
+
+    edited_text = issue_path.read_text(encoding="utf-8")
+    if not edited_text.strip():
+        return IssueEditorResult(status="cancelled", reason="blank_issue")
+    return IssueEditorResult(status="saved", cleaned_text=edited_text)
 
 
 def clean_issue_editor_text(raw_text: str) -> str:
@@ -111,6 +133,21 @@ def _parse_editor_command(raw_value: str | None) -> tuple[str, ...] | None:
 
 def _command_exists(command: str, *, path: str | None) -> bool:
     return shutil.which(command, path=path) is not None
+
+
+def _run_editor_command(
+    *,
+    target_path: Path,
+    editor_command: Sequence[str],
+    run: EditorRunner,
+) -> IssueEditorResult:
+    try:
+        completed = run([*editor_command, str(target_path)], check=False)
+    except OSError:
+        return IssueEditorResult(status="cancelled", reason="launch_failed")
+    if completed.returncode != 0:
+        return IssueEditorResult(status="cancelled", reason="editor_exit")
+    return IssueEditorResult(status="saved")
 
 
 def _stream_is_tty(stream: TextIO) -> bool:

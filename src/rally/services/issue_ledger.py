@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,6 +33,28 @@ def append_issue_note(
         source="rally issue note",
         detail_lines=(),
         body=note_body,
+        now=now,
+    )
+
+
+def append_issue_edit_diff(
+    *,
+    repo_root: Path,
+    run_id: str,
+    before_text: str,
+    after_text: str,
+    now: datetime | None = None,
+) -> IssueNoteAppendResult:
+    if before_text == after_text:
+        raise RallyStateError("Issue edit diff requires changed text.")
+
+    return append_issue_event(
+        repo_root=repo_root,
+        run_id=run_id,
+        title="user edited issue.md",
+        source="rally resume --edit",
+        detail_lines=(),
+        body=_render_issue_edit_diff(before_text=before_text, after_text=after_text),
         now=now,
     )
 
@@ -121,6 +144,20 @@ def _normalize_note_body(note_markdown: str) -> str:
     while lines and not lines[-1].strip():
         lines.pop()
     return "\n".join(lines)
+
+
+def _render_issue_edit_diff(*, before_text: str, after_text: str) -> str:
+    diff_text = "".join(
+        difflib.unified_diff(
+            before_text.splitlines(keepends=True),
+            after_text.splitlines(keepends=True),
+            fromfile="before/issue.md",
+            tofile="after/issue.md",
+        )
+    )
+    if diff_text and not diff_text.endswith("\n"):
+        diff_text += "\n"
+    return f"```diff\n{diff_text}```"
 
 
 def _format_issue_block(

@@ -19,6 +19,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(flow.name, "single_repo_repair")
         self.assertEqual(flow.code, "SRR")
         self.assertEqual(flow.start_agent_key, "01_scope_lead")
+        self.assertEqual(flow.max_command_turns, 12)
         self.assertEqual(flow.agent("01_scope_lead").slug, "scope_lead")
         self.assertEqual(flow.agent("02_change_engineer").compiled.slug, "change_engineer")
         self.assertEqual(
@@ -38,6 +39,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(flow.name, "poem_loop")
         self.assertEqual(flow.code, "POM")
         self.assertEqual(flow.start_agent_key, "01_poem_writer")
+        self.assertEqual(flow.max_command_turns, 20)
         self.assertEqual(flow.agent("01_poem_writer").slug, "poem_writer")
         self.assertEqual(flow.agent("02_poem_critic").slug, "poem_critic")
         self.assertEqual(flow.agent("01_poem_writer").allowed_skills, ())
@@ -48,6 +50,19 @@ class FlowLoaderTests(unittest.TestCase):
             flow.agent("01_poem_writer").compiled.final_output.schema_file,
             repo_root / "stdlib/rally/schemas/rally_turn_result.schema.json",
         )
+
+    def test_poem_loop_compiled_readback_includes_kernel_skill_and_rationale_contract(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+
+        flow = load_flow_definition(repo_root=repo_root, flow_name="poem_loop")
+        writer_readback = flow.agent("01_poem_writer").compiled.markdown_path.read_text(encoding="utf-8")
+        critic_readback = flow.agent("02_poem_critic").compiled.markdown_path.read_text(encoding="utf-8")
+
+        self.assertIn("## Skills", writer_readback)
+        self.assertIn("### rally-kernel", writer_readback)
+        self.assertIn("Artistic Rationale", writer_readback)
+        self.assertIn('Append With: `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"`', writer_readback)
+        self.assertIn("Rationale Fit", critic_readback)
 
     def test_load_flow_definition_rejects_unsupported_contract_version(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -63,6 +78,30 @@ class FlowLoaderTests(unittest.TestCase):
             self._write_fixture_repo(repo_root=repo_root, include_next_owner=False)
 
             with self.assertRaisesRegex(RallyConfigError, "must require .*next_owner"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_rejects_missing_max_command_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(repo_root=repo_root, include_max_command_turns=False)
+
+            with self.assertRaisesRegex(RallyConfigError, "max_command_turns"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_rejects_non_integer_max_command_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(repo_root=repo_root, max_command_turns_yaml='"many"')
+
+            with self.assertRaisesRegex(RallyConfigError, "max_command_turns"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_rejects_zero_max_command_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(repo_root=repo_root, max_command_turns_yaml="0")
+
+            with self.assertRaisesRegex(RallyConfigError, "max_command_turns"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
     def test_load_flow_definition_rejects_support_files_outside_repo_root(self) -> None:
@@ -87,6 +126,8 @@ class FlowLoaderTests(unittest.TestCase):
         repo_root: Path,
         contract_version: int = 1,
         include_next_owner: bool = True,
+        include_max_command_turns: bool = True,
+        max_command_turns_yaml: str = "8",
         schema_file: str = "stdlib/rally/schemas/rally_turn_result.schema.json",
         example_file: str = "stdlib/rally/examples/rally_turn_result.example.json",
     ) -> None:
@@ -103,7 +144,7 @@ class FlowLoaderTests(unittest.TestCase):
 
         (flow_root / "flow.yaml").write_text(
             textwrap.dedent(
-                """\
+                f"""\
                 name: demo
                 code: DEMO
                 start_agent: 01_scope_lead
@@ -117,6 +158,7 @@ class FlowLoaderTests(unittest.TestCase):
                       - fixture-repo
                 runtime:
                   adapter: codex
+                {'  max_command_turns: ' + max_command_turns_yaml if include_max_command_turns else ''}
                   prompt_input_command: setup/prompt_inputs.py
                   adapter_args:
                     model: gpt-5.4

@@ -68,6 +68,7 @@ class FlowDefinition:
     build_agents_dir: Path
     setup_home_script: Path | None
     start_agent_key: str
+    max_command_turns: int
     agents: Mapping[str, FlowAgent]
     adapter: AdapterConfig
 

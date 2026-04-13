@@ -8,6 +8,7 @@ from pathlib import Path
 from rally.services.issue_editor import (
     IssueEditorResult,
     clean_issue_editor_text,
+    edit_existing_issue_file_in_editor,
     edit_issue_file_in_editor,
     resolve_interactive_issue_editor,
 )
@@ -75,6 +76,28 @@ class IssueEditorTests(unittest.TestCase):
 
     def test_clean_issue_editor_text_leaves_user_text_alone_without_prompt_block(self) -> None:
         self.assertEqual(clean_issue_editor_text("Write a sonnet.\n"), "Write a sonnet.\n")
+
+    def test_edit_existing_issue_file_in_editor_keeps_saved_text_as_is(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            issue_path = Path(temp_dir).resolve() / "issue.md"
+            issue_path.write_text("Old line.\n", encoding="utf-8")
+
+            def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+                edited_issue = Path(command[-1])
+                edited_issue.write_text("New line.\nStill here.\n", encoding="utf-8")
+                return subprocess.CompletedProcess(args=command, returncode=0)
+
+            result = edit_existing_issue_file_in_editor(
+                issue_path=issue_path,
+                editor_command=("vim",),
+                run=fake_run,
+            )
+
+            self.assertEqual(
+                result,
+                IssueEditorResult(status="saved", cleaned_text="New line.\nStill here.\n", reason=None),
+            )
+            self.assertEqual(issue_path.read_text(encoding="utf-8"), "New line.\nStill here.\n")
 
 
 class _TtyStream:

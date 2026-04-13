@@ -19,6 +19,9 @@ document WriterIssueNoteDocument: "Poem Writer Note"
     section draft_change: "Draft Change"
         "Say what changed in this draft."
 
+    section artistic_rationale: "Artistic Rationale"
+        "Name the main artistic choices behind this draft in 2-4 plain sentences."
+
     section poem_path: "Poem Path"
         "Point the critic to `artifacts/poem.md`."
 
@@ -32,6 +35,9 @@ document CriticIssueNoteDocument: "Poem Critic Note"
 
     section findings_first: "Findings First"
         "Start with the main finding, then the decision."
+
+    section rationale_fit: "Rationale Fit"
+        "Say whether the poem on the page matches the writer's stated rationale."
 
     section what_works: "What Works"
         "Name the strongest parts to keep."

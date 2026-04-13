@@ -118,6 +118,7 @@ def _demo_flow(*, repo_root: Path) -> FlowDefinition:
         build_agents_dir=flow_root / "build" / "agents",
         setup_home_script=None,
         start_agent_key=agent.key,
+        max_command_turns=8,
         agents={agent.key: agent},
         adapter=AdapterConfig(name="codex", prompt_input_command=None, args={}),
     )

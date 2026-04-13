@@ -51,7 +51,8 @@ What it does today:
 - prepares the full run home only after `home/issue.md` is ready
 - opens a live color stream on a TTY
 - falls back to plain text when stdout is not a TTY
-- runs the current agent turn through Codex
+- keeps running turns through Codex across handoffs
+- stops only when the run reaches `done`, hits a blocker, hits a runtime failure such as a timeout, or hits the per-command turn cap
 - prints the resulting run status line
 
 Current limits:
@@ -75,19 +76,41 @@ interactive, Rally refuses `--new` because it cannot ask.
 Current shape:
 
 ```bash
-rally resume <run-id>
+rally resume <run-id> [--edit]
 ```
 
 What it does today:
 
 - reloads the stored run
+- when `--edit` is passed, opens the current `home/issue.md` in place before Rally tries the turn
 - opens the same issue editor path as `rally run` when `home/issue.md` is missing or blank on a real TTY
 - refuses archived runs
-- refuses done or blocked runs
-- resumes sleeping runs only after their wake time
+- refuses done runs
+- lets a blocked run try again after `--edit` saves a non-empty issue
+- can still resume a legacy sleeping run after its wake time
 - reuses the saved Codex session id when one exists
 - opens the same live stream rules as `rally run`
-- advances the current agent by one turn
+- keeps going across handoffs until Rally reaches a real stop point
+
+If `--edit` is passed, Rally edits the real `home/issue.md` file.
+It does not seed or strip the starter prompt for that path.
+If the operator saves a blank issue, Rally stops and waits for a non-empty
+`home/issue.md`.
+If the shell is not interactive or no editor is available, Rally refuses
+`resume --edit`.
+If the operator changed the issue text, Rally appends one
+`## user edited issue.md` block to the end of `home/issue.md` with a fenced
+unified diff before the run resumes.
+
+### `runtime.max_command_turns`
+
+Each flow now sets `runtime.max_command_turns` in `flow.yaml`.
+This is a hard cap on how many turns one `rally run` or `rally resume`
+command can start before Rally stops and blocks the run.
+
+The cap is checked before the next turn starts.
+If Rally hits it, Rally keeps the next agent as current, writes a clear
+`Rally Blocked` record, and tells the operator why it stopped.
 
 ### `rally issue note`
 
@@ -131,9 +154,14 @@ separate startup brief path.
 After that, Rally appends:
 
 - note blocks from `rally issue note`
+- `resume --edit` diff blocks when the operator changed `home/issue.md`
 - run-start records
 - turn-result records
-- blocked, sleeping, or done status records when they apply
+- blocked or done status records when they apply
+
+If an agent returns `kind: sleep`, Rally records that sleep request in the
+turn-result block and then blocks the run.
+It does not write a `Rally Sleeping` record for new chained runs yet.
 
 The current note block format is:
 
@@ -246,6 +274,7 @@ The live operator view is a polished stream, not a full-screen TUI.
 Today it does this:
 
 - `rally run` and `rally resume` use the same renderer choice
+- the startup header shows run id, flow, flow code, model, thinking level, adapter, start agent, and agent count
 - TTY output gets Rich color and spacing
 - non-TTY output falls back to plain text with the same event order
 - `logs/rendered.log` uses the same line format as the plain fallback

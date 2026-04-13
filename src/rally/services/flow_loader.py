@@ -67,6 +67,9 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
 
     runtime_payload = _require_mapping(payload, "runtime", context="flow.yaml")
     adapter_name = _require_string(runtime_payload, "adapter", context="runtime")
+    max_command_turns = _require_int(runtime_payload, "max_command_turns", context="runtime")
+    if max_command_turns < 1:
+        raise RallyConfigError("`runtime.max_command_turns` must be an integer >= 1.")
     adapter_args = _require_mapping(runtime_payload, "adapter_args", context="runtime")
     prompt_input_command_rel = runtime_payload.get("prompt_input_command")
     prompt_input_command = None
@@ -104,6 +107,7 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
         build_agents_dir=build_agents_dir,
         setup_home_script=setup_home_script,
         start_agent_key=start_agent_key,
+        max_command_turns=max_command_turns,
         agents=agents,
         adapter=AdapterConfig(name=adapter_name, prompt_input_command=prompt_input_command, args=adapter_args),
     )

@@ -31,6 +31,7 @@ agents:
       - fixture-repo
 runtime:
   adapter: codex
+  max_command_turns: 12
   prompt_input_command: setup/prompt_inputs.py
   adapter_args:
     model: gpt-5.4

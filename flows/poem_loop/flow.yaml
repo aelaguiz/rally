@@ -12,6 +12,7 @@ agents:
     allowed_mcps: []
 runtime:
   adapter: codex
+  max_command_turns: 20
   adapter_args:
     model: gpt-5.4
     reasoning_effort: medium

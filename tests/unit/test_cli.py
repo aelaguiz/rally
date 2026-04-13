@@ -61,6 +61,21 @@ class CliTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("--preflight-only", stderr.getvalue())
 
+    def test_resume_command_passes_edit_flag_to_runner(self) -> None:
+        stdout = io.StringIO()
+
+        with patch("rally.cli._repo_root", return_value=Path("/tmp/repo")), patch(
+            "rally.cli.resume_run",
+            return_value=SimpleNamespace(message="Run `DMO-1` resumed."),
+        ) as resume_run_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["resume", "DMO-1", "--edit"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Run `DMO-1` resumed.", stdout.getvalue())
+        self.assertEqual(resume_run_mock.call_args.kwargs["request"].run_id, "DMO-1")
+        self.assertTrue(resume_run_mock.call_args.kwargs["request"].edit_issue)
+
     def test_issue_note_reads_stdin(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()

@@ -7,14 +7,16 @@ workflow PoemWriterJob: "Your Job"
         "The poem fits the requested form."
         "The subject is clear."
         "The lines feel shaped and alive."
+        "The note gives the critic the draft's main artistic reason."
 
     failure: "Failure"
         "The poem drifts off the brief."
         "The poem sounds flat, padded, or generic."
         "The poem talks about the process instead of doing the poem."
+        "The note hides why the draft took this shape."
 
     non_goals: "Non-Goals"
-        "Do not explain how you wrote the poem."
+        "Do not turn the note into a step-by-step diary."
         "Do not leave rewrite guidance in a side file."
         "Do not paste the full poem into the issue note."
 
@@ -24,12 +26,12 @@ workflow PoemWriterJob: "Your Job"
         "If either one is unclear, end with `blocker`."
         "When you are revising, start with the newest Rally note."
         "Write or revise `artifacts/poem.md`."
-        "Then leave the required writer note on `issue.md`."
+        "Then use `rally-kernel` and leave the required writer note on `issue.md`."
         "End with valid Rally JSON."
 
     output_contract: "Output Contract"
         "Put the full poem in `artifacts/poem.md`."
-        "Use the writer note to say what changed and what the critic should judge next."
+        "Use the writer note to say what changed, why the draft took this shape, and what the critic should judge next."
 
 
 workflow PoemWriterQualityBar: "Quality Bar"

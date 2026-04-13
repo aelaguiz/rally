@@ -18,6 +18,11 @@ class DisplayContext:
     run_id: str
     flow_name: str
     flow_code: str
+    adapter_name: str
+    model_name: str | None
+    reasoning_effort: str | None
+    start_agent_key: str
+    agent_count: int
 
 
 def build_terminal_display(*, stream: TextIO, context: DisplayContext) -> EventConsumer:
@@ -29,7 +34,8 @@ def build_terminal_display(*, stream: TextIO, context: DisplayContext) -> EventC
 class PlainStreamDisplay:
     def __init__(self, *, stream: TextIO, context: DisplayContext) -> None:
         self._stream = stream
-        self._stream.write(f"Rally {context.run_id}  {context.flow_name} ({context.flow_code})\n")
+        self._stream.write(_render_plain_header(context))
+        self._stream.write("\n")
         self._stream.flush()
 
     def emit(self, event: RunEvent) -> None:
@@ -50,9 +56,7 @@ class RichStreamDisplay:
         self._console = Console(file=stream, force_terminal=True, soft_wrap=True)
         self._console.print(
             Panel.fit(
-                f"[bold cyan]{context.run_id}[/bold cyan]  "
-                f"[bold]{context.flow_name}[/bold]\n"
-                f"[dim]Flow code {context.flow_code}[/dim]",
+                _render_rich_header(context),
                 title="Rally Live",
                 border_style="cyan",
             )
@@ -86,6 +90,35 @@ def _render_event_text(event: RunEvent) -> Text:
     line.append(code)
     line.append(message)
     return line
+
+
+def _render_plain_header(context: DisplayContext) -> str:
+    return (
+        f"Rally {context.run_id}  {context.flow_name} ({context.flow_code})  "
+        f"model={_display_value(context.model_name)}  "
+        f"thinking={_display_value(context.reasoning_effort)}  "
+        f"adapter={context.adapter_name}  "
+        f"start={context.start_agent_key}  "
+        f"agents={context.agent_count}"
+    )
+
+
+def _render_rich_header(context: DisplayContext) -> str:
+    return (
+        f"[bold cyan]{context.run_id}[/bold cyan]  "
+        f"[bold]{context.flow_name}[/bold]\n"
+        f"[dim]Flow code {context.flow_code}[/dim]\n"
+        f"[dim]Model {_display_value(context.model_name)} | "
+        f"Thinking {_display_value(context.reasoning_effort)} | "
+        f"Adapter {context.adapter_name}[/dim]\n"
+        f"[dim]Start {context.start_agent_key} | Agents {context.agent_count}[/dim]"
+    )
+
+
+def _display_value(raw_value: str | None) -> str:
+    if raw_value is None or not raw_value.strip():
+        return "adapter default"
+    return raw_value.strip()
 
 
 def _agent_style(event: RunEvent) -> str:
@@ -123,7 +156,7 @@ def _message_style(event: RunEvent) -> str:
 
 
 def _is_tty(stream: TextIO) -> bool:
-    if isinstance(stream, io.StringIO):
+    if type(stream) is io.StringIO:
         return False
     isatty = getattr(stream, "isatty", None)
     if callable(isatty):

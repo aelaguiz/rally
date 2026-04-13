@@ -140,6 +140,7 @@ Each runnable flow lives under `flows/<flow-slug>/`.
 
 The canonical runtime contract for a flow is `flows/<flow-slug>/flow.yaml`.
 That file declares runtime facts, not instruction prose.
+It also carries runtime limits such as `runtime.max_command_turns`.
 
 Every runnable flow has three stable identities:
 
@@ -217,7 +218,7 @@ Serialized notes are durable context only.
 They do not carry trusted routing, blocker, sleep, or done truth.
 
 The structured final turn result is the only turn-ending control surface.
-It tells Rally whether to route, stop, block, or sleep.
+It tells Rally whether to route, stop, block, or ask for sleep.
 The shared JSON always carries the same five keys:
 
 - `kind`
@@ -228,6 +229,9 @@ The shared JSON always carries the same five keys:
 
 Fields that do not apply are `null`.
 If the result uses `kind: handoff`, that is only the label of the route-to-next-owner branch in the final structured result.
+Rally now keeps running across handoffs inside one `run` or `resume`
+command until it reaches a real stop point.
+Sleep requests are recorded, then blocked, until true sleep support lands.
 
 The end-turn helper inside the Rally kernel skill may help the agent shape that JSON, but it is not a second return path.
 The actual return still comes back through the adapter's strict final JSON-schema path.
@@ -355,13 +359,15 @@ Conceptually it is:
 
 ```bash
 rally run <flow> [--new]
-rally resume <FLOW_CODE>-<n>
+rally resume <FLOW_CODE>-<n> [--edit]
 rally archive <FLOW_CODE>-<n>
 rally issue note --run-id <FLOW_CODE>-<n>
 ```
 
 `rally run` and `rally resume` should give the operator one clean live view on
-a TTY and a plain text fallback when the output is not interactive.
+a TTY and a plain text fallback when the output is not interactive. That
+startup view should show the run id, flow, flow code, model, thinking level,
+adapter, start agent, and agent count.
 `rally run` creates the run shell first. If `home/issue.md` is missing or
 blank on a real TTY, Rally should open the editor, seed a short issue prompt,
 strip that prompt back out if it is still there, and keep going after save.
@@ -371,6 +377,13 @@ before `rally resume`.
 `rally run --new` should ask before it archives the current active run for that
 flow, then start a fresh run and reuse the same `home/issue.md` editor path.
 Archived runs should not resume.
+`rally resume --edit` should open the current `home/issue.md` in place before
+the turn starts. If the run is blocked, a saved non-empty edit should move it
+back to `pending` and let Rally try the turn again. A blank save should stop
+and wait for a real issue. If the operator changed the file text, Rally should
+append one `user edited issue.md` block with a unified diff at the end of the
+same ledger before the turn resumes. Done and archived runs should still
+refuse resume.
 
 `rally issue note` is the shared durable-note write surface for both agents and operators.
 It should support:

@@ -21,7 +21,7 @@ class RunEventTests(unittest.TestCase):
                 flow_code="DMO",
                 consumer=build_terminal_display(
                     stream=stream,
-                    context=DisplayContext(run_id="DMO-1", flow_name="demo", flow_code="DMO"),
+                    context=_display_context(),
                 ),
             )
 
@@ -50,6 +50,11 @@ class RunEventTests(unittest.TestCase):
             self.assertIn('"code": "ASSIST"', agent_log)
             self.assertIn("Looking at the parser.", rendered)
             self.assertIn("Rally DMO-1", stream.getvalue())
+            self.assertIn("model=gpt-5.4", stream.getvalue())
+            self.assertIn("thinking=medium", stream.getvalue())
+            self.assertIn("adapter=codex", stream.getvalue())
+            self.assertIn("start=01_scope_lead", stream.getvalue())
+            self.assertIn("agents=4", stream.getvalue())
 
     def test_render_plain_event_line_is_scan_friendly(self) -> None:
         line = render_plain_event_line(
@@ -75,7 +80,7 @@ class RunEventTests(unittest.TestCase):
         stream = _FakeTtyStream()
         display = build_terminal_display(
             stream=stream,
-            context=DisplayContext(run_id="DMO-1", flow_name="demo", flow_code="DMO"),
+            context=_display_context(),
         )
 
         display.emit(
@@ -94,12 +99,46 @@ class RunEventTests(unittest.TestCase):
         )
         display.close()
 
+        self.assertIn("Model gpt-5.4", stream.getvalue())
+        self.assertIn("Thinking medium", stream.getvalue())
+        self.assertIn("Adapter codex", stream.getvalue())
+        self.assertIn("Start 01_scope_lead", stream.getvalue())
+        self.assertIn("Agents 4", stream.getvalue())
         self.assertIn("Printing from the TTY path.", stream.getvalue())
+
+    def test_plain_display_uses_adapter_defaults_when_model_or_thinking_missing(self) -> None:
+        stream = io.StringIO()
+        display = build_terminal_display(
+            stream=stream,
+            context=_display_context(model_name=None, reasoning_effort=None),
+        )
+
+        display.close()
+
+        self.assertIn("model=adapter default", stream.getvalue())
+        self.assertIn("thinking=adapter default", stream.getvalue())
 
 
 class _FakeTtyStream(io.StringIO):
     def isatty(self) -> bool:
         return True
+
+
+def _display_context(
+    *,
+    model_name: str | None = "gpt-5.4",
+    reasoning_effort: str | None = "medium",
+) -> DisplayContext:
+    return DisplayContext(
+        run_id="DMO-1",
+        flow_name="demo",
+        flow_code="DMO",
+        adapter_name="codex",
+        model_name=model_name,
+        reasoning_effort=reasoning_effort,
+        start_agent_key="01_scope_lead",
+        agent_count=4,
+    )
 
 
 if __name__ == "__main__":

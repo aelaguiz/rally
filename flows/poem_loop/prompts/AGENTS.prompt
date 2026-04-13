@@ -7,21 +7,21 @@ import roles.poem_writer
 import roles.poem_critic
 
 
-inputs PoemLoopInputs: "Inputs"
-    rally_base_dir: "Rally Base Dir"
-        rally.base_agent.RallyBaseDir
+inputs PoemLoopInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
+    inherit rally_base_dir
 
-    rally_run_id: "Rally Run ID"
-        rally.base_agent.RallyRunId
-
-    rally_flow_code: "Rally Flow Code"
-        rally.base_agent.RallyFlowCode
+    inherit rally_run_id
+    inherit rally_flow_code
 
     issue_ledger: "Issue Ledger"
         shared.inputs.IssueLedger
 
     poem_draft_file: "Poem Draft File"
         shared.inputs.PoemDraftFile
+
+
+skills PoemLoopSkills[rally.base_agent.RallyManagedSkills]: "Skills"
+    inherit rally_kernel
 
 
 outputs PoemWriterOutputs: "Outputs"
@@ -43,9 +43,8 @@ outputs PoemCriticOutputs: "Outputs"
         CriticTurnResult
 
 
-abstract agent PoemLoopRole:
-    rally_turn_rules: shared.contracts.RallyTurnRules
-
+abstract agent PoemLoopRole[rally.base_agent.RallyManagedBaseAgent]:
+    inherit rally_contract
     system_context: shared.contracts.PoemLoopSystemContext
     ground_truth: shared.contracts.IssueLedgerGroundTruth
     primary_path: shared.contracts.PrimaryPathRules
@@ -76,7 +75,7 @@ output CriticTurnResult: "Critic Turn Result"
 
 agent PoemWriter[PoemLoopRole]:
     role: "Core job: write the requested poem and hand it to PoemCritic."
-    inherit rally_turn_rules
+    inherit rally_contract
     inherit system_context
     inherit ground_truth
     inherit primary_path
@@ -84,12 +83,13 @@ agent PoemWriter[PoemLoopRole]:
     quality_bar: roles.poem_writer.PoemWriterQualityBar
     inputs: PoemLoopInputs
     outputs: PoemWriterOutputs
+    skills: PoemLoopSkills
     final_output: WriterTurnResult
 
 
 agent PoemCritic[PoemLoopRole]:
     role: "Core job: judge the poem, ask for a rewrite when needed, and accept it only when it is ready."
-    inherit rally_turn_rules
+    inherit rally_contract
     inherit system_context
     inherit ground_truth
     inherit primary_path
@@ -97,4 +97,5 @@ agent PoemCritic[PoemLoopRole]:
     quality_bar: roles.poem_critic.PoemCriticQualityBar
     inputs: PoemLoopInputs
     outputs: PoemCriticOutputs
+    skills: PoemLoopSkills
     final_output: CriticTurnResult

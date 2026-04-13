@@ -41,6 +41,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     resume_parser = subparsers.add_parser("resume", help="Resume an existing Rally run.")
     resume_parser.add_argument("run_id", help="Run identifier to resume.")
+    resume_parser.add_argument(
+        "--edit",
+        action="store_true",
+        help="Open `home/issue.md` in your editor before Rally resumes the run.",
+    )
     resume_parser.set_defaults(func=_resume_command)
 
     issue_parser = subparsers.add_parser("issue", help="Work with a Rally issue log.")
@@ -69,7 +74,7 @@ def _run_command(args: argparse.Namespace) -> int:
 def _resume_command(args: argparse.Namespace) -> int:
     result = resume_run(
         repo_root=_repo_root(),
-        request=ResumeRequest(run_id=args.run_id),
+        request=ResumeRequest(run_id=args.run_id, edit_issue=args.edit),
         display_factory=_build_display_factory(sys.stdout),
     )
     print(result.message)
@@ -119,7 +124,18 @@ def _build_display_factory(stream: TextIO):
                 run_id=run_record.id,
                 flow_name=flow.name,
                 flow_code=flow.code,
+                adapter_name=flow.adapter.name,
+                model_name=_optional_adapter_string(flow.adapter.args.get("model")),
+                reasoning_effort=_optional_adapter_string(flow.adapter.args.get("reasoning_effort")),
+                start_agent_key=flow.start_agent_key,
+                agent_count=len(flow.agents),
             ),
         )
 
     return _factory
+
+
+def _optional_adapter_string(raw_value: object) -> str | None:
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return None
+    return raw_value.strip()
