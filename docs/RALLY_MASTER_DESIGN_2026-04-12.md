@@ -140,7 +140,9 @@ Each runnable flow lives under `flows/<flow-slug>/`.
 
 The canonical runtime contract for a flow is `flows/<flow-slug>/flow.yaml`.
 That file declares runtime facts, not instruction prose.
-It also carries runtime limits such as `runtime.max_command_turns`.
+It also carries runtime limits such as `runtime.max_command_turns`, plus
+runtime hooks such as one setup script, one prompt-input reducer, and guarded
+git repo paths.
 
 Every runnable flow has three stable identities:
 
@@ -188,10 +190,15 @@ After that:
 
 - agents assume home is already prepared
 - agents operate inside that home rather than inventing ad hoc repo-management behavior
-- skills are materialized from repo-root `skills/` from each agent's allowlist
+- skills are materialized from repo-root `skills/` from each agent's allowlist,
+  whether the source is markdown `SKILL.md` or Doctrine
+  `prompts/SKILL.prompt` plus emitted `build/SKILL.md`
 - MCP definitions are materialized from repo-root `mcps/` from each agent's allowlist
 - repos, artifacts, env files, and adapter-local state live there
 - agents do not escape home
+
+A flow may also declare one prompt-input reducer that runs before each turn and
+one guarded-git list that Rally checks before it accepts `handoff` or `done`.
 
 For Codex, Rally should point `CODEX_HOME` at the run home.
 
@@ -275,6 +282,10 @@ The favored design is now:
 - `rally.turn_results` as the machine control contract
 - notes through Rally-owned skill-plus-CLI behavior
 - no separate authored handoff artifact
+
+The mixed-skill path is now real.
+Doctrine-authored `rally-kernel` and `demo-git` can live beside markdown skills
+in the same prepared run home.
 
 ## Runtime Contract Summary
 

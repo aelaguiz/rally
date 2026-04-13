@@ -81,6 +81,30 @@ no real artifact to review.
 - The demo stays self-contained to this repo and must not depend on hidden
   machine-global state.
 
+<!-- arch_skill:block:implementation_audit:start -->
+# Implementation Audit (authoritative)
+Date: 2026-04-13
+Verdict (code): COMPLETE
+Manual QA: complete (non-blocking)
+
+## Code blockers (why code is not done)
+- None. The full approved frontier is present. This audit checked current
+  source, generated readback, `uv run pytest tests/unit -q` (`142 passed in
+  1.18s`), Doctrine rebuilds for `_stdlib_smoke`, `poem_loop`,
+  `software_engineering_demo`, and `demo-git`, plus the live `SED-3` and
+  `SED-4` run artifacts. I did not find any execution-side scope cut,
+  weakened acceptance rule, or hidden phase rewrite.
+
+## Reopened phases (false-complete fixes)
+- None.
+
+## Missing items (code gaps; evidence-anchored; no tables)
+- None.
+
+## Non-blocking follow-ups (manual QA / screenshots / human verification)
+- Broader docs cleanup and worklog retirement can move to `$arch-docs`.
+<!-- arch_skill:block:implementation_audit:end -->
+
 <!-- arch_skill:block:planning_passes:start -->
 <!--
 arch_skill:planning_passes
@@ -840,7 +864,7 @@ Not a UI feature. No mockup needed.
 * Goal:
   Reuse the shipped mixed-skill path, prove it stays clean, and add `demo-git`
   on top of it without breaking current flows.
-* Status: IN PROGRESS
+* Status: DONE
 * Completed work:
   - verified the shipped mixed-skill path already exists through
     `skills/rally-kernel/prompts/SKILL.prompt`,
@@ -849,6 +873,12 @@ Not a UI feature. No mockup needed.
     `home_materializer._copy_allowed_skills_and_mcps`
   - verified the `implement-loop` Stop-hook preflight is green for this Codex
     session and armed execution is allowed to start
+  - added `demo-git` as a second Doctrine-authored skill package on the same
+    mixed-skill path
+  - rebuilt `software_engineering_demo` and `demo-git` after the live-run
+    instruction fixes
+  - confirmed one run home now carries markdown skills plus Doctrine
+    `rally-kernel` and Doctrine `demo-git`
 * Work:
   - treat `skills/rally-kernel/prompts/SKILL.prompt` plus
     `skills/rally-kernel/build/` as shipped proof that Rally already supports
@@ -884,6 +914,15 @@ Not a UI feature. No mockup needed.
 * Goal:
   Make `software_engineering_demo` run against a real demo repo that stacks
   across issues and blocks dirty handoffs.
+* Status: DONE
+* Completed work:
+  - added `guarded_git_repos` to the flow contract and loader
+  - added guarded-repo blocking before Rally accepts `handoff` or `done`
+  - shipped `flows/software_engineering_demo/setup/prepare_home.sh` to seed a
+    blank repo on first run and copy the newest archived done demo repo on
+    later runs
+  - proved the archived-run carry-forward path by starting `SED-4` on top of
+    archived `SED-3`
 * Work:
   - add `guarded_git_repos` to the loaded flow contract in
     `src/rally/domain/flow.py` and `src/rally/services/flow_loader.py`
@@ -917,6 +956,19 @@ Not a UI feature. No mockup needed.
 * Goal:
   Ship the actual `software_engineering_demo` flow and its authored skill
   surfaces as a Doctrine showcase.
+* Status: DONE
+* Completed work:
+  - shipped `flows/software_engineering_demo/flow.yaml` with setup, prompt
+    inputs, skill allowlists, and guarded repo config
+  - shipped the Doctrine-authored prompt graph with shared grounding,
+    `review_family`, typed outputs, and Critic-only finish semantics
+  - shipped `skills/demo-git/prompts/**` with bundled helper script and
+    reference material
+  - fixed the live-run prompt issues the first proof exposed:
+    - review-basis parsing now normalizes Rally agent keys like `01_architect`
+    - runnable git examples now use `repos/demo_repo` inside the prepared home
+    - the clean demo proof command now points to
+      `uv run python -B -m pytest ...`
 * Work:
   - create `flows/software_engineering_demo/flow.yaml` with owners, allowlists,
     turn cap, setup script, guarded repo path, and
@@ -956,6 +1008,24 @@ Not a UI feature. No mockup needed.
 * Goal:
   Prove the showcase on real first and second issues and leave live docs aligned
   with shipped truth.
+* Status: DONE
+* Completed work:
+  - reran `uv run pytest tests/unit -q` and reached `142 passed in 1.28s`
+  - proved a first real issue on `SED-3` from a blank seeded repo through the
+    full owner loop
+  - proved a second real issue on `SED-4` that stacked commit `53991c4` on top
+    of accepted `SED-3` commit `0cd50ba`
+  - synced `docs/RALLY_MASTER_DESIGN_2026-04-12.md`,
+    `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, and
+    `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` to the shipped mixed-skill,
+    prompt-input, guarded-git, and carry-forward runtime truth
+* Issues found and fixed during live proof:
+  - `SED-1` exposed a review-basis bug in the prompt-input reducer because the
+    issue ledger stores agent keys like `01_architect`; the reducer now
+    normalizes those keys before Critic chooses a review mode
+  - `SED-2` exposed a real dirty-repo block after Critic replayed pytest and
+    left `__pycache__/`; the guard stayed strict and the authored demo
+    instructions were corrected to use a clean proof command instead
 * Work:
   - run `uv run pytest tests/unit -q`
   - run one live issue from blank demo repo state
@@ -1110,3 +1180,7 @@ Not a UI feature. No mockup needed.
   `emit_skill` and mixed-skill runtime path as existing truth, and only plans
   the extra `demo-git` skill plus any narrow follow-up that the showcase still
   exposes.
+- 2026-04-13: Live proof showed two authored demo rules needed to be more
+  exact. Inside the prepared home, runnable git commands must target
+  `repos/demo_repo`, and the clean Python proof command for this demo should be
+  `uv run python -B -m pytest ...`.
