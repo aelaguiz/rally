@@ -119,6 +119,7 @@ def _demo_flow(*, repo_root: Path) -> FlowDefinition:
         setup_home_script=None,
         start_agent_key=agent.key,
         max_command_turns=8,
+        guarded_git_repos=(),
         agents={agent.key: agent},
         adapter=AdapterConfig(name="codex", prompt_input_command=None, args={}),
     )

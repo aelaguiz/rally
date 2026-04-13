@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -232,6 +233,64 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("- Source: `rally runtime review`", issue_text)
             self.assertIn("### Findings First", issue_text)
             self.assertIn("The poem is ready to keep as written.", issue_text)
+
+    def test_resume_run_passes_base_dir_to_prompt_input_command(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_path.write_text(
+                flow_text.replace(
+                    "  adapter_args:\n",
+                    "  prompt_input_command: setup/prompt_inputs.py\n  adapter_args:\n",
+                ),
+                encoding="utf-8",
+            )
+            (repo_root / "flows" / "demo" / "setup").mkdir(parents=True, exist_ok=True)
+            (repo_root / "flows" / "demo" / "setup" / "prompt_inputs.py").write_text("print('{}')\n", encoding="utf-8")
+
+            captured_env: dict[str, str] = {}
+
+            def prompt_input_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                self.assertEqual(command[0], sys.executable)
+                self.assertIn("RALLY_BASE_DIR", kwargs["env"])
+                captured_env.update(kwargs["env"])
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout=json.dumps({"Env": {"base_dir": kwargs["env"]["RALLY_BASE_DIR"]}}),
+                    stderr="",
+                )
+
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+            fake_run = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-1",
+                        "last_message": {
+                            "kind": "done",
+                            "next_owner": None,
+                            "summary": "done",
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+
+            with patch("rally.services.runner.subprocess.run", side_effect=prompt_input_run):
+                result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1"),
+                    subprocess_run=fake_run,
+                )
+
+            prompt_text = fake_run.calls[0]["kwargs"]["input"]
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertEqual(captured_env["RALLY_BASE_DIR"], str(repo_root))
+            self.assertIn(str(repo_root), prompt_text)
 
     def test_run_flow_rebuild_failure_stops_before_creating_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -697,6 +756,80 @@ class RunnerTests(unittest.TestCase):
 
             self.assertEqual(second_result.status, RunStatus.DONE)
             self.assertEqual((run_dir / "home" / "setup-ok.txt").read_text(encoding="utf-8"), "ok\n")
+
+    def test_resume_run_accepts_clean_guarded_git_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root, with_guarded_repo=True)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=_FakeCodexRun(
+                    [
+                        {
+                            "thread_id": "session-1",
+                            "last_message": {
+                                "kind": "done",
+                                "next_owner": None,
+                                "summary": "guard clean",
+                                "reason": None,
+                                "sleep_duration_seconds": None,
+                            },
+                        }
+                    ]
+                ),
+            )
+
+            state = load_run_state(run_dir=run_dir)
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertEqual(state.status, RunStatus.DONE)
+            self.assertTrue((run_dir / "home" / "repos" / "demo_repo" / ".git").is_dir())
+
+    def test_resume_run_blocks_handoff_when_guarded_git_repo_is_dirty(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root, with_guarded_repo=True)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            fake_run = _DirtyGuardedRepoCodexRun(
+                [
+                    {
+                        "thread_id": "session-1",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_owner": "change_engineer",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=fake_run,
+            )
+
+            state = load_run_state(run_dir=run_dir)
+            issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+
+            self.assertEqual(result.status, RunStatus.BLOCKED)
+            self.assertEqual(result.current_agent_key, "01_scope_lead")
+            self.assertEqual(state.status, RunStatus.BLOCKED)
+            self.assertEqual(state.current_agent_key, "01_scope_lead")
+            self.assertEqual(state.last_turn_kind, "handoff")
+            self.assertIn("Guarded repo `repos/demo_repo` is not ready", state.blocker_reason or "")
+            self.assertIn("Attempted Result: `handoff`", issue_text)
+            self.assertIn("Guarded Repo `repos/demo_repo`", issue_text)
+            self.assertNotIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
+            self.assertIn("blocked", rendered_text.lower())
 
     def test_resume_run_uses_saved_session_and_finishes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1730,6 +1863,7 @@ class RunnerTests(unittest.TestCase):
         *,
         repo_root: Path,
         with_setup_script: bool = False,
+        with_guarded_repo: bool = False,
         max_command_turns: int = 8,
     ) -> None:
         self._write_markdown_skill(
@@ -1776,14 +1910,26 @@ class RunnerTests(unittest.TestCase):
         (flow_root / "build" / "agents" / "scope_lead").mkdir(parents=True)
         (flow_root / "build" / "agents" / "change_engineer").mkdir(parents=True)
         (flow_root / "prompts" / "AGENTS.prompt").write_text("agent Demo:\n", encoding="utf-8")
-        if with_setup_script:
+        if with_setup_script or with_guarded_repo:
             (flow_root / "setup").mkdir(parents=True)
-            (flow_root / "setup" / "prepare_home.sh").write_text(
-                "#!/usr/bin/env bash\nset -euo pipefail\nprintf 'ok\\n' > \"$RALLY_RUN_HOME/setup-ok.txt\"\n",
-                encoding="utf-8",
-            )
+            script_lines = ["#!/usr/bin/env bash", "set -euo pipefail"]
+            if with_setup_script:
+                script_lines.append("printf 'ok\\n' > \"$RALLY_RUN_HOME/setup-ok.txt\"")
+            if with_guarded_repo:
+                script_lines.extend(
+                    [
+                        "repo_dir=\"$RALLY_RUN_HOME/repos/demo_repo\"",
+                        "mkdir -p \"$repo_dir\"",
+                        "git init -b main \"$repo_dir\" >/dev/null 2>&1",
+                        "git -C \"$repo_dir\" config user.name \"Rally Test\"",
+                        "git -C \"$repo_dir\" config user.email \"rally-test@example.com\"",
+                        "git -C \"$repo_dir\" commit --allow-empty -m \"seed repo\" >/dev/null 2>&1",
+                    ]
+                )
+            (flow_root / "setup" / "prepare_home.sh").write_text("\n".join(script_lines) + "\n", encoding="utf-8")
 
-        setup_home_line = "setup_home_script: setup/prepare_home.sh\n" if with_setup_script else ""
+        setup_home_line = "setup_home_script: setup/prepare_home.sh\n" if (with_setup_script or with_guarded_repo) else ""
+        guarded_git_repos_line = "  guarded_git_repos: [repos/demo_repo]\n" if with_guarded_repo else ""
         (flow_root / "flow.yaml").write_text(
             (
                 "name: demo\n"
@@ -1802,6 +1948,7 @@ class RunnerTests(unittest.TestCase):
                 "runtime:\n"
                 "  adapter: codex\n"
                 f"  max_command_turns: {max_command_turns}\n"
+                f"{guarded_git_repos_line}"
                 "  adapter_args:\n"
                 "    model: gpt-5.4\n"
                 "    reasoning_effort: medium\n"
@@ -1977,6 +2124,14 @@ class _FakeCodexRun:
             stdout=stdout,
             stderr=str(response.get("stderr", "")),
         )
+
+
+class _DirtyGuardedRepoCodexRun(_FakeCodexRun):
+    def __call__(self, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        run_home = Path(command[command.index("-C") + 1])
+        repo_dir = run_home / "repos" / "demo_repo"
+        (repo_dir / "dirty.txt").write_text("dirty\n", encoding="utf-8")
+        return super().__call__(command, **kwargs)
 
 
 class _FakeTtyStream(io.StringIO):

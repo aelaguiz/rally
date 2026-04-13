@@ -1,0 +1,223 @@
+import rally.base_agent
+import rally.turn_results
+import shared.inputs
+import shared.skills
+import shared.outputs
+import shared.contracts
+import shared.decisions
+import shared.review
+import roles.architect
+import roles.developer
+import roles.qa_docs_tester
+import roles.critic
+
+
+inputs SoftwareEngineeringDemoInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
+    inherit rally_base_dir
+
+    inherit rally_run_id
+    inherit rally_flow_code
+
+    issue_ledger: "Issue Ledger"
+        shared.inputs.IssueLedger
+
+    demo_repo_root: "Demo Repo Root"
+        shared.inputs.DemoRepoRoot
+
+    runtime_grounding_facts: "Runtime Grounding Facts"
+        shared.inputs.RuntimeGroundingFacts
+
+
+abstract agent SoftwareEngineeringRole[rally.base_agent.RallyManagedBaseAgent]:
+    inherit rally_contract
+    system_context: shared.contracts.SoftwareEngineeringSystemContext
+    issue_truth: shared.contracts.IssueLedgerGroundTruth
+    repo_rules: shared.contracts.DemoRepoRules
+    turn_rules: shared.contracts.SpecialistTurnRules
+    skills: shared.skills.SoftwareEngineeringSkills
+
+
+grounding ArchitectGrounding: "Architect Grounding"
+    source: shared.inputs.RuntimeGroundingFacts
+    target: architecture_direction
+    policy:
+        start_from issue_request
+        allow current_branch
+        allow carry_forward_source
+        allow latest_critic_review
+        forbid guessed_repo_state
+        if review_basis_missing -> route Architect
+
+
+grounding DeveloperGrounding: "Developer Grounding"
+    source: shared.inputs.RuntimeGroundingFacts
+    target: change_direction
+    policy:
+        start_from latest_critic_review
+        allow current_branch
+        allow demo_repo_status
+        allow carry_forward_source
+        forbid stale_plan
+        if review_basis_missing -> route Developer
+
+
+grounding QaGrounding: "QA Grounding"
+    source: shared.inputs.RuntimeGroundingFacts
+    target: proof_direction
+    policy:
+        start_from latest_critic_review
+        allow current_branch
+        allow demo_repo_status
+        allow latest_critic_review
+        forbid guessed_proof
+        if review_basis_missing -> route QaDocsTester
+
+
+grounding CriticGrounding: "Critic Grounding"
+    source: shared.inputs.RuntimeGroundingFacts
+    target: critic_review_basis
+    policy:
+        start_from issue_request
+        allow latest_specialist_turn
+        allow demo_repo_status
+        allow carry_forward_source
+        allow latest_critic_review
+        forbid guessed_verdict
+        if review_basis_missing -> route Critic
+
+
+review_family EngineeringReviewFamily: "Engineering Review"
+    comment_output: shared.review.CriticReviewResponse
+
+    fields:
+        verdict: verdict
+        reviewed_artifact: reviewed_artifact
+        analysis: analysis_performed
+        readback: findings_first
+        current_artifact: current_artifact
+        blocked_gate: failure_detail.blocked_gate
+        failing_gates: failure_detail.failing_gates
+        next_owner: next_owner
+
+    selector:
+        mode selected_mode = shared.inputs.RuntimeGroundingFacts.selected_mode as shared.review.ReviewMode
+
+    handoff_first:
+        reject "The review basis is missing." when shared.inputs.RuntimeGroundingFacts.review_basis_missing
+
+    cases:
+        architect_path: "Architect Path"
+            when shared.review.ReviewMode.architect_review
+            subject: shared.inputs.IssueLedger
+            contract: shared.review.ArchitectReviewContract
+            checks:
+                accept "The architect review contract passes." when contract.passes
+            on_accept:
+                current artifact shared.inputs.IssueLedger via shared.review.CriticReviewResponse.current_artifact
+                route "Accepted architecture goes to Developer." -> Developer
+            on_reject:
+                current artifact shared.inputs.IssueLedger via shared.review.CriticReviewResponse.current_artifact
+                route "Architect needs another pass." -> Architect
+
+        developer_path: "Developer Path"
+            when shared.review.ReviewMode.developer_review
+            subject: shared.inputs.IssueLedger
+            contract: shared.review.DeveloperReviewContract
+            checks:
+                accept "The developer review contract passes." when contract.passes
+            on_accept:
+                current artifact shared.inputs.IssueLedger via shared.review.CriticReviewResponse.current_artifact
+                route "Accepted development goes to QA." -> QaDocsTester
+            on_reject:
+                current artifact shared.inputs.IssueLedger via shared.review.CriticReviewResponse.current_artifact
+                route "Developer needs another pass." -> Developer
+
+        qa_path: "QA Path"
+            when shared.review.ReviewMode.qa_review
+            subject: shared.inputs.IssueLedger
+            contract: shared.review.QaReviewContract
+            checks:
+                accept "The QA review contract passes." when contract.passes
+            on_accept:
+                current artifact shared.inputs.IssueLedger via shared.review.CriticReviewResponse.current_artifact
+            on_reject:
+                current artifact shared.inputs.IssueLedger via shared.review.CriticReviewResponse.current_artifact
+                route "QA found work that still belongs in the repo." -> Developer
+
+
+agent Architect[SoftwareEngineeringRole]:
+    role: "Core job: turn the issue into one real next build step for the demo repo."
+    inherit rally_contract
+    inherit system_context
+    inherit issue_truth
+    inherit repo_rules
+    inherit turn_rules
+    workflow: ArchitectGrounding
+    decision: shared.decisions.ArchitectureChoice
+    your_job: roles.architect.ArchitectJob
+    quality_bar: roles.architect.ArchitectQualityBar
+    inputs: SoftwareEngineeringDemoInputs
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
+        override issue_note: "Issue Note"
+            shared.outputs.ArchitectIssueNote
+
+        turn_result: "Turn Result"
+            rally.turn_results.RallyTurnResult
+    final_output: rally.turn_results.RallyTurnResult
+
+
+agent Critic[SoftwareEngineeringRole]:
+    role: "Core job: review every specialist turn honestly and end only when the issue is truly done."
+    inherit rally_contract
+    inherit system_context
+    inherit issue_truth
+    inherit repo_rules
+    inherit turn_rules
+    critic_grounding: CriticGrounding
+    your_job: roles.critic.CriticJob
+    quality_bar: roles.critic.CriticQualityBar
+    review: EngineeringReviewFamily
+    inputs: SoftwareEngineeringDemoInputs
+    outputs: "Outputs"
+        shared.review.CriticReviewResponse
+    final_output: shared.review.CriticReviewResponse
+
+
+agent Developer[SoftwareEngineeringRole]:
+    role: "Core job: make the next real repo change for the issue."
+    inherit rally_contract
+    inherit system_context
+    inherit issue_truth
+    inherit repo_rules
+    inherit turn_rules
+    workflow: DeveloperGrounding
+    your_job: roles.developer.DeveloperJob
+    quality_bar: roles.developer.DeveloperQualityBar
+    inputs: SoftwareEngineeringDemoInputs
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
+        override issue_note: "Issue Note"
+            shared.outputs.DeveloperIssueNote
+
+        turn_result: "Turn Result"
+            rally.turn_results.RallyTurnResult
+    final_output: rally.turn_results.RallyTurnResult
+
+
+agent QaDocsTester[SoftwareEngineeringRole]:
+    role: "Core job: prove the change, repair small docs or test gaps, and hand the result to Critic."
+    inherit rally_contract
+    inherit system_context
+    inherit issue_truth
+    inherit repo_rules
+    inherit turn_rules
+    workflow: QaGrounding
+    your_job: roles.qa_docs_tester.QaDocsTesterJob
+    quality_bar: roles.qa_docs_tester.QaDocsTesterQualityBar
+    inputs: SoftwareEngineeringDemoInputs
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
+        override issue_note: "Issue Note"
+            shared.outputs.QaIssueNote
+
+        turn_result: "Turn Result"
+            rally.turn_results.RallyTurnResult
+    final_output: rally.turn_results.RallyTurnResult

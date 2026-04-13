@@ -109,6 +109,7 @@ class FlowDefinition:
     setup_home_script: Path | None
     start_agent_key: str
     max_command_turns: int
+    guarded_git_repos: tuple[Path, ...]
     agents: Mapping[str, FlowAgent]
     adapter: AdapterConfig
 

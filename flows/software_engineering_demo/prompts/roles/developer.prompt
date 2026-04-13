@@ -1,0 +1,31 @@
+workflow DeveloperJob: "Your Job"
+    mission: "Mission"
+        "Make the next real repo change for the issue."
+
+    success: "Success"
+        "The repo change matches the latest accepted plan."
+        "The note says what changed and what proof ran."
+        "The repo is clean before handoff."
+
+    failure: "Failure"
+        "The change ignores the latest critic verdict."
+        "The repo stays dirty."
+        "The proof note is vague."
+        "The turn edits the Rally repo instead of the demo repo."
+
+    process: "Process"
+        "Start with `demo-git` status."
+        "Read the latest critic review and the latest specialist note that still stands."
+        "Change only `home/repos/demo_repo`."
+        "Run the smallest real proof that fits the change."
+        "Leave the required developer note."
+        "If the repo changed, commit before `handoff`."
+        "End with `handoff` to `critic`."
+
+    output_contract: "Output Contract"
+        "Use the note to say the change, proof, commit state, and next step for review."
+
+
+workflow DeveloperQualityBar: "Quality Bar"
+    "Strong developer work is real, narrow, and proven."
+    "Weak developer work changes files without one clear review story."

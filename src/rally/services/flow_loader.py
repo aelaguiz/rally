@@ -72,6 +72,11 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
     max_command_turns = _require_int(runtime_payload, "max_command_turns", context="runtime")
     if max_command_turns < 1:
         raise RallyConfigError("`runtime.max_command_turns` must be an integer >= 1.")
+    guarded_git_repos = _require_run_home_relative_paths(
+        runtime_payload,
+        "guarded_git_repos",
+        context="runtime",
+    )
     adapter_args = _require_mapping(runtime_payload, "adapter_args", context="runtime")
     prompt_input_command_rel = runtime_payload.get("prompt_input_command")
     prompt_input_command = None
@@ -110,6 +115,7 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
         setup_home_script=setup_home_script,
         start_agent_key=start_agent_key,
         max_command_turns=max_command_turns,
+        guarded_git_repos=guarded_git_repos,
         agents=agents,
         adapter=AdapterConfig(name=adapter_name, prompt_input_command=prompt_input_command, args=adapter_args),
     )
@@ -515,3 +521,37 @@ def _require_string_list(payload: Mapping[str, Any], key: str, *, context: str) 
     if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
         raise RallyConfigError(f"`{key}` must be a list of non-empty strings in {context}.")
     return tuple(value)
+
+
+def _require_run_home_relative_paths(
+    payload: Mapping[str, Any],
+    key: str,
+    *,
+    context: str,
+) -> tuple[Path, ...]:
+    value = payload.get(key)
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise RallyConfigError(f"`{key}` must be a list of run-home-relative paths in {context}.")
+
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            raise RallyConfigError(
+                f"`{key}[{index}]` must be a non-empty run-home-relative path in {context}."
+            )
+        path = Path(item.strip())
+        normalized = path.as_posix()
+        if path.is_absolute():
+            raise RallyConfigError(f"`{key}[{index}]` must be run-home-relative, not absolute, in {context}.")
+        if normalized in {".", ""}:
+            raise RallyConfigError(f"`{key}[{index}]` must name a child path in {context}.")
+        if ".." in path.parts:
+            raise RallyConfigError(f"`{key}[{index}]` must not escape the run home in {context}.")
+        if normalized in seen:
+            raise RallyConfigError(f"`{key}` must not repeat `{normalized}` in {context}.")
+        seen.add(normalized)
+        paths.append(path)
+    return tuple(paths)

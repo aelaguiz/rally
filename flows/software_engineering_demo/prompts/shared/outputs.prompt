@@ -1,0 +1,76 @@
+import rally.issue_ledger
+
+
+document ArchitectIssueNoteDocument: "Architect Note"
+    section request_read: "Request Read"
+        "Say what problem the issue is asking this flow to solve."
+
+    section chosen_plan: "Chosen Plan"
+        "Name the clean plan for the next owner."
+
+    section repo_state: "Repo State"
+        "Say the branch and whether the repo changed on this turn."
+
+    section next_step: "Next Step"
+        "Tell Critic what to judge next."
+
+
+document DeveloperIssueNoteDocument: "Developer Note"
+    section change_summary: "Change Summary"
+        "Say what changed in the demo repo."
+
+    section proof_run: "Proof Run"
+        "Say what you ran and what happened."
+
+    section commit_state: "Commit State"
+        "Give the commit hash, or say `No repo change.` when nothing changed."
+
+    section next_step: "Next Step"
+        "Tell Critic what to judge next."
+
+
+document QaIssueNoteDocument: "QA Note"
+    section checks_run: "Checks Run"
+        "Say what checks you ran."
+
+    section docs_and_tests: "Docs And Tests"
+        "Say what docs or tests changed, or say none."
+
+    section commit_state: "Commit State"
+        "Give the commit hash, or say `No repo change.` when nothing changed."
+
+    section next_step: "Next Step"
+        "Tell Critic what to judge next."
+
+
+output ArchitectIssueNote: "Architect Issue Note"
+    target: rally.issue_ledger.RallyIssueNoteAppend
+        append_with: "\"$RALLY_BASE_DIR/rally\" issue note --run-id \"$RALLY_RUN_ID\""
+    shape: MarkdownDocument
+    structure: ArchitectIssueNoteDocument
+    requirement: Required
+
+    standalone_read: "Standalone Read"
+        "This note should stand on its own for Critic."
+
+
+output DeveloperIssueNote: "Developer Issue Note"
+    target: rally.issue_ledger.RallyIssueNoteAppend
+        append_with: "\"$RALLY_BASE_DIR/rally\" issue note --run-id \"$RALLY_RUN_ID\""
+    shape: MarkdownDocument
+    structure: DeveloperIssueNoteDocument
+    requirement: Required
+
+    standalone_read: "Standalone Read"
+        "This note should stand on its own for Critic."
+
+
+output QaIssueNote: "QA Issue Note"
+    target: rally.issue_ledger.RallyIssueNoteAppend
+        append_with: "\"$RALLY_BASE_DIR/rally\" issue note --run-id \"$RALLY_RUN_ID\""
+    shape: MarkdownDocument
+    structure: QaIssueNoteDocument
+    requirement: Required
+
+    standalone_read: "Standalone Read"
+        "This note should stand on its own for Critic."

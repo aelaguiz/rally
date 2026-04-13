@@ -47,6 +47,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(flow.agent("02_poem_critic").compiled.slug, "poem_critic")
         self.assertIsNone(flow.setup_home_script)
         self.assertIsNone(flow.adapter.prompt_input_command)
+        self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
             flow.agent("01_poem_writer").compiled.final_output.schema_file,
             repo_root / "stdlib/rally/schemas/rally_turn_result.schema.json",
@@ -74,6 +75,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(flow.agent("02_poem_critic").allowed_mcps, ())
         self.assertIsNone(flow.setup_home_script)
         self.assertIsNone(flow.adapter.prompt_input_command)
+        self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
             flow.agent("01_poem_writer").compiled.final_output.schema_file,
             repo_root / "stdlib/rally/schemas/rally_turn_result.schema.json",
@@ -82,6 +84,18 @@ class FlowLoaderTests(unittest.TestCase):
             flow.agent("02_poem_critic").compiled.final_output.schema_file,
             repo_root / "flows/poem_loop/schemas/poem_review.schema.json",
         )
+
+    def test_load_flow_definition_loads_guarded_git_repos(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                guarded_git_repos_yaml='["repos/demo_repo"]',
+            )
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            self.assertEqual(flow.guarded_git_repos, (Path("repos/demo_repo"),))
 
     def test_poem_loop_compiled_readback_includes_kernel_skill_and_rationale_contract(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
@@ -144,6 +158,17 @@ class FlowLoaderTests(unittest.TestCase):
             with self.assertRaisesRegex(RallyConfigError, "max_command_turns"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
+    def test_load_flow_definition_rejects_absolute_guarded_git_repo_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                guarded_git_repos_yaml='["/tmp/demo_repo"]',
+            )
+
+            with self.assertRaisesRegex(RallyConfigError, "run-home-relative"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
     def test_load_flow_definition_rejects_support_files_outside_repo_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -189,6 +214,7 @@ class FlowLoaderTests(unittest.TestCase):
         max_command_turns_yaml: str = "8",
         schema_file: str = "stdlib/rally/schemas/rally_turn_result.schema.json",
         example_file: str = "stdlib/rally/examples/rally_turn_result.example.json",
+        guarded_git_repos_yaml: str = "[]",
     ) -> None:
         flow_root = repo_root / "flows" / "demo"
         build_root = flow_root / "build" / "agents" / "scope_lead"
@@ -200,31 +226,30 @@ class FlowLoaderTests(unittest.TestCase):
         prompts_root.mkdir(parents=True)
         schema_root.mkdir(parents=True)
         example_root.mkdir(parents=True)
+        max_command_turns_line = f"  max_command_turns: {max_command_turns_yaml}\n" if include_max_command_turns else ""
+        guarded_git_repos_line = f"  guarded_git_repos: {guarded_git_repos_yaml}\n"
 
-        (flow_root / "flow.yaml").write_text(
-            textwrap.dedent(
-                f"""\
-                name: demo
-                code: DEMO
-                start_agent: 01_scope_lead
-                setup_home_script: setup/prepare_home.sh
-                agents:
-                  01_scope_lead:
-                    timeout_sec: 60
-                    allowed_skills:
-                      - repo-search
-                    allowed_mcps:
-                      - fixture-repo
-                runtime:
-                  adapter: codex
-                {'  max_command_turns: ' + max_command_turns_yaml if include_max_command_turns else ''}
-                  prompt_input_command: setup/prompt_inputs.py
-                  adapter_args:
-                    model: gpt-5.4
-                """
-            ),
-            encoding="utf-8",
+        flow_yaml = (
+            "name: demo\n"
+            "code: DEMO\n"
+            "start_agent: 01_scope_lead\n"
+            "setup_home_script: setup/prepare_home.sh\n"
+            "agents:\n"
+            "  01_scope_lead:\n"
+            "    timeout_sec: 60\n"
+            "    allowed_skills:\n"
+            "      - repo-search\n"
+            "    allowed_mcps:\n"
+            "      - fixture-repo\n"
+            "runtime:\n"
+            "  adapter: codex\n"
+            f"{max_command_turns_line}"
+            f"{guarded_git_repos_line}"
+            "  prompt_input_command: setup/prompt_inputs.py\n"
+            "  adapter_args:\n"
+            "    model: gpt-5.4\n"
         )
+        (flow_root / "flow.yaml").write_text(flow_yaml, encoding="utf-8")
         (flow_root / "setup").mkdir(parents=True)
         (flow_root / "setup" / "prepare_home.sh").write_text("#!/bin/sh\n", encoding="utf-8")
         (flow_root / "setup" / "prompt_inputs.py").write_text("print('{}')\n", encoding="utf-8")

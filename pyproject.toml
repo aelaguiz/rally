@@ -30,9 +30,19 @@ entrypoint = "flows/poem_loop/prompts/AGENTS.prompt"
 output_dir = "flows/poem_loop/build/agents"
 
 [[tool.doctrine.emit.targets]]
+name = "software_engineering_demo"
+entrypoint = "flows/software_engineering_demo/prompts/AGENTS.prompt"
+output_dir = "flows/software_engineering_demo/build/agents"
+
+[[tool.doctrine.emit.targets]]
 name = "rally-kernel"
 entrypoint = "skills/rally-kernel/prompts/SKILL.prompt"
 output_dir = "skills/rally-kernel/build"
+
+[[tool.doctrine.emit.targets]]
+name = "demo-git"
+entrypoint = "skills/demo-git/prompts/SKILL.prompt"
+output_dir = "skills/demo-git/build"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

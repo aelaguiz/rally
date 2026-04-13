@@ -34,6 +34,7 @@ from rally.domain.turn_result import (
 from rally.errors import RallyConfigError, RallyStateError, RallyUsageError
 from rally.services.flow_build import ensure_flow_assets_built
 from rally.services.flow_loader import load_flow_code, load_flow_definition
+from rally.services.guarded_git_repos import check_guarded_git_repos, render_guarded_git_repo_blocker
 from rally.services.home_materializer import materialize_run_home, prepare_run_home_shell
 from rally.services.issue_editor import (
     edit_existing_issue_file_in_editor,
@@ -661,6 +662,7 @@ def _execute_single_turn(
     )
 
     prompt = _build_agent_prompt(
+        repo_root=repo_root,
         run_home=run_home,
         flow=flow,
         run_record=run_record,
@@ -816,6 +818,24 @@ def _execute_single_turn(
             ),
         )
 
+    guarded_repo_block = _block_for_guarded_git_repos(
+        repo_root=repo_root,
+        run_dir=run_dir,
+        run_home=run_home,
+        flow=flow,
+        run_record=run_record,
+        agent=agent,
+        turn_index=turn_index,
+        turn_result=turn_result,
+        recorder=recorder,
+    )
+    if guarded_repo_block is not None:
+        return _TurnExecutionOutcome(
+            state=guarded_repo_block.state,
+            turn_result=turn_result,
+            command_result=guarded_repo_block.command_result,
+        )
+
     next_state = _state_from_turn_result(
         flow=flow,
         state=state,
@@ -908,6 +928,7 @@ def _block_for_command_turn_cap(
 
 def _build_agent_prompt(
     *,
+    repo_root: Path,
     run_home: Path,
     flow: FlowDefinition,
     run_record: RunRecord,
@@ -917,6 +938,7 @@ def _build_agent_prompt(
 ) -> str:
     compiled_markdown = (run_home / "agents" / agent.slug / "AGENTS.md").read_text(encoding="utf-8").rstrip()
     prompt_inputs = _load_prompt_inputs(
+        repo_root=repo_root,
         flow=flow,
         run_record=run_record,
         run_home=run_home,
@@ -930,8 +952,89 @@ def _build_agent_prompt(
     return "\n\n".join(parts).rstrip() + "\n"
 
 
+@dataclass(frozen=True)
+class _GuardedRepoBlockOutcome:
+    state: RunState
+    command_result: RunCommandResult
+
+
+def _block_for_guarded_git_repos(
+    *,
+    repo_root: Path,
+    run_dir: Path,
+    run_home: Path,
+    flow: FlowDefinition,
+    run_record: RunRecord,
+    agent: FlowAgent,
+    turn_index: int,
+    turn_result: TurnResult,
+    recorder: RunEventRecorder,
+) -> _GuardedRepoBlockOutcome | None:
+    if not isinstance(turn_result, (HandoffTurnResult, DoneTurnResult)):
+        return None
+    if not flow.guarded_git_repos:
+        return None
+
+    violations = check_guarded_git_repos(
+        run_home=run_home,
+        guarded_git_repos=flow.guarded_git_repos,
+    )
+    if not violations:
+        return None
+
+    blocker_reason = render_guarded_git_repo_blocker(violations=violations)
+    blocked_state = RunState(
+        status=RunStatus.BLOCKED,
+        current_agent_key=agent.key,
+        current_agent_slug=agent.slug,
+        turn_index=turn_index,
+        updated_at=_render_time(),
+        last_turn_kind=turn_result.kind.value,
+        blocker_reason=blocker_reason,
+    )
+    write_run_state(run_dir=run_dir, state=blocked_state)
+    recorder.emit(
+        source="rally",
+        kind="warning",
+        code="BLOCKED",
+        message=f"Run `{run_record.id}` is blocked: {blocker_reason}",
+        level="error",
+        turn_index=turn_index,
+        agent_key=agent.key,
+        agent_slug=agent.slug,
+        data={"result_kind": turn_result.kind.value},
+    )
+    detail_lines = [
+        f"Agent: `{agent.key}`",
+        f"Attempted Result: `{turn_result.kind.value}`",
+        f"Reason: {blocker_reason}",
+    ]
+    for violation in violations:
+        detail_lines.append(
+            f"Guarded Repo `{violation.relative_path.as_posix()}`: {violation.reason}"
+        )
+    append_issue_event(
+        repo_root=repo_root,
+        run_id=run_record.id,
+        title="Rally Blocked",
+        source="rally runtime",
+        detail_lines=detail_lines,
+        turn_index=turn_index,
+    )
+    return _GuardedRepoBlockOutcome(
+        state=blocked_state,
+        command_result=RunCommandResult(
+            run_id=run_record.id,
+            status=blocked_state.status,
+            current_agent_key=blocked_state.current_agent_key,
+            message=f"Run `{run_record.id}` is blocked: {blocker_reason}",
+        ),
+    )
+
+
 def _load_prompt_inputs(
     *,
+    repo_root: Path,
     flow: FlowDefinition,
     run_record: RunRecord,
     run_home: Path,
@@ -957,6 +1060,7 @@ def _load_prompt_inputs(
         cwd=flow.root_dir,
         env={
             **os.environ,
+            "RALLY_BASE_DIR": str(repo_root.resolve()),
             "RALLY_AGENT_KEY": agent.key,
             "RALLY_AGENT_SLUG": agent.slug,
             "RALLY_FLOW_CODE": run_record.flow_code,

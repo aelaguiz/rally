@@ -1,0 +1,31 @@
+name: software_engineering_demo
+code: SED
+setup_home_script: setup/prepare_home.sh
+start_agent: 01_architect
+agents:
+  01_architect:
+    timeout_sec: 900
+    allowed_skills: [demo-git, repo-search]
+    allowed_mcps: []
+  02_critic:
+    timeout_sec: 900
+    allowed_skills: [demo-git, repo-search]
+    allowed_mcps: []
+  03_developer:
+    timeout_sec: 900
+    allowed_skills: [demo-git, repo-search, pytest-local]
+    allowed_mcps: []
+  04_qa_docs_tester:
+    timeout_sec: 900
+    allowed_skills: [demo-git, repo-search, pytest-local]
+    allowed_mcps: []
+runtime:
+  adapter: codex
+  max_command_turns: 12
+  guarded_git_repos:
+    - repos/demo_repo
+  prompt_input_command: setup/prompt_inputs.py
+  adapter_args:
+    model: gpt-5.4
+    reasoning_effort: medium
+    project_doc_max_bytes: 0

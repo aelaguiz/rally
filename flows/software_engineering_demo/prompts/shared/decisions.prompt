@@ -1,0 +1,6 @@
+decision ArchitectureChoice: "Architecture Choice"
+    candidates minimum 2
+    rank required
+    rejects required
+    choose one winner
+    rank_by {repo_fit, demo_value, proof_cost, clarity}

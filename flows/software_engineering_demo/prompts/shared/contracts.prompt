@@ -1,0 +1,50 @@
+workflow SoftwareEngineeringSystemContext: "System Context"
+    "This flow is a real Rally software engineering demo."
+    "It starts from `home/issue.md`."
+    "It works in one demo repo at `home/repos/demo_repo`."
+    "Later issues build on the last accepted demo history."
+
+    why_this_flow_exists: "Why This Flow Exists"
+        "The goal is to show a real issue loop, not a fake prompt toy."
+        "The flow should pressure Rally and Doctrine in honest ways."
+
+
+workflow IssueLedgerGroundTruth: "Issue Ledger Truth"
+    opening_issue: "Opening Issue"
+        "Read the opening text before the first `## Rally` heading as the human request."
+
+    run_history: "Run History"
+        "Read later `## Rally` blocks as the shared history."
+        "Start with the newest relevant block when you need the latest truth."
+
+    critic_history: "Critic History"
+        "Read the newest `rally runtime review` note before you rely on an older critic verdict."
+
+
+workflow DemoRepoRules: "Demo Repo Rules"
+    repo_path: "Repo Path"
+        "Use only `home/repos/demo_repo`."
+        "Do not make a second repo or a side repo."
+
+    branch_rules: "Branch Rules"
+        "Stay on the current issue branch."
+        "Do not reset away accepted history."
+
+    git_rules: "Git Rules"
+        "Check branch and status before you change files."
+        "If this turn changed the repo, commit before `handoff` or `done`."
+        "Do not end the turn with a dirty repo."
+        "Proof commands must leave the repo clean too."
+        "For Python proof in this demo repo, prefer `python -B -m pytest ...` so the run does not leave `__pycache__/` dirt."
+
+
+workflow SpecialistTurnRules: "How To Take A Turn"
+    turn_order: "Turn Order"
+        "Architect starts."
+        "Critic reviews after every specialist turn."
+        "Critic ends the run only when the issue is truly met."
+
+    handoff_rules: "Handoff Rules"
+        "Architect, Developer, and QA hand off only to Critic."
+        "Use the issue note to leave the next reader the key facts."
+        "Keep route truth in the final JSON, not in note prose."
