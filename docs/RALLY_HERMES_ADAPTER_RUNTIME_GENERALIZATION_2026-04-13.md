@@ -78,7 +78,7 @@ as a Codex alias or a thin CLI scrape.
 arch_skill:planning_passes
 deep_dive_pass_1: done 2026-04-13
 external_research_grounding: not started
-deep_dive_pass_2: not started
+deep_dive_pass_2: done 2026-04-13
 recommended_flow: deep dive -> external research grounding -> deep dive again -> phase plan -> implement
 note: This block tracks stage order only. It never overrides readiness blockers caused by unresolved decisions.
 -->
@@ -173,7 +173,8 @@ Behavior-preservation evidence:
 - existing Codex-focused unit tests keep passing or move cleanly behind
   adapter-neutral seams
 - new unit coverage proves adapter validation, adapter dispatch, and
-  adapter-owned home/session/event behavior
+  adapter-owned home/session/event behavior, including refresh-on-resume
+  adapter bootstrap and Hermes approval clamping
 - one honest Hermes proof exists through Rally, or the exact blocker is named
   plainly in this doc before the work is called complete
 
@@ -465,9 +466,14 @@ Behavior-preservation evidence:
   `../hermes-agent/tools/approval.py`, and
   `../hermes-agent/acp_adapter/server.py`. Needed answer: no CLI scrape and no
   ACP client in v1.
-- No user blocker question remains after deep-dive pass 1.
-- Deep-dive pass 2 still needs to harden the delete list, the doc-sync set,
-  and the proof matrix before phase planning begins.
+- Resolved by deep-dive pass 2: the shared final-response loader should move to
+  `src/rally/services/final_response_loader.py`, the live doc sync set must
+  include the master, Phase 3, Phase 4, and CLI/logging docs, and the minimum
+  proof matrix must cover flow loading, shared runner dispatch, shared home
+  materialization, shared final-response loading, Codex preservation, shared
+  event rendering, and the Hermes adapter path.
+- No user blocker question remains after deep-dive pass 2.
+- The artifact is ready for `phase-plan`.
 <!-- arch_skill:block:research_grounding:end -->
 
 <!-- arch_skill:block:current_architecture:start -->
@@ -572,11 +578,14 @@ agnostic, but some runtime messages are not.
 - Add one shared adapter boundary under `src/rally/adapters/`:
   - `base.py` for the adapter protocol plus shared adapter dataclasses
   - `registry.py` for supported adapter lookup and flow-loader validation
-- Keep `src/rally/adapters/codex/`, but make it a full adapter implementation
-  instead of a bag of helpers imported by shared runtime code.
-- Add `src/rally/adapters/hermes/` as a full adapter implementation.
-- Move the generic final-response loader out of the Codex tree into a shared
-  Rally-owned module, because Rally owns final turn-result validation.
+- Keep `src/rally/adapters/codex/`, but add
+  `src/rally/adapters/codex/adapter.py` so it becomes a full adapter
+  implementation instead of a bag of helpers imported by shared runtime code.
+- Add `src/rally/adapters/hermes/` as a full adapter implementation with
+  `src/rally/adapters/hermes/adapter.py` as the entrypoint.
+- Move the generic final-response loader out of the Codex tree into
+  `src/rally/services/final_response_loader.py`, because Rally owns final
+  turn-result validation.
 - Keep the shared run-home layout exactly where Rally already keeps it:
   `home/agents/`, `home/skills/`, `home/mcps/`, `home/artifacts/`,
   `home/repos/`, and `home/issue.md`.
@@ -585,11 +594,12 @@ agnostic, but some runtime messages are not.
 - Give Hermes an adapter-local root at `home/hermes/` and set
   `HERMES_HOME=home/hermes/`. Under that root:
   - `home/hermes/home/` is the subprocess `HOME`
-  - `home/hermes/config.yaml` is Hermes config
+  - `home/hermes/config.yaml` is Hermes config generated from Rally policy and
+    must set non-interactive approvals plus translated `mcp_servers`
   - `home/hermes/state.db` is Hermes state
   - `home/hermes/sessions/` holds Hermes-native session files
   - `home/hermes/skills/` and related runtime files are adapter-owned copies
-    or links derived from Rally policy
+    or links derived from Rally policy, not Hermes global auto-sync output
 - Keep shared run archaeology under `runs/<run-id>/logs/`. Each adapter writes
   one proof file per turn into `logs/adapter_launch/`, but the payload may be
   adapter-specific.
@@ -603,8 +613,9 @@ agnostic, but some runtime messages are not.
    issue-ledger entry, and command-level run orchestration.
 3. `materialize_run_home()` keeps ownership of shared layout, compiled-agent
    sync, allowlisted skill sync, allowlisted MCP sync, and setup-script
-   execution, then calls `adapter.prepare_home(...)` for adapter-local config,
-   auth, and translation work.
+   execution. It calls `adapter.prepare_home(...)` on every start or resume,
+   before any home-ready early return, so adapter-local config and auth refresh
+   stay current while the flow setup script still runs only once.
 4. `_execute_single_turn()` resolves the adapter once from the flow and then
    uses the adapter contract to:
    - load the previous adapter session
@@ -620,17 +631,19 @@ agnostic, but some runtime messages are not.
    writes, and command stop conditions.
 7. Codex continues to use native `--output-schema` enforcement.
 8. Hermes uses the library path: the adapter calls `AIAgent.run_conversation()`,
-   takes `final_response`, writes it to `last_message.json`, and then relies on
-   the same Rally final-response validation path. Missing or invalid JSON
-   blocks the run loudly.
+   takes `final_response`, writes it to `last_message.json`, emits Rally events
+   through Hermes callbacks, and then relies on the same Rally
+   final-response validation path. Missing or invalid JSON blocks the run
+   loudly.
 9. Hermes does not use `hermes chat -q -Q` in the supported path, and v1 does
-   not add an ACP client.
+   not add an ACP client or a `sync_skills()` launch side path.
 
 ## 5.3 Object model + abstractions (future)
 
 - Add a small `RuntimeAdapter` protocol with these responsibilities:
   - validate adapter-specific args
-  - prepare adapter-local home state
+  - prepare adapter-local home state from Rally-projected skills, MCPs, auth,
+    and adapter args
   - load and save adapter session state
   - prepare turn artifacts
   - execute one turn and emit `EventDraft`s
@@ -673,8 +686,11 @@ agnostic, but some runtime messages are not.
   into their own runtime shape, but they may not widen skill, MCP, tool, auth,
   or approval access beyond Rally policy.
 - Hermes v1 must run in a non-interactive Rally-managed mode. It must not stop
-  for approval prompts. If Hermes cannot be put into that mode explicitly, the
-  adapter is not supported.
+  for approval prompts. `home/hermes/config.yaml` must set
+  `approvals.mode: off` or the equivalent explicit non-interactive setting. If
+  Hermes cannot be put into that mode explicitly, the adapter is not supported.
+- Hermes v1 must not call CLI skill auto-sync. Rally-owned home materialization
+  is the only supported source of skills in the run home.
 - Codex keeps its exact current launch rule.
 - No per-agent mixed-adapter path exists in v1.
 - No new sidecar handoff artifact, parser shim, CLI scrape layer, or ACP client
@@ -707,13 +723,17 @@ Required text-level changes only:
 | Adapter contract | `src/rally/adapters/base.py` | new | Missing | Add protocol plus shared adapter dataclasses | Shared runtime needs one stable seam | `RuntimeAdapter`, `AdapterSessionRecord`, `TurnArtifacts`, `TurnExecution` | new contract coverage plus `tests/unit/test_runner.py` |
 | Flow loading | `src/rally/services/flow_loader.py` | `load_flow_definition()` | Reads any adapter string and raw args | Validate supported adapter names and adapter-specific args | Stop carrying a fake-generic runtime.adapter field | flow-loader validation through registry | `tests/unit/test_flow_loader.py` |
 | Shared runtime | `src/rally/services/runner.py` | top-level imports, `_execute_single_turn()`, `_invoke_codex()` | Imports and calls Codex helpers directly | Resolve adapter once and dispatch through the adapter contract | Shared runtime must stop knowing Codex wire rules | adapter-neutral turn execution path | `tests/unit/test_runner.py` |
-| Shared final response loader | `src/rally/adapters/codex/result_contract.py` | `load_agent_final_response()` | Rally-owned final JSON validation lives under the Codex tree | Move to a shared Rally-owned module and update imports | Final JSON validation is not Codex-specific | generic `load_agent_final_response()` on `last_message.json` | `tests/unit/test_result_contract.py`, `tests/unit/domain/test_turn_result_contracts.py`, `tests/unit/test_runner.py` |
-| Shared home materialization | `src/rally/services/home_materializer.py` | `materialize_run_home()`, `_write_codex_config()`, `_seed_codex_auth()` | Shared home setup writes Codex config and auth directly | Keep shared sync/setup work and call adapter bootstrap hooks for adapter-local config and auth | Hermes cannot reuse Codex bootstrap, and shared policy should stay shared | `adapter.prepare_home(...)` after shared sync | new home-materialization coverage plus `tests/unit/test_runner.py` |
-| Codex adapter | `src/rally/adapters/codex/launcher.py`, `session_store.py`, `event_stream.py` | current modules | Useful Codex behavior exists but is partly orchestrated from shared runtime | Wrap these under a first-class Codex adapter implementation | Preserve current behavior while removing shared-runtime leaks | Codex adapter owns launch, session, artifacts, and event mapping | `tests/unit/test_launcher.py`, `tests/unit/test_codex_event_stream.py`, `tests/unit/test_runner.py` |
+| Shared final response loader | `src/rally/services/final_response_loader.py` | new | Rally-owned final JSON validation lives under `src/rally/adapters/codex/result_contract.py` | Move the loader to `src/rally/services/final_response_loader.py`, then update shared runtime and adapter imports | Final JSON validation is not Codex-specific | generic `load_agent_final_response()` and `load_turn_result()` on `last_message.json` | `tests/unit/test_final_response_loader.py`, `tests/unit/domain/test_turn_result_contracts.py`, `tests/unit/test_runner.py` |
+| Shared home materialization | `src/rally/services/home_materializer.py` | `materialize_run_home()`, `_write_codex_config()`, `_seed_codex_auth()` | Shared home setup writes Codex config and auth directly | Keep shared sync/setup work and call adapter bootstrap hooks for adapter-local config and auth | Hermes cannot reuse Codex bootstrap, and shared policy should stay shared | `adapter.prepare_home(...)` on every start or resume before the home-ready short-circuit | new home-materialization coverage plus `tests/unit/test_runner.py` |
+| Codex adapter | `src/rally/adapters/codex/adapter.py`, `launcher.py`, `session_store.py`, `event_stream.py` | new adapter entrypoint plus current modules | Useful Codex behavior exists but is partly orchestrated from shared runtime | Wrap these under a first-class Codex adapter implementation | Preserve current behavior while removing shared-runtime leaks | Codex adapter owns launch, session, artifacts, and event mapping | `tests/unit/test_launcher.py`, `tests/unit/test_codex_event_stream.py`, `tests/unit/test_runner.py` |
 | Hermes adapter | `src/rally/adapters/hermes/adapter.py` and supporting modules | new | Missing | Implement library-backed Hermes adapter, nested `HERMES_HOME`, adapter-local config/session/event mapping, and `last_message.json` writeback | Support Hermes cleanly without a CLI scrape | Hermes adapter owns `AIAgent` bridge, session store, artifacts, home bootstrap, and event mapping | new Hermes adapter tests plus `tests/unit/test_runner.py` |
 | Event sink | `src/rally/services/run_events.py` | `EventDraft` and `RunEventRecorder` | Already shared but only fed by Codex parser today | Keep unchanged at the sink boundary and confirm both adapters emit into it | Avoid a second logging plane | adapters emit `EventDraft`s; recorder stays shared | `tests/unit/test_run_events.py`, `tests/unit/test_runner.py` |
 | CLI display | `src/rally/terminal/display.py` and shared runner lifecycle messages | adapter summary and launch messages | Startup summary is adapter-aware, but some lifecycle text is Codex-only | Keep the small shared operator surface and remove stale Codex-only wording where it is really generic | Multi-adapter runtime should not mislabel shared actions | adapter-neutral lifecycle text with adapter-specific detail only where truthful | targeted display coverage if needed |
-| Runtime docs | `docs/RALLY_MASTER_DESIGN_2026-04-12.md`, `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` | current runtime narrative | Durable docs still teach a Codex-first runtime | Update docs in the same pass as the code change | Keep durable repo truth aligned with shipped behavior | doc updates only | doc review |
+| Flow-loader tests | `tests/unit/test_flow_loader.py` | adapter config tests | Current tests only cover the Codex-shaped flow contract | Add supported-adapter acceptance, unknown-adapter rejection, and bad-adapter-args rejection | Adapter validation must fail before runtime | registry-backed flow validation proofs | self |
+| Shared home tests | `tests/unit/test_home_materializer.py` | new | Missing | Add direct tests for shared sync, adapter bootstrap refresh, and one-time setup behavior | The split between shared home work and adapter bootstrap is a new boundary | home bootstrap contract coverage | new |
+| Shared final-response tests | `tests/unit/test_final_response_loader.py` | renamed or replaced from `tests/unit/test_result_contract.py` | Current shared final-response tests live under a Codex file name and import path | Align test ownership with the moved shared loader and expand invalid-output coverage | The shared loader becomes a Rally service, not a Codex helper | final-response loader proofs | self |
+| Hermes adapter tests | `tests/unit/test_hermes_adapter.py` | new | Missing | Add unit coverage for `AIAgent` bridging, callback-to-event mapping, `approvals.mode: off`, translated MCP config, and `last_message.json` writeback | Hermes needs proof without relying on a live external provider in every test run | Hermes adapter contract proofs | new |
+| Runtime docs | `docs/RALLY_MASTER_DESIGN_2026-04-12.md`, `docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md`, `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` | current runtime narrative | Durable docs still teach a Codex-first runtime or Codex-owned shared surfaces | Update docs in the same pass as the code change | Keep durable repo truth aligned with shipped behavior | doc updates only | doc review |
 
 ## 6.2 Migration notes
 
@@ -722,35 +742,42 @@ Canonical owner path / shared code path:
 - Shared runtime stays in `src/rally/services/runner.py`,
   `src/rally/services/home_materializer.py`, and
   `src/rally/services/run_events.py`.
+- Shared final-response loading moves to
+  `src/rally/services/final_response_loader.py`.
 - Adapter-specific mechanics move under `src/rally/adapters/<name>/`.
-- Shared final-response validation moves out of the Codex tree into a Rally
-  shared module.
 
 Deprecated APIs (if any):
 
 - direct Codex imports from `src/rally/services/runner.py`
 - direct Codex bootstrap helpers inside `src/rally/services/home_materializer.py`
-- using `src/rally/adapters/codex/result_contract.py` as if it were
-  adapter-specific
+- importing shared final-response loading from
+  `src/rally/adapters/codex/result_contract.py`
 
 Delete list (what must be removed; include superseded shims/parallel paths if any):
 
 - `_invoke_codex()` and `_CodexInvocation` from shared `runner.py`
 - `_write_codex_config()` and `_seed_codex_auth()` from shared
   `home_materializer.py`
+- `src/rally/adapters/codex/result_contract.py` after its shared logic moves
+  to `src/rally/services/final_response_loader.py`
+- `tests/unit/test_result_contract.py` if the shared-loader coverage is renamed
+  to match the new owner path
 - any compatibility branch in shared runtime that switches on `"codex"` versus
   `"hermes"` instead of dispatching through the registry
-- any Hermes CLI wrapper or ACP bridge added as a parallel v1 path
+- any Hermes CLI wrapper, `sync_skills()` launch path, or ACP bridge added as a
+  parallel v1 path
 
 Capability-replacing harnesses to delete or justify:
 
 - reject `hermes chat -q -Q` as the supported adapter path
+- reject any supported path that depends on Hermes CLI auto skill sync
 - reject a v1 ACP client path unless later planning proves the Python adapter
   surface cannot satisfy Rally's event and result needs
 
 Live docs/comments/instructions to update or delete:
 
 - `docs/RALLY_MASTER_DESIGN_2026-04-12.md`
+- `docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md`
 - `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`
 - `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md`
 - any shared runner comments or log messages that still name Codex when the
@@ -759,13 +786,19 @@ Live docs/comments/instructions to update or delete:
 Behavior-preservation signals for refactors:
 
 - `uv run pytest tests/unit -q`
-- `tests/unit/test_runner.py`
-- `tests/unit/test_flow_loader.py`
-- `tests/unit/test_result_contract.py`
+- `tests/unit/test_flow_loader.py` for supported-adapter validation and arg rejection
+- `tests/unit/test_runner.py` for run/resume control flow, stop conditions, and
+  refresh-on-resume behavior
+- `tests/unit/test_home_materializer.py` for shared-vs-adapter bootstrap split
+- `tests/unit/test_final_response_loader.py`
 - `tests/unit/domain/test_turn_result_contracts.py`
-- `tests/unit/test_launcher.py`
-- `tests/unit/test_codex_event_stream.py`
-- `tests/unit/test_run_events.py`
+- `tests/unit/test_launcher.py` and `tests/unit/test_codex_event_stream.py`
+  for Codex preservation after extraction
+- `tests/unit/test_run_events.py` for shared event sink and display preservation
+- `tests/unit/test_hermes_adapter.py` for Hermes library-path coverage
+- one small live Codex Rally run after the refactor
+- one honest Hermes Rally run before support is called complete, or one explicit
+  blocker recorded in the doc
 
 ## Pattern Consolidation Sweep (anti-blinders; scoped by plan)
 
@@ -777,6 +810,7 @@ Behavior-preservation signals for refactors:
 | Final-response loading | shared Rally-owned loader | every adapter writes one `last_message.json` and Rally validates it once | preserves one turn-ending control path | include |
 | Adapter logs | `logs/adapter_launch/` plus adapter event emitters | each adapter owns its own launch proof and event mapping into `EventDraft` | keeps run archaeology bundled without a second log plane | include |
 | Operator wording | shared runner lifecycle messages and display text | adapter-neutral wording in shared text; adapter name only when truthful | keeps the CLI small and honest as adapters grow | include |
+| Live runtime docs | `docs/RALLY_MASTER_DESIGN_2026-04-12.md`, `docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md`, `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` | teach one shared runtime boundary plus adapter-owned wire details | prevents the docs from freezing the old Codex-only split into repo law | include |
 | Per-agent capability enforcement | run-home skill and MCP isolation rules | keep current union-of-flow allowlist model until a later runtime plan changes it on purpose | this plan should not widen into per-agent isolation work | defer |
 | ACP integration | Hermes ACP server and any future Rally ACP client | rich event transport only if the library path later proves insufficient | avoid an unnecessary v1 control surface | exclude |
 <!-- arch_skill:block:call_site_audit:end -->
@@ -785,26 +819,40 @@ Behavior-preservation signals for refactors:
 
 > Rule: systematic build, foundational first; every phase has exit criteria + explicit verification plan (tests optional). Refactors, consolidations, and shared-path extractions must preserve existing behavior with credible evidence proportional to the risk. For agent-backed systems, prefer prompt, grounding, and native-capability changes before new harnesses or scripts. No fallbacks/runtime shims - the system must work correctly or fail loudly (delete superseded paths). Prefer programmatic checks per phase; defer manual/UI verification to finalization. Avoid negative-value tests and heuristic gates (deletion checks, visual constants, doc-driven gates, keyword or absence gates, repo-shape policing). Also: document new patterns/gotchas in code comments at the canonical boundary (high leverage, not comment spam).
 
-Phase planning is intentionally deferred until `research` and `deep-dive`
-resolve the adapter boundary, the Hermes integration plane, and the final-result
-contract.
+Deep-dive is complete. `phase-plan` is now the next command that should turn
+Sections 3 through 6 into the authoritative execution checklist.
 
 # 8) Verification Strategy (common-sense; non-blocking)
 
 ## 8.1 Unit tests (contracts)
 
 - Keep `uv run pytest tests/unit -q` as the shared proof floor.
-- Prefer adapter-neutral runtime tests plus adapter-specific tests at the new
-  boundary.
-- Add tests only where they protect shipped behavior or the new adapter
-  contract.
+- Use `tests/unit/test_flow_loader.py` to prove supported-adapter validation and
+  bad-adapter rejection at the front door.
+- Use `tests/unit/test_runner.py` to prove shared run and resume behavior still
+  works after adapter extraction.
+- Add `tests/unit/test_home_materializer.py` to prove shared sync still
+  refreshes each start or resume while setup stays one-time.
+- Move shared final-response coverage to
+  `tests/unit/test_final_response_loader.py` and keep
+  `tests/unit/domain/test_turn_result_contracts.py` as the lower-level parser
+  floor.
+- Keep `tests/unit/test_launcher.py` and `tests/unit/test_codex_event_stream.py`
+  as the Codex preservation floor.
+- Add `tests/unit/test_hermes_adapter.py` to prove library-path callbacks,
+  approval clamping, config translation, session handling, and final-response
+  writeback without needing a live provider on every test run.
+- Keep `tests/unit/test_run_events.py` as the shared sink and display floor.
 
 ## 8.2 Integration tests (flows)
 
 - Use the smallest honest Rally-run proof for adapter dispatch once the design
   is implemented.
-- Prefer one flow or fixture that proves the shared run path can use Hermes
-  without creating a second operator surface.
+- Re-run one small Codex Rally flow after the refactor so the shared adapter
+  boundary proves it did not break the existing path.
+- Run one honest Hermes Rally flow before support is called complete. If local
+  provider or auth setup blocks that proof, record the exact blocker and do not
+  claim full Hermes support yet.
 
 ## 8.3 E2E / device tests (realistic)
 
@@ -907,3 +955,47 @@ Follow-ups
 - Use deep-dive pass 2 to harden the delete list and proof matrix.
 - Use phase planning to sequence the adapter extraction before Hermes-specific
   work.
+
+## 2026-04-13 - Lock the shared final-response owner and the live sync set
+
+Context
+
+Deep-dive pass 2 needed to remove the last implementation-time guessing. The
+first pass had the right shape, but it still left the exact shared owner for
+final-response loading, the durable doc sync set, and the minimum proof matrix
+too implicit.
+
+Options
+
+- Leave the shared loader path and test ownership loose until implementation.
+- Keep the shared loader under the Codex tree and rely on comments to explain
+  the mismatch.
+- Choose one exact shared owner path, one exact live-doc sync set, and one
+  explicit proof matrix now.
+
+Decision
+
+Choose one exact shared owner path:
+`src/rally/services/final_response_loader.py`. Treat
+`docs/RALLY_MASTER_DESIGN_2026-04-12.md`,
+`docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md`,
+`docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, and
+`docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` as the required live-doc sync set.
+Treat flow-loader tests, runner tests, home-materializer tests, shared
+final-response tests, Codex adapter tests, shared event tests, and Hermes
+adapter tests as the minimum proof matrix.
+
+Consequences
+
+- Implementation no longer needs to invent where the shared loader belongs.
+- The old Codex result-contract module becomes a delete target, not a forever
+  exception.
+- The plan now names the exact docs that must move in the same pass.
+- Hermes support cannot be called complete without both unit-level proof and
+  one honest Rally-run proof or a plainly named blocker.
+
+Follow-ups
+
+- Use `phase-plan` to sequence the shared extraction first.
+- Keep `consistency-pass` focused on doc and proof alignment after the phase
+  plan lands.

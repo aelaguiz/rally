@@ -53,6 +53,7 @@ What is real today:
 - Codex session save and reuse across chained turns
 - `home/issue.md` plus `issue_history/`
 - the opening brief lives in `home/issue.md`, not a shared sidecar brief file
+- `rally issue note --field key=value` for flat structured note labels
 - `logs/events.jsonl`
 - `logs/agents/<agent>.jsonl`
 - `logs/rendered.log`
@@ -72,6 +73,7 @@ What is outside Phase 4:
 # Stable Rules
 
 - Notes are context only.
+- Notes may carry flat string header fields for stable labels.
 - Final JSON is the only turn-ending control path.
 - Many turns use the shared five-key Rally turn result.
 - Review-native turns may use control-ready Doctrine review JSON instead.
@@ -100,7 +102,7 @@ The current checked-in runtime surface is:
   - ships real `resume`
   - ships `resume --edit`
   - ships `resume --restart`
-  - ships `issue note`
+  - ships `issue note`, including repeatable `--field key=value`
   - stamps `- Turn: \`N\`` on in-turn notes automatically when Rally launched that turn
 - `src/rally/services/run_store.py`
   - allocates run ids
@@ -114,6 +116,7 @@ The current checked-in runtime surface is:
   - runs flow setup only when the run home first becomes ready
 - `src/rally/services/issue_ledger.py`
   - appends Rally-stamped notes and runtime event blocks
+  - renders flat structured note fields as `- Field <key>: \`<value>\`` header lines
   - inserts one hidden original-issue marker before the first Rally-owned block
   - can recover the original issue from the earliest issue snapshot
   - snapshots the full issue log after each append

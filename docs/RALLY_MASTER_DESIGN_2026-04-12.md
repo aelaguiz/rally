@@ -226,6 +226,7 @@ The communication model is now explicit:
 
 Serialized notes are durable context only.
 They do not carry trusted routing, blocker, sleep, or done truth.
+They may carry flat string note fields when later turns need stable labels.
 
 The structured final turn result is the only turn-ending control surface.
 It tells Rally whether to route, stop, block, or ask for sleep.
@@ -373,7 +374,7 @@ Conceptually it is:
 rally run <flow> [--new]
 rally resume <FLOW_CODE>-<n> [--edit|--restart]
 rally archive <FLOW_CODE>-<n>
-rally issue note --run-id <FLOW_CODE>-<n>
+rally issue note --run-id <FLOW_CODE>-<n> [--field key=value ...]
 ```
 
 `rally run` and `rally resume` should give the operator one clean live view on
@@ -414,6 +415,7 @@ It should support:
 - stdin
 - `--file /path/to/note.md`
 - `--text "..."`
+- repeatable `--field key=value` for flat note labels
 
 Rally should also keep one tiny adapter-backed helper seam for simple strict-JSON maintenance tasks such as:
 

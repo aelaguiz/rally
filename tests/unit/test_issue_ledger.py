@@ -127,6 +127,36 @@ class IssueLedgerTests(unittest.TestCase):
             issue_text = issue_file.read_text(encoding="utf-8")
             self.assertIn("- Turn: `3`", issue_text)
 
+    def test_append_issue_note_renders_structured_fields_in_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            append_issue_note(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                note_markdown="### Note\n- keep this context",
+                note_fields=(
+                    ("kind", "producer_handoff"),
+                    ("lane", "producer"),
+                    ("artifact", "section_plan"),
+                ),
+                now=datetime(2026, 4, 13, 19, 31, tzinfo=UTC),
+            )
+
+            issue_text = issue_file.read_text(encoding="utf-8")
+            self.assertIn("- Field kind: `producer_handoff`", issue_text)
+            self.assertIn("- Field lane: `producer`", issue_text)
+            self.assertIn("- Field artifact: `section_plan`", issue_text)
+            self.assertLess(
+                issue_text.index("- Field kind: `producer_handoff`"),
+                issue_text.index("- Field lane: `producer`"),
+            )
+            self.assertLess(
+                issue_text.index("- Field lane: `producer`"),
+                issue_text.index("- Field artifact: `section_plan`"),
+            )
+
     def test_append_issue_note_uses_one_divider_between_each_rally_block(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -176,6 +206,32 @@ class IssueLedgerTests(unittest.TestCase):
                     run_id="FLW-1",
                     note_markdown="### Note\n- invalid turn",
                     turn_index=0,
+                )
+
+    def test_append_issue_note_rejects_duplicate_structured_field_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            with self.assertRaisesRegex(RallyStateError, "Note field `kind` is duplicated"):
+                append_issue_note(
+                    repo_root=repo_root,
+                    run_id="FLW-1",
+                    note_markdown="### Note\n- invalid fields",
+                    note_fields=(("kind", "first"), ("kind", "second")),
+                )
+
+    def test_append_issue_note_rejects_invalid_structured_field_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            with self.assertRaisesRegex(RallyStateError, "Note field keys must match"):
+                append_issue_note(
+                    repo_root=repo_root,
+                    run_id="FLW-1",
+                    note_markdown="### Note\n- invalid fields",
+                    note_fields=(("Bad-Key", "producer"),),
                 )
 
     def test_append_issue_note_inserts_hidden_original_issue_marker_once(self) -> None:

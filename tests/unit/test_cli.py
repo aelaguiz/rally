@@ -130,6 +130,32 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertIn("Short note", issue_file.read_text(encoding="utf-8"))
 
+    def test_issue_note_adds_structured_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            with patch("rally.cli._repo_root", return_value=repo_root):
+                exit_code = main(
+                    [
+                        "issue",
+                        "note",
+                        "--run-id",
+                        "FLW-1",
+                        "--field",
+                        "kind=producer_handoff",
+                        "--field",
+                        "lane=producer",
+                        "--text",
+                        "Short note",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            issue_text = issue_file.read_text(encoding="utf-8")
+            self.assertIn("- Field kind: `producer_handoff`", issue_text)
+            self.assertIn("- Field lane: `producer`", issue_text)
+
     def test_issue_note_uses_turn_number_from_env_when_present(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -175,6 +201,29 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 2)
             self.assertIn("`RALLY_TURN_NUMBER` must be an integer", stderr.getvalue())
+
+    def test_issue_note_rejects_malformed_field(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_run(repo_root=repo_root, run_id="FLW-1")
+            stderr = io.StringIO()
+
+            with patch("rally.cli._repo_root", return_value=repo_root), redirect_stderr(stderr):
+                exit_code = main(
+                    [
+                        "issue",
+                        "note",
+                        "--run-id",
+                        "FLW-1",
+                        "--field",
+                        "kind",
+                        "--text",
+                        "Short note",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertIn("Note fields must use `key=value`.", stderr.getvalue())
 
     def test_issue_note_reads_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

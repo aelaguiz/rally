@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ from rally.errors import RallyStateError
 from rally.services.run_store import find_run_dir
 
 ORIGINAL_ISSUE_END_MARKER = "<!-- RALLY_ORIGINAL_ISSUE_END -->"
+_NOTE_FIELD_KEY_PATTERN = re.compile(r"[a-z][a-z0-9_]*\Z")
 _RALLY_BLOCK_TITLES = (
     "Rally Note",
     "user edited issue.md",
@@ -36,16 +38,21 @@ def append_issue_note(
     repo_root: Path,
     run_id: str,
     note_markdown: str,
+    note_fields: Iterable[tuple[str, str]] = (),
     turn_index: int | None = None,
     now: datetime | None = None,
 ) -> IssueNoteAppendResult:
     note_body = _normalize_note_body(note_markdown)
+    detail_lines = [
+        f"Field {key}: `{value}`"
+        for key, value in _normalize_note_fields(note_fields)
+    ]
     return append_issue_event(
         repo_root=repo_root,
         run_id=run_id,
         title="Rally Note",
         source="rally issue note",
-        detail_lines=(),
+        detail_lines=detail_lines,
         body=note_body,
         turn_index=turn_index,
         now=now,
@@ -190,6 +197,37 @@ def _normalize_note_body(note_markdown: str) -> str:
     while lines and not lines[-1].strip():
         lines.pop()
     return "\n".join(lines)
+
+
+def _normalize_note_fields(note_fields: Iterable[tuple[str, str]]) -> list[tuple[str, str]]:
+    normalized_fields: list[tuple[str, str]] = []
+    seen_keys: set[str] = set()
+
+    for raw_key, raw_value in note_fields:
+        if not isinstance(raw_key, str) or not isinstance(raw_value, str):
+            raise RallyStateError("Note fields must use string keys and values.")
+
+        key = raw_key.strip()
+        value = raw_value.strip()
+        if not key:
+            raise RallyStateError("Note field keys must not be empty.")
+        if not _NOTE_FIELD_KEY_PATTERN.fullmatch(key):
+            raise RallyStateError(
+                "Note field keys must match `[a-z][a-z0-9_]*`."
+            )
+        if not value:
+            raise RallyStateError(f"Note field `{key}` must not have an empty value.")
+        if key in seen_keys:
+            raise RallyStateError(f"Note field `{key}` is duplicated.")
+        if "`" in value:
+            raise RallyStateError(f"Note field `{key}` must not contain backticks.")
+        if "\n" in value or "\r" in value:
+            raise RallyStateError(f"Note field `{key}` must stay on one line.")
+
+        seen_keys.add(key)
+        normalized_fields.append((key, value))
+
+    return normalized_fields
 
 
 def _render_issue_edit_diff(*, before_text: str, after_text: str) -> str:

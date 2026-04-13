@@ -1,6 +1,6 @@
 ---
 name: rally-kernel
-description: "Shared Rally turn skill for leaving issue notes when needed and ending a turn with the declared final JSON. Use it when a Rally-managed agent needs to leave a note, write that note with `$RALLY_BASE_DIR/rally issue note`, or shape final JSON without inventing another way to end the turn. Do not use it for flow-local planning, runtime code changes, or direct `issue.md` edits."
+description: "Shared Rally turn skill for leaving issue notes, adding flat structured note fields, and ending a turn with the declared final JSON. Use it when a Rally-managed agent needs to leave a note, write that note with `$RALLY_BASE_DIR/rally issue note`, add `--field key=value` labels to that note, or shape final JSON without inventing another way to end the turn. Do not use it for flow-local planning, runtime code changes, or direct `issue.md` edits."
 ---
 
 # Rally Kernel
@@ -14,12 +14,14 @@ it by hand.
 ## When to use
 
 - You need to leave a note on the current Rally run before the turn ends.
+- You need to add short machine-readable note fields such as `kind` or `lane`.
 - You need to end the turn with the final JSON this turn declares.
 - You need to keep the line clear between saved notes and turn control.
 
 Canonical user asks:
 
 - "Leave a note on this Rally run before you end the turn."
+- "Leave a structured Rally note with `--field` labels."
 - "Use the Rally note path, not direct file edits."
 - "End the turn with valid Rally JSON without inventing a second return path."
 
@@ -35,6 +37,8 @@ Canonical user asks:
 
 - Notes are context only. They never decide who works next or whether the run
   is done, blocked, or sleeping.
+- Structured note fields are labels only. Keep them short and flat.
+- Note fields never carry `next_owner`, `done`, `blocker`, or `sleep` truth.
 - Do not edit `home/issue.md` directly.
 - Write notes with `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"`.
 - Fail loud if `RALLY_BASE_DIR` or `RALLY_RUN_ID` is missing instead of
@@ -53,8 +57,9 @@ Canonical user asks:
 1. Confirm this is a Rally-managed turn, that `RALLY_BASE_DIR` points at the
    Rally repo root, and that `RALLY_RUN_ID` is present.
 2. Decide whether a later reader needs a short note.
-3. If yes, write one short markdown note through the Rally CLI.
-4. Shape the final turn result to match the declared JSON schema for this turn.
+3. If yes, decide whether the note also needs flat `--field key=value` labels.
+4. Write one short markdown note through the Rally CLI.
+5. Shape the final turn result to match the declared JSON schema for this turn.
 
 ## Workflow
 
@@ -74,16 +79,32 @@ Canonical user asks:
 
    Short forms may use `--text` or `--file` when they are clearer.
 
+   When later turns need stable labels, add flat note fields:
+
+   ```bash
+   "$RALLY_BASE_DIR/rally" issue note \
+     --run-id "$RALLY_RUN_ID" \
+     --field kind=producer_handoff \
+     --field lane=producer \
+     --field artifact=section_plan <<'EOF'
+   Kept the body short. Read the field labels first, then this note.
+   EOF
+   ```
+
 3. Keep the note short.
    Save context, decisions, exact commands, or constraints that later turns
    should read. Do not restate the whole file or copy the final JSON.
 
-4. End the turn with strict final JSON.
+4. Keep structured fields simple.
+   Use short flat labels such as `kind`, `lane`, `artifact`, or `review_mode`.
+   Put the human explanation in the note body, not in the field names.
+
+5. End the turn with strict final JSON.
    Many turns use the shared five-key Rally turn result. Review-native turns
    may use declared Doctrine review JSON instead. The skill helps you shape
    that result, but it does not replace the adapter return path.
 
-5. Keep route truth out of note prose.
+6. Keep route truth out of notes.
    If the turn routes, let final JSON carry `next_owner`.
 
 ## Output expectations

@@ -129,7 +129,7 @@ If Rally hits it, Rally keeps the next agent as current, writes a clear
 Current shape:
 
 ```bash
-rally issue note --run-id <run-id> [--text <markdown> | --file <path>]
+rally issue note --run-id <run-id> [--field key=value ...] [--text <markdown> | --file <path>]
 ```
 
 If neither `--text` nor `--file` is passed, it reads from stdin.
@@ -137,6 +137,8 @@ If neither `--text` nor `--file` is passed, it reads from stdin.
 What it does today:
 
 - reads note text from one source
+- accepts repeatable flat note fields through `--field key=value`
+- rejects malformed note fields, duplicate keys, invalid key names, empty values, and field values that break the one-line header format
 - rejects an empty note body
 - appends a Rally-stamped note block to the run's `home/issue.md`
 - adds `- Turn: \`N\`` automatically when Rally launched the current turn
@@ -192,6 +194,8 @@ The current Rally note block format is:
 - Turn: `<turn-number>`
 - Time: `<utc-iso8601>`
 - Source: `rally issue note` or `rally runtime review`
+- Field kind: `producer_handoff`  optional on `rally issue note` blocks
+- Field lane: `producer`  optional on `rally issue note` blocks
 
 <note body>
 ```

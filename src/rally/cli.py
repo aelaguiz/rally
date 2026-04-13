@@ -60,6 +60,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     issue_note_parser = issue_subparsers.add_parser("note", help="Append a note to a Rally issue log.")
     issue_note_parser.add_argument("--run-id", required=True, help="Run identifier to update.")
+    issue_note_parser.add_argument(
+        "--field",
+        action="append",
+        metavar="key=value",
+        help="Add one flat structured note field. Repeat for more fields.",
+    )
     note_source = issue_note_parser.add_mutually_exclusive_group()
     note_source.add_argument("--text", help="Inline note text to append.")
     note_source.add_argument("--file", help="Read note markdown from this file.")
@@ -95,10 +101,12 @@ def _resume_command(args: argparse.Namespace) -> int:
 def _issue_note_command(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     note_text = _read_note_text(args)
+    note_fields = _parse_note_fields(args.field)
     result = append_issue_note(
         repo_root=repo_root,
         run_id=args.run_id,
         note_markdown=note_text,
+        note_fields=note_fields,
         turn_index=_turn_index_from_env(),
     )
     print(
@@ -130,6 +138,19 @@ def _read_note_text(args: argparse.Namespace) -> str:
     if not note_text.strip():
         raise RallyUsageError("Note body is empty.")
     return note_text
+
+
+def _parse_note_fields(raw_fields: list[str] | None) -> tuple[tuple[str, str], ...]:
+    if not raw_fields:
+        return ()
+
+    parsed_fields: list[tuple[str, str]] = []
+    for raw_field in raw_fields:
+        key, separator, value = raw_field.partition("=")
+        if not separator:
+            raise RallyUsageError("Note fields must use `key=value`.")
+        parsed_fields.append((key, value))
+    return tuple(parsed_fields)
 
 
 def _turn_index_from_env() -> int | None:

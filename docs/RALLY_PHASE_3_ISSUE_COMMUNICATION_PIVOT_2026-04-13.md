@@ -40,6 +40,7 @@ Review-native turns may use control-ready Doctrine review JSON instead.
 - `rally.turn_results` is the classic shared five-key control JSON.
 - Review-native turns may declare a different final JSON when Doctrine emits control-ready review metadata.
 - Notes keep context only. Notes never carry `next_owner`, `done`, `blocker`, or `sleep` truth.
+- Notes may carry flat string fields such as `kind=...` or `lane=...` when later turns need stable labels.
 - Rally, not the agent, adds the turn number to in-turn note blocks.
 
 # Shipped Surfaces
@@ -54,11 +55,11 @@ Review-native turns may use control-ready Doctrine review JSON instead.
 - `stdlib/rally/prompts/rally/turn_results.prompt`
   - the classic shared final JSON contract
 - `skills/rally-kernel/SKILL.md`
-  - teaches when to leave a note and how to end a turn with the declared final JSON
+  - teaches when to leave a note, when to add flat note fields, and how to end a turn with the declared final JSON
 - `src/rally/cli.py`
-  - ships `rally issue note`
+  - ships `rally issue note`, including repeatable `--field key=value`
 - `src/rally/services/issue_ledger.py`
-  - owns note append, issue-history snapshots, Markdown `---` dividers, and optional turn labels
+  - owns note append, flat note-field header lines, issue-history snapshots, Markdown `---` dividers, and optional turn labels
 - `src/rally/adapters/codex/launcher.py`
   - builds the required launch env map, including the active turn number for note labeling
 
