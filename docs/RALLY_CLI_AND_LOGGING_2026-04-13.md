@@ -36,15 +36,18 @@ The current checked-in CLI is small and explicit.
 Current shape:
 
 ```bash
-rally run <flow_name>
+rally run <flow_name> [--new]
 ```
 
 What it does today:
 
 - loads the flow through `src/rally/services/flow_loader.py`
 - creates a real active run
+- when `--new` is passed, asks before it archives the current active run for the same flow
 - creates the run shell under `runs/active/<run-id>/home/`
-- fails loud unless `home/issue.md` exists and has non-empty text
+- opens the editor for a missing or blank `home/issue.md` on a real TTY when an editor is available
+- strips the starter prompt back out before saving the issue
+- still fails loud unless `home/issue.md` ends up with non-empty text
 - prepares the full run home only after `home/issue.md` is ready
 - opens a live color stream on a TTY
 - falls back to plain text when stdout is not a TTY
@@ -53,12 +56,19 @@ What it does today:
 
 Current limits:
 
-- it does not archive old runs
+- it does not ship a standalone `rally archive` command yet
 - it does not try to auto-heal stale run state
 
-If the issue file is missing or blank, `rally run` stops with exit code `2`
-after creating the run shell. The operator writes `home/issue.md` and then
-uses `rally resume <run-id>`.
+If the issue file is missing or blank on a real TTY, `rally run` opens the
+editor and keeps going after the operator saves real issue text.
+If the shell is not interactive, no editor is available, or the editor closes
+without real issue text, `rally run` stops with exit code `2` after creating
+the run shell. The operator writes `home/issue.md` and then uses
+`rally resume <run-id>`.
+If `--new` finds an active run for that flow, Rally asks before it archives
+that run. If the operator says yes, Rally moves that run under
+`runs/archive/` and starts a fresh active run. If the shell is not
+interactive, Rally refuses `--new` because it cannot ask.
 
 ### `rally resume`
 
@@ -71,6 +81,8 @@ rally resume <run-id>
 What it does today:
 
 - reloads the stored run
+- opens the same issue editor path as `rally run` when `home/issue.md` is missing or blank on a real TTY
+- refuses archived runs
 - refuses done or blocked runs
 - resumes sleeping runs only after their wake time
 - reuses the saved Codex session id when one exists
@@ -172,6 +184,18 @@ The runtime also:
 - sets `project_doc_max_bytes = 0`
 - saves the Codex session id per agent for later resume
 
+## MCP Readiness Gap
+
+Today Rally writes MCP entries into `config.toml` and seeds Codex auth links
+into the run home.
+That is only bootstrap behavior.
+It is not yet the finished rule.
+
+Rally does not yet prove that a required MCP can start, that its auth is
+present and still valid, or that child agents will keep the same access.
+The next runtime pass should add one clear readiness check and one clear
+failure record that names the broken MCP and the reason.
+
 ## Logging Today
 
 Current logging is richer, but still file-first.
@@ -193,7 +217,7 @@ What exists today:
 
 What does not exist yet:
 
-- `rally archive`
+- a standalone `rally archive` command
 
 ## Event Coverage Today
 
@@ -249,7 +273,7 @@ The color rules are still simple:
 
 The main operator-side gaps are now:
 
-- `rally archive`
+- a standalone `rally archive` command
 - deeper stale-run diagnosis
 - a replay or viewer command that can reload old history from `logs/events.jsonl`
 

@@ -15,6 +15,7 @@ class RunStatus(StrEnum):
 @dataclass(frozen=True)
 class RunRequest:
     flow_name: str
+    start_new: bool = False
 
 
 @dataclass(frozen=True)

@@ -29,9 +29,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser(
         "run",
-        help="Create a Rally run shell and start when `home/issue.md` is ready.",
+        help="Create a Rally run shell and start when the issue is ready.",
     )
     run_parser.add_argument("flow_name", help="Flow directory name under flows/.")
+    run_parser.add_argument(
+        "--new",
+        action="store_true",
+        help="Archive the current active run for this flow, then start a fresh run.",
+    )
     run_parser.set_defaults(func=_run_command)
 
     resume_parser = subparsers.add_parser("resume", help="Resume an existing Rally run.")
@@ -54,7 +59,7 @@ def _run_command(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     result = run_flow(
         repo_root=repo_root,
-        request=RunRequest(flow_name=args.flow_name),
+        request=RunRequest(flow_name=args.flow_name, start_new=args.new),
         display_factory=_build_display_factory(sys.stdout),
     )
     print(result.message)

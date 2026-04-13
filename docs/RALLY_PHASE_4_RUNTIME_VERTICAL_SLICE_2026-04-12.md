@@ -38,7 +38,9 @@ What is real today:
 - run directories under `runs/active/<run-id>/`
 - home materialization for agents, skills, MCPs, repos, config, auth links, and setup
 - `rally run`
+- `rally run --new`
 - `rally resume`
+- one shared interactive issue-ready gate for `run` and `resume`
 - live operator stream on a TTY with plain fallback off TTY
 - strict final-turn JSON parsing
 - Codex session save and sleep resume
@@ -55,6 +57,9 @@ What is outside Phase 4:
 
 - `rally archive`
 - stale-run cleanup and diagnosis beyond the current lock and state checks
+- a Codex-native MCP auth and readiness contract that proves required MCPs
+  work for both top-level and child agents and fails loud when auth or launch
+  state is broken
 
 # Stable Rules
 
@@ -158,7 +163,7 @@ The current core proof set is:
 
 The next honest work is Phase 5 work:
 
-1. add `rally archive`
+1. add a standalone `rally archive` command
 2. add better stale-run diagnosis
 3. add a replay or viewer command for old runs
 4. prove the new narrow flow on a live Codex run

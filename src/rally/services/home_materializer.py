@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tomllib
 from pathlib import Path
+from typing import Sequence
 
 from rally.domain.flow import FlowDefinition
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError, RallyStateError, RallyUsageError
+from rally.services.issue_editor import edit_issue_file_in_editor, resolve_interactive_issue_editor
 from rally.services.issue_ledger import snapshot_issue_log
 from rally.services.run_events import RunEventRecorder
 from rally.services.run_store import find_run_dir
@@ -33,10 +36,7 @@ def prepare_run_home_shell(
             source="rally",
             kind="lifecycle",
             code="HOME",
-            message=(
-                "Prepared run home shell. Write `home/issue.md`, then run "
-                f"`rally resume {run_record.id}`."
-            ),
+            message="Prepared run home shell.",
         )
     return run_home
 
@@ -120,6 +120,35 @@ def _require_issue_ready(
     # sidecar such as `operator_brief.md`. If a run needs extra files later,
     # the flow may create them on purpose, but Rally itself starts from
     # `home/issue.md` only.
+    if _issue_has_text(issue_path):
+        return
+
+    editor_command = resolve_interactive_issue_editor()
+    if editor_command is not None:
+        _emit_issue_editor_opened(
+            run_id=run_id,
+            issue_path=issue_path,
+            editor_command=editor_command,
+            event_recorder=event_recorder,
+        )
+        edit_result = edit_issue_file_in_editor(
+            issue_path=issue_path,
+            editor_command=editor_command,
+        )
+        if edit_result.status == "saved":
+            _emit_issue_editor_saved(
+                run_id=run_id,
+                issue_path=issue_path,
+                event_recorder=event_recorder,
+            )
+            return
+        _emit_issue_editor_cancelled(
+            run_id=run_id,
+            issue_path=issue_path,
+            reason=edit_result.reason,
+            event_recorder=event_recorder,
+        )
+
     if not issue_path.is_file():
         _emit_issue_waiting(
             run_id=run_id,
@@ -130,8 +159,6 @@ def _require_issue_ready(
             f"Run `{run_id}` is waiting for `{issue_path}`. Create that file, "
             f"write the issue there, then run `rally resume {run_id}`."
         )
-    if issue_path.read_text(encoding="utf-8").strip():
-        return
     _emit_issue_waiting(
         run_id=run_id,
         issue_path=issue_path,
@@ -141,6 +168,10 @@ def _require_issue_ready(
         f"Run `{run_id}` is waiting for a non-empty issue in `{issue_path}`. "
         f"Write the issue there, then run `rally resume {run_id}`."
     )
+
+
+def _issue_has_text(issue_path: Path) -> bool:
+    return issue_path.is_file() and bool(issue_path.read_text(encoding="utf-8").strip())
 
 
 def _emit_issue_waiting(
@@ -160,6 +191,73 @@ def _emit_issue_waiting(
         ),
         level="warning",
     )
+
+
+def _emit_issue_editor_opened(
+    *,
+    run_id: str,
+    issue_path: Path,
+    editor_command: Sequence[str],
+    event_recorder: RunEventRecorder | None,
+) -> None:
+    if event_recorder is None:
+        return
+    event_recorder.emit(
+        source="rally",
+        kind="lifecycle",
+        code="EDITOR",
+        message=(
+            f"Opening editor for `home/issue.md` at `{issue_path}` with "
+            f"`{shlex.join(editor_command)}`."
+        ),
+        data={"run_id": run_id},
+    )
+
+
+def _emit_issue_editor_saved(
+    *,
+    run_id: str,
+    issue_path: Path,
+    event_recorder: RunEventRecorder | None,
+) -> None:
+    if event_recorder is None:
+        return
+    event_recorder.emit(
+        source="rally",
+        kind="lifecycle",
+        code="EDITOR",
+        message=f"Saved issue from editor to `{issue_path}`.",
+        data={"run_id": run_id},
+    )
+
+
+def _emit_issue_editor_cancelled(
+    *,
+    run_id: str,
+    issue_path: Path,
+    reason: str | None,
+    event_recorder: RunEventRecorder | None,
+) -> None:
+    if event_recorder is None:
+        return
+    event_recorder.emit(
+        source="rally",
+        kind="warning",
+        code="EDITOR",
+        message=_render_issue_editor_cancel_message(issue_path=issue_path, reason=reason),
+        level="warning",
+        data={"run_id": run_id},
+    )
+
+
+def _render_issue_editor_cancel_message(*, issue_path: Path, reason: str | None) -> str:
+    if reason == "blank_issue":
+        return f"Editor closed without a non-empty issue for `{issue_path}`."
+    if reason == "editor_exit":
+        return f"Editor exited before Rally got a saved issue for `{issue_path}`."
+    if reason == "launch_failed":
+        return f"Editor failed to open for `{issue_path}`."
+    return f"Editor did not produce a saved issue for `{issue_path}`."
 
 
 def _home_ready_marker(run_home: Path) -> Path:

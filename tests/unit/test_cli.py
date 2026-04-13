@@ -26,6 +26,22 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("Run `DMO-1` created.", stdout.getvalue())
         self.assertEqual(run_flow_mock.call_args.kwargs["request"].flow_name, "demo")
+        self.assertFalse(run_flow_mock.call_args.kwargs["request"].start_new)
+
+    def test_run_command_passes_new_flag_to_runner(self) -> None:
+        stdout = io.StringIO()
+
+        with patch("rally.cli._repo_root", return_value=Path("/tmp/repo")), patch(
+            "rally.cli.run_flow",
+            return_value=SimpleNamespace(message="Run `DMO-2` created."),
+        ) as run_flow_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["run", "demo", "--new"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Run `DMO-2` created.", stdout.getvalue())
+        self.assertEqual(run_flow_mock.call_args.kwargs["request"].flow_name, "demo")
+        self.assertTrue(run_flow_mock.call_args.kwargs["request"].start_new)
 
     def test_run_command_rejects_removed_brief_flag(self) -> None:
         stderr = io.StringIO()

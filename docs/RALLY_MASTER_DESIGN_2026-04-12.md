@@ -174,7 +174,7 @@ Examples:
 `run.yaml` is the stable identity record for a run.
 `state.yaml` is the compact machine-readable current summary.
 
-Rally should keep one active run per flow unless the design changes intentionally.
+Rally should keep one active run per flow unless the operator asks to replace it on purpose.
 
 ### Home
 
@@ -292,6 +292,41 @@ For the Codex adapter, Rally should enforce this launch contract:
 
 Rally should fail closed if it cannot prove what instruction surface Codex is actually seeing.
 
+### Codex-Native MCP Auth And Health
+
+Rally also needs one clean Codex-native way to make required MCPs usable inside
+the run.
+
+This section records the need.
+It does not choose the answer yet.
+
+Rally should be able to tell, for each required MCP:
+
+- was it materialized into the run home
+- does Codex see it through the supported config path
+- does the run have the auth that MCP needs
+- will a child agent started from that turn keep the same MCP access
+- can Rally detect when that setup is broken on a later turn or on resume
+
+Rules:
+
+- A Rally-managed agent and any child agent it starts should get the same
+  required MCP access story.
+- Rally should use one clean supported path for MCP auth.
+  It should not depend on luck, hidden machine state, or one-off manual repair
+  inside a live session.
+- If a required MCP is missing, not authed, expired, or otherwise not usable,
+  Rally should stop with a clear blocker.
+- That blocker should name the MCP and the failed check.
+- Launch proof and run logs should make it easy to see which MCPs Rally
+  expected and why Rally refused to run.
+- This work should stay in the Rally runtime and Codex adapter boundary unless
+  it reveals a true Codex or Doctrine platform gap.
+
+The next design pass should compare the smallest honest options and prove which
+one keeps both parent and child Codex agents ready across fresh runs and
+resumes.
+
 ### Canonical Runtime Surfaces
 
 These are the stable runtime surfaces the design depends on:
@@ -319,7 +354,7 @@ The operator surface should stay small.
 Conceptually it is:
 
 ```bash
-rally run <flow>
+rally run <flow> [--new]
 rally resume <FLOW_CODE>-<n>
 rally archive <FLOW_CODE>-<n>
 rally issue note --run-id <FLOW_CODE>-<n>
@@ -328,8 +363,14 @@ rally issue note --run-id <FLOW_CODE>-<n>
 `rally run` and `rally resume` should give the operator one clean live view on
 a TTY and a plain text fallback when the output is not interactive.
 `rally run` creates the run shell first. If `home/issue.md` is missing or
-blank, Rally stops and tells the operator to fill in that file before
-`rally resume`.
+blank on a real TTY, Rally should open the editor, seed a short issue prompt,
+strip that prompt back out if it is still there, and keep going after save.
+If the shell is not interactive or the editor does not produce real issue
+text, Rally should still stop loud and tell the operator to fill in that file
+before `rally resume`.
+`rally run --new` should ask before it archives the current active run for that
+flow, then start a fresh run and reuse the same `home/issue.md` editor path.
+Archived runs should not resume.
 
 `rally issue note` is the shared durable-note write surface for both agents and operators.
 It should support:
@@ -461,6 +502,24 @@ Phase 5 should still remain:
 - no GUI
 - no DB source of truth
 - no background scheduler
+
+Phase 5 should also close the MCP gap with:
+
+- one Codex-native MCP auth and readiness path
+- clear failure when a required MCP is missing or broken
+- proof that child agents keep the same MCP access on fresh runs and resumes
+
+### Phase 6: Add Human-In-The-Loop Flow Requirements
+
+Phase 6 should make human review and human feedback a supported required part
+of a flow.
+
+This is a future implementation requirement.
+Rally should be able to require human review and feedback before a flow can
+continue when the authored flow calls for it.
+
+The exact runtime shape, operator flow, and authored syntax are deferred to the
+phase doc for that work.
 
 ## Design Notes Appendix
 

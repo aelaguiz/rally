@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import tempfile
@@ -7,10 +8,12 @@ import textwrap
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from rally.domain.run import ResumeRequest, RunRequest, RunStatus
 from rally.errors import RallyConfigError, RallyUsageError
-from rally.services.run_store import find_run_dir, load_run_state, write_run_state
+from rally.services.issue_editor import IssueEditorResult
+from rally.services.run_store import archive_run, find_run_dir, load_run_state, write_run_state
 from rally.services.runner import resume_run, run_flow
 
 
@@ -21,12 +24,16 @@ class RunnerTests(unittest.TestCase):
             self._write_demo_repo(repo_root=repo_root)
             fake_run = _FakeCodexRun([])
 
-            with self.assertRaisesRegex(RallyUsageError, "waiting for `.*issue.md`"):
-                run_flow(
-                    repo_root=repo_root,
-                    request=RunRequest(flow_name="demo"),
-                    subprocess_run=fake_run,
-                )
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=None,
+            ):
+                with self.assertRaisesRegex(RallyUsageError, "waiting for `.*issue.md`"):
+                    run_flow(
+                        repo_root=repo_root,
+                        request=RunRequest(flow_name="demo"),
+                        subprocess_run=fake_run,
+                    )
 
             run_dir = find_run_dir(repo_root=repo_root, run_id="DMO-1")
             state = load_run_state(run_dir=run_dir)
@@ -194,6 +201,257 @@ class RunnerTests(unittest.TestCase):
             state = load_run_state(run_dir=run_dir)
             self.assertEqual(state.status, RunStatus.PENDING)
 
+    def test_resume_run_rejects_archived_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+            archive_run(repo_root=repo_root, run_id="DMO-1")
+
+            with self.assertRaisesRegex(RallyUsageError, "archived and cannot be resumed"):
+                resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1"),
+                    subprocess_run=_FakeCodexRun([]),
+                )
+
+    def test_run_flow_opens_editor_for_missing_issue_and_continues(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            fake_run = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-1",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_owner": "change_engineer",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Fix the pagination bug from the editor.\n", encoding="utf-8")
+                return IssueEditorResult(
+                    status="saved",
+                    cleaned_text="Fix the pagination bug from the editor.\n",
+                )
+
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                result = run_flow(
+                    repo_root=repo_root,
+                    request=RunRequest(flow_name="demo"),
+                    subprocess_run=fake_run,
+                )
+
+            run_dir = find_run_dir(repo_root=repo_root, run_id="DMO-1")
+            issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+
+            self.assertEqual(result.status, RunStatus.RUNNING)
+            self.assertEqual(result.current_agent_key, "02_change_engineer")
+            self.assertTrue(issue_text.startswith("Fix the pagination bug from the editor.\n"))
+            self.assertNotIn("RALLY_ISSUE_PROMPT_START", issue_text)
+            self.assertIn("Rally Run Started", issue_text)
+            self.assertTrue(fake_run.calls)
+            self.assertIn("Opening editor for `home/issue.md`", rendered_text)
+            self.assertIn("Saved issue from editor", rendered_text)
+
+    def test_resume_run_opens_editor_for_blank_issue_and_continues(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            fake_run = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-1",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_owner": "change_engineer",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir, body="   \n")
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Fix the pagination bug after resume.\n", encoding="utf-8")
+                return IssueEditorResult(
+                    status="saved",
+                    cleaned_text="Fix the pagination bug after resume.\n",
+                )
+
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1"),
+                    subprocess_run=fake_run,
+                )
+
+            issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+
+            self.assertEqual(result.status, RunStatus.RUNNING)
+            self.assertEqual(result.current_agent_key, "02_change_engineer")
+            self.assertTrue(issue_text.startswith("Fix the pagination bug after resume.\n"))
+            self.assertIn("Rally Run Started", issue_text)
+            self.assertTrue(fake_run.calls)
+            self.assertIn("Opening editor for `home/issue.md`", rendered_text)
+            self.assertIn("Saved issue from editor", rendered_text)
+
+    def test_run_flow_waits_when_editor_does_not_save_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            fake_run = _FakeCodexRun([])
+
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                return_value=IssueEditorResult(status="cancelled", reason="blank_issue"),
+            ):
+                with self.assertRaisesRegex(RallyUsageError, "waiting for `.*issue.md`"):
+                    run_flow(
+                        repo_root=repo_root,
+                        request=RunRequest(flow_name="demo"),
+                        subprocess_run=fake_run,
+                    )
+
+            run_dir = find_run_dir(repo_root=repo_root, run_id="DMO-1")
+            state = load_run_state(run_dir=run_dir)
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+
+            self.assertEqual(state.status, RunStatus.PENDING)
+            self.assertFalse(fake_run.calls)
+            self.assertIn("Opening editor for `home/issue.md`", rendered_text)
+            self.assertIn("Editor closed without a non-empty issue", rendered_text)
+            self.assertIn("WAITING", rendered_text)
+
+    def test_run_flow_new_archives_active_run_and_starts_fresh_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            old_run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=old_run_dir, body="Fix the old issue.\n")
+            fake_run = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-2",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_owner": "change_engineer",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Start the new issue.\n", encoding="utf-8")
+                return IssueEditorResult(
+                    status="saved",
+                    cleaned_text="Start the new issue.\n",
+                )
+
+            with patch(
+                "rally.services.runner._confirm_replace_active_run",
+                return_value=True,
+            ), patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                result = run_flow(
+                    repo_root=repo_root,
+                    request=RunRequest(flow_name="demo", start_new=True),
+                    subprocess_run=fake_run,
+                )
+
+            archived_dir = repo_root / "runs" / "archive" / "DMO-1"
+            new_run_dir = repo_root / "runs" / "active" / "DMO-2"
+            archived_issue = (archived_dir / "home" / "issue.md").read_text(encoding="utf-8")
+            archived_rendered = (archived_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+            new_issue = (new_run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+
+            self.assertEqual(result.run_id, "DMO-2")
+            self.assertEqual(result.status, RunStatus.RUNNING)
+            self.assertFalse((repo_root / "runs" / "active" / "DMO-1").exists())
+            self.assertTrue(archived_dir.is_dir())
+            self.assertTrue(new_run_dir.is_dir())
+            self.assertIn("Fix the old issue.", archived_issue)
+            self.assertIn("Rally Archived", archived_issue)
+            self.assertIn("Starting a fresh `demo` run", archived_issue)
+            self.assertIn("ARCHIVE", archived_rendered)
+            self.assertTrue(new_issue.startswith("Start the new issue.\n"))
+            self.assertTrue(fake_run.calls)
+
+    def test_run_flow_new_cancels_when_replacement_not_confirmed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            self._create_pending_run(repo_root=repo_root)
+            fake_run = _FakeCodexRun([])
+
+            with patch(
+                "rally.services.runner._confirm_replace_active_run",
+                return_value=False,
+            ):
+                with self.assertRaisesRegex(RallyUsageError, "Cancelled starting a new `demo` run"):
+                    run_flow(
+                        repo_root=repo_root,
+                        request=RunRequest(flow_name="demo", start_new=True),
+                        subprocess_run=fake_run,
+                    )
+
+            self.assertTrue((repo_root / "runs" / "active" / "DMO-1").is_dir())
+            self.assertFalse((repo_root / "runs" / "active" / "DMO-2").exists())
+            self.assertFalse((repo_root / "runs" / "archive" / "DMO-1").exists())
+            self.assertFalse(fake_run.calls)
+
+    def test_run_flow_new_requires_interactive_tty_to_confirm_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            self._create_pending_run(repo_root=repo_root)
+
+            with patch("sys.stdin", io.StringIO("y\n")), patch("sys.stdout", io.StringIO()):
+                with self.assertRaisesRegex(RallyUsageError, "needs an interactive TTY to confirm archiving"):
+                    run_flow(
+                        repo_root=repo_root,
+                        request=RunRequest(flow_name="demo", start_new=True),
+                        subprocess_run=_FakeCodexRun([]),
+                    )
+
     def test_run_flow_does_not_run_setup_before_issue_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -267,12 +525,16 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("BLOCKED", rendered_text)
 
     def _create_pending_run(self, *, repo_root: Path) -> Path:
-        with self.assertRaises(RallyUsageError):
-            run_flow(
-                repo_root=repo_root,
-                request=RunRequest(flow_name="demo"),
-                subprocess_run=_FakeCodexRun([]),
-            )
+        with patch(
+            "rally.services.home_materializer.resolve_interactive_issue_editor",
+            return_value=None,
+        ):
+            with self.assertRaises(RallyUsageError):
+                run_flow(
+                    repo_root=repo_root,
+                    request=RunRequest(flow_name="demo"),
+                    subprocess_run=_FakeCodexRun([]),
+                )
         return find_run_dir(repo_root=repo_root, run_id="DMO-1")
 
     def _write_issue(self, *, run_dir: Path, body: str = "Fix the pagination bug.\n") -> None:

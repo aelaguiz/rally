@@ -14,5 +14,5 @@ runtime:
   adapter: codex
   adapter_args:
     model: gpt-5.4
-    reasoning_effort: high
+    reasoning_effort: medium
     project_doc_max_bytes: 0

@@ -12,7 +12,7 @@ from rally.domain.flow import (
     FlowAgent,
     FlowDefinition,
 )
-from rally.services.run_store import create_run, load_run_record
+from rally.services.run_store import archive_run, create_run, load_run_record
 
 
 class RunStoreTests(unittest.TestCase):
@@ -52,6 +52,31 @@ class RunStoreTests(unittest.TestCase):
             self.assertEqual(record.id, "DMO-7")
             self.assertEqual(record.flow_name, "demo")
             self.assertEqual(record.issue_file, "home/issue.md")
+
+    def test_archive_run_moves_active_run_to_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+
+            record = create_run(repo_root=repo_root, flow=flow)
+            archived_dir = archive_run(repo_root=repo_root, run_id=record.id)
+
+            self.assertFalse((repo_root / "runs" / "active" / record.id).exists())
+            self.assertEqual(archived_dir, repo_root / "runs" / "archive" / record.id)
+            self.assertTrue((archived_dir / "run.yaml").is_file())
+            self.assertTrue((archived_dir / "state.yaml").is_file())
+
+    def test_create_run_after_archive_uses_next_sequence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+
+            first = create_run(repo_root=repo_root, flow=flow)
+            archive_run(repo_root=repo_root, run_id=first.id)
+            second = create_run(repo_root=repo_root, flow=flow)
+
+            self.assertEqual(first.id, "DMO-1")
+            self.assertEqual(second.id, "DMO-2")
 
 
 def _demo_flow(*, repo_root: Path) -> FlowDefinition:

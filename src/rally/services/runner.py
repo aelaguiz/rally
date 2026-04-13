@@ -36,8 +36,11 @@ from rally.services.home_materializer import materialize_run_home, prepare_run_h
 from rally.services.issue_ledger import append_issue_event
 from rally.services.run_events import EventConsumer, RunEventRecorder
 from rally.services.run_store import (
+    archive_run,
+    archive_runs_dir,
     create_run,
     find_run_dir,
+    find_active_run_for_flow,
     flow_lock,
     load_run_record,
     load_run_state,
@@ -66,6 +69,11 @@ def run_flow(
     flow = load_flow_definition(repo_root=repo_root, flow_name=request.flow_name)
 
     with flow_lock(repo_root=repo_root, flow_code=flow.code):
+        _maybe_archive_replaced_run(
+            repo_root=repo_root,
+            flow=flow,
+            request=request,
+        )
         run_record = create_run(
             repo_root=repo_root,
             flow=flow,
@@ -113,6 +121,8 @@ def resume_run(
     display_factory: DisplayFactory | None = None,
 ) -> RunCommandResult:
     run_dir = find_run_dir(repo_root=repo_root, run_id=request.run_id)
+    if run_dir.is_relative_to(archive_runs_dir(repo_root)):
+        raise RallyUsageError(f"Run `{request.run_id}` is archived and cannot be resumed.")
     run_record = load_run_record(run_dir=run_dir)
     flow = load_flow_definition(repo_root=repo_root, flow_name=run_record.flow_name)
 
@@ -139,6 +149,107 @@ def resume_run(
             )
         finally:
             recorder.close()
+
+
+def _maybe_archive_replaced_run(
+    *,
+    repo_root: Path,
+    flow: FlowDefinition,
+    request: RunRequest,
+) -> None:
+    if not request.start_new:
+        return
+
+    active_run = find_active_run_for_flow(repo_root=repo_root, flow_code=flow.code)
+    if active_run is None:
+        return
+
+    active_run_dir = find_run_dir(repo_root=repo_root, run_id=active_run.id)
+    active_state = load_run_state(run_dir=active_run_dir)
+    if not _confirm_replace_active_run(
+        flow=flow,
+        active_run=active_run,
+        active_state=active_state,
+    ):
+        raise RallyUsageError(f"Cancelled starting a new `{flow.name}` run.")
+
+    _record_archived_run_for_new_request(
+        repo_root=repo_root,
+        flow=flow,
+        active_run=active_run,
+        active_state=active_state,
+        run_dir=active_run_dir,
+    )
+    archive_run(repo_root=repo_root, run_id=active_run.id)
+
+
+def _confirm_replace_active_run(
+    *,
+    flow: FlowDefinition,
+    active_run: RunRecord,
+    active_state: RunState,
+) -> bool:
+    if not (_stream_is_tty(sys.stdin) and _stream_is_tty(sys.stdout)):
+        raise RallyUsageError(
+            f"`rally run {flow.name} --new` needs an interactive TTY to confirm archiving "
+            f"active run `{active_run.id}`."
+        )
+
+    prompt = (
+        f"Archive active run `{active_run.id}` with status `{active_state.status.value}` "
+        f"and start a new `{flow.name}` run? [y/N]: "
+    )
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    response = sys.stdin.readline()
+    return response.strip().lower() in {"y", "yes"}
+
+
+def _stream_is_tty(stream) -> bool:
+    isatty = getattr(stream, "isatty", None)
+    if not callable(isatty):
+        return False
+    try:
+        return bool(isatty())
+    except OSError:
+        return False
+
+
+def _record_archived_run_for_new_request(
+    *,
+    repo_root: Path,
+    flow: FlowDefinition,
+    active_run: RunRecord,
+    active_state: RunState,
+    run_dir: Path,
+) -> None:
+    recorder = RunEventRecorder(
+        run_dir=run_dir,
+        run_id=active_run.id,
+        flow_code=active_run.flow_code,
+    )
+    try:
+        recorder.emit(
+            source="rally",
+            kind="lifecycle",
+            code="ARCHIVE",
+            message=f"Archiving run `{active_run.id}` before starting a new `{flow.name}` run.",
+            data={"status": active_state.status.value},
+        )
+    finally:
+        recorder.close()
+
+    if (run_dir / "home" / "issue.md").is_file():
+        append_issue_event(
+            repo_root=repo_root,
+            run_id=active_run.id,
+            title="Rally Archived",
+            source="rally run --new",
+            detail_lines=(
+                f"Status: `{active_state.status.value}`",
+                f"Reason: Starting a fresh `{flow.name}` run with `rally run {flow.name} --new`.",
+            ),
+        )
 
 
 def _build_recorder(

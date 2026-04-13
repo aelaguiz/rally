@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -85,6 +86,20 @@ def find_active_run_for_flow(*, repo_root: Path, flow_code: str) -> RunRecord | 
         if record.flow_code == flow_code:
             return record
     return None
+
+
+def archive_run(*, repo_root: Path, run_id: str) -> Path:
+    active_run_dir = active_runs_dir(repo_root) / run_id
+    if not active_run_dir.is_dir():
+        raise RallyStateError(f"Active run directory does not exist for `{run_id}`.")
+
+    archived_run_dir = archive_runs_dir(repo_root) / run_id
+    if archived_run_dir.exists():
+        raise RallyStateError(f"Archive run directory already exists for `{run_id}`.")
+
+    archived_run_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(active_run_dir), str(archived_run_dir))
+    return archived_run_dir
 
 
 def allocate_run_id(*, repo_root: Path, flow_code: str) -> str:
