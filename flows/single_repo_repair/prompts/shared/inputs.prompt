@@ -13,24 +13,24 @@ input FixtureRepoReadme: "Fixture Repo README"
     "Use the fixture repo README as the local bug description and local test command."
 
 
-input RepairPlanCurrent: "Repair Plan Current"
+input RepairPlanFile: "Repair Plan File"
     source: File
         path: "artifacts/repair_plan.md"
     shape: MarkdownDocument
     requirement: Advisory
-    "Use the current repair plan when this turn needs the chosen fix path."
+    "Use the repair plan when this turn needs the chosen fix path."
 
 
-input VerificationReportCurrent: "Verification Report Current"
+input VerificationReportFile: "Verification Report File"
     source: File
         path: "artifacts/verification.md"
     shape: MarkdownDocument
     requirement: Advisory
-    "Use the current test report when this turn needs the latest check result."
+    "Use the test report when this turn needs the latest check result."
 
 
 input AcceptanceFacts: "Acceptance Facts"
     source: Prompt
     shape: JsonObject
     requirement: Required
-    "Use the acceptance facts that say whether the bug still happens and whether the report includes the needed regression test result."
+    "Use the acceptance facts that say whether the bug still happens, whether the report includes the needed regression test result, and whether the change drifted outside the repair plan."

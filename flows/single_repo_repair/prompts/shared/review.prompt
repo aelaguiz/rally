@@ -17,17 +17,14 @@ output AcceptanceReviewComment: "Acceptance Review Comment"
     verdict: "Verdict"
         "Say whether the review accepts the test report or asks for changes."
 
-    reviewed_artifact: "Reviewed Artifact"
-        "Name the file this review judged."
+    reviewed_artifact: "Reviewed File"
+        "Name the file this review checked."
 
     findings_first_summary: "Findings First Summary"
         "Start with the findings, then say what decision follows."
 
     output_contents_that_matter: "Output Contents That Matter"
-        "Summarize the exact parts of the repair plan and test report the next person should read first."
-
-    current_artifact: "Current Artifact" when present(current_artifact):
-        "Name the test report that still matters after this review."
+        "Say which parts of the repair plan and test report the next person should read first."
 
     next_owner: "Next Owner"
         "Name {{ScopeLead}} when the review accepts and {{ChangeEngineer}} when it asks for changes."
@@ -36,8 +33,5 @@ output AcceptanceReviewComment: "Acceptance Review Comment"
         failing_gates: "Failing Gates"
             "Name every failed check in order."
 
-    trust_surface:
-        current_artifact when present(current_artifact)
-
     standalone_read: "Standalone Read"
-        "A later reader should be able to read this comment alone and know the findings, the verdict, which test report still matters, who goes next, and what to read first."
+        "A later reader should be able to read this comment alone and know the findings, the verdict, who goes next, and what to read first."

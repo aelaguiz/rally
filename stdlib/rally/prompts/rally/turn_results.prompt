@@ -10,7 +10,7 @@ output shape RallyTurnResultJson: "Rally Turn Result JSON"
 
     explanation: "What `kind` Means"
         "`kind` tells Rally what to do next."
-        "On `handoff`, set `next_owner` to the owner key, not the display name."
+        "If the final JSON includes `next_owner`, use the owner key, not the display name."
         "Use keys like `change_engineer`."
         "Use `done` with `summary` to finish the run."
         "Use `blocker` with `reason` to stop the run cleanly."

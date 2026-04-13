@@ -1,3 +1,6 @@
+import rally.notes
+
+
 output shape RallyEnvText: "Rally Env Text"
     kind: PlainText
 
@@ -30,8 +33,8 @@ skill RallyKernelSkill: "rally-kernel"
     purpose: "Use the shared Rally kernel skill to leave notes and end the turn with valid JSON."
 
     use_when: "Use When"
-        "Use this when a note should still matter after the current turn."
-        "Use this when the turn needs the shared Rally rules for valid final JSON."
+        "Use this when a later reader needs a note."
+        "Use this when the turn needs the shared Rally final JSON rules."
 
 
 inputs RallyManagedInputs: "Inputs"
@@ -51,15 +54,20 @@ skills RallyManagedSkills: "Skills"
         reason: "Rally provides this skill on every Rally-managed turn."
 
 
-abstract agent RallyManagedBaseAgent:
-    abstract role
+outputs RallyManagedOutputs: "Outputs"
+    issue_note: "Issue Note"
+        rally.notes.RallyIssueNote
 
-    rally_contract: "Rally Contract"
-        "Rally owns the run home, the note path, and the final JSON rules for this turn."
+
+abstract agent RallyManagedBaseAgent:
+    rally_contract: "Rally Rules"
+        "Rally owns the run home, the note path, and the final JSON for this turn."
         "Use final JSON for `handoff`, `done`, `blocker`, or `sleep`."
-        "Use the shared `rally-kernel` skill when you need a note that should still matter after this turn."
+        "Leave a note only when a later reader needs context."
+        "Use the shared `rally-kernel` skill for that note."
         "Do not edit `home/issue.md` directly."
         "Read run identity from `RALLY_BASE_DIR`, `RALLY_RUN_ID`, and `RALLY_FLOW_CODE`."
 
     inputs: RallyManagedInputs
     skills: RallyManagedSkills
+    outputs: RallyManagedOutputs

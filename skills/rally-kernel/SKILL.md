@@ -1,6 +1,6 @@
 ---
 name: rally-kernel
-description: "Shared Rally turn skill for leaving issue notes and ending a turn with valid final JSON. Use it when a Rally-managed agent needs to save context for the current run, write that note with `$RALLY_BASE_DIR/rally issue note`, or shape final JSON without inventing another way to end the turn. Do not use it for flow-local planning, runtime code changes, or direct `issue.md` edits."
+description: "Shared Rally turn skill for leaving issue notes and ending a turn with valid final JSON. Use it when a Rally-managed agent needs to leave a note, write that note with `$RALLY_BASE_DIR/rally issue note`, or shape final JSON without inventing another way to end the turn. Do not use it for flow-local planning, runtime code changes, or direct `issue.md` edits."
 ---
 
 # Rally Kernel
@@ -50,8 +50,7 @@ Canonical user asks:
 
 1. Confirm this is a Rally-managed turn, that `RALLY_BASE_DIR` points at the
    Rally repo root, and that `RALLY_RUN_ID` is present.
-2. Decide whether any context needs to survive after the current artifact and
-   final JSON.
+2. Decide whether a later reader needs a short note.
 3. If yes, write one short markdown note through the Rally CLI.
 4. Shape the final turn result to match the declared Rally JSON schema.
 
@@ -75,16 +74,15 @@ Canonical user asks:
 
 3. Keep the note short.
    Save context, decisions, exact commands, or constraints that later turns
-   should read. Do not restate the whole artifact or copy the final JSON.
+   should read. Do not restate the whole file or copy the final JSON.
 
 4. End the turn with strict final JSON.
    Use the declared Rally final JSON for `handoff`, `done`, `blocker`, or
    `sleep`. The skill helps you shape that result, but it does not replace the
    adapter return path.
 
-5. Keep routing and current-file truth out of note prose.
-   If the turn routes, let final JSON carry `next_owner`. If the turn keeps a
-   current artifact, keep that on the authored artifact path, not in the note.
+5. Keep route truth out of note prose.
+   If the turn routes, let final JSON carry `next_owner`.
 
 ## Output expectations
 

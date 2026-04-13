@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+import io
+import tempfile
+import textwrap
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+from unittest.mock import patch
+
+from rally.cli import main
+
+
+class CliTests(unittest.TestCase):
+    def test_issue_note_reads_stdin(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+            stdout = io.StringIO()
+
+            with patch("rally.cli._repo_root", return_value=repo_root), patch(
+                "sys.stdin", io.StringIO("### Note\n- stdin path\n")
+            ):
+                with redirect_stdout(stdout):
+                    exit_code = main(["issue", "note", "--run-id", "FLW-1"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Appended note for run `FLW-1`", stdout.getvalue())
+            self.assertIn("stdin path", issue_file.read_text(encoding="utf-8"))
+
+    def test_issue_note_reads_inline_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            with patch("rally.cli._repo_root", return_value=repo_root):
+                exit_code = main(["issue", "note", "--run-id", "FLW-1", "--text", "Short note"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Short note", issue_file.read_text(encoding="utf-8"))
+
+    def test_issue_note_reads_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+            note_file = repo_root / "note.md"
+            note_file.write_text("### Note\n- file path\n", encoding="utf-8")
+
+            with patch("rally.cli._repo_root", return_value=repo_root):
+                exit_code = main(
+                    ["issue", "note", "--run-id", "FLW-1", "--file", str(note_file)]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("file path", issue_file.read_text(encoding="utf-8"))
+
+    def test_issue_note_reports_bad_run_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_run(repo_root=repo_root, run_id="FLW-1")
+            stderr = io.StringIO()
+
+            with patch("rally.cli._repo_root", return_value=repo_root), redirect_stderr(stderr):
+                exit_code = main(["issue", "note", "--run-id", "FLW-9", "--text", "Short note"])
+
+            self.assertEqual(exit_code, 2)
+            self.assertIn("Run file does not exist", stderr.getvalue())
+
+    def _write_run(self, *, repo_root: Path, run_id: str) -> Path:
+        run_dir = repo_root / "runs" / run_id
+        home_dir = run_dir / "home"
+        history_dir = run_dir / "issue_history"
+        home_dir.mkdir(parents=True)
+        history_dir.mkdir(parents=True)
+
+        issue_path = home_dir / "issue.md"
+        issue_path.write_text("# Brief\n", encoding="utf-8")
+        (run_dir / "run.yaml").write_text(
+            textwrap.dedent(
+                f"""\
+                id: {run_id}
+                issue_file: home/issue.md
+                """
+            ),
+            encoding="utf-8",
+        )
+        return issue_path
+
+
+if __name__ == "__main__":
+    unittest.main()

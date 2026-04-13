@@ -1,0 +1,15 @@
+import rally.issue_ledger
+
+
+output RallyIssueNote: "Issue Note"
+    target: rally.issue_ledger.RallyIssueNoteAppend
+        append_with: "\"$RALLY_BASE_DIR/rally\" issue note --run-id \"$RALLY_RUN_ID\""
+    shape: MarkdownDocument
+    requirement: Advisory
+
+    purpose: "Purpose"
+        "Leave one short note when a later reader needs context."
+        "Use the shared Rally CLI path instead of editing `home/issue.md` yourself."
+
+    standalone_read: "Standalone Read"
+        "This note should stand on its own and keep only the context later readers need."

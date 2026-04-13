@@ -1,6 +1,10 @@
 import rally.base_agent
-import rally.currentness
 import rally.turn_results
+
+
+enum SmokeRoute: "Smoke Route"
+    closeout: "Closeout"
+    retry: "Retry"
 
 
 input WorkBrief: "Work Brief"
@@ -14,7 +18,7 @@ input RoutingFacts: "Routing Facts"
     source: Prompt
     shape: JsonObject
     requirement: Required
-    "Use the routing facts that say whether this smoke test should show the `current none` path while the same owner keeps the work."
+    "Use the routing facts that say whether the smoke test needs one more step."
 
 
 output RepairPlan: "Repair Plan"
@@ -30,9 +34,20 @@ output PlanAuthorTurnResult: "Plan Author Turn Result"
     shape: rally.turn_results.RallyTurnResultJson
     requirement: Required
 
-    purpose: "Purpose"
-        "End the plan-author turn with one Rally result JSON."
-        "Use `handoff` with `next_owner` when the smoke test continues to RouteRepair."
+    kind: "handoff" when route.exists
+    next_owner: route.next_owner.key when route.exists
+
+    kind: "done" when route.exists == false
+    summary: "Write one short closeout summary." when route.exists == false
+
+
+output RouteRepairDecision: "Route Repair Decision"
+    target: TurnResponse
+    shape: Comment
+    requirement: Required
+
+    route_choice: "Route Choice"
+        "Use `closeout` to finish the smoke test and `retry` to send it back for one more pass."
 
 
 output RouteRepairTurnResult: "Route Repair Turn Result"
@@ -40,9 +55,8 @@ output RouteRepairTurnResult: "Route Repair Turn Result"
     shape: rally.turn_results.RallyTurnResultJson
     requirement: Required
 
-    purpose: "Purpose"
-        "End the route-repair turn with one Rally result JSON."
-        "Use `handoff` with `next_owner` when RouteRepair keeps the issue local."
+    kind: "handoff"
+    next_owner: route.next_owner.key
 
 
 output CloseoutTurnResult: "Closeout Turn Result"
@@ -50,27 +64,16 @@ output CloseoutTurnResult: "Closeout Turn Result"
     shape: rally.turn_results.RallyTurnResultJson
     requirement: Required
 
-    purpose: "Purpose"
-        "End the closeout turn with one Rally result JSON."
-        "Use `done` with `summary` to finish the smoke test."
-
-
-workflow PlanAuthorWorkflow[rally.currentness.RallyCarryCurrentArtifactConvention]: "Plan Author Workflow"
-    inherit when_to_use
-    inherit law_form
-    inherit carrier_rule
-    inherit pickup_rule
-
-    smoke_note: "Smoke Note"
-        "This smoke test keeps `artifacts/repair_plan.md` as the one file that still matters."
-
-    law:
-        current artifact RepairPlan via rally.currentness.RallyCurrentArtifactCarry.current_artifact
+    kind: "done"
+    summary: "Write one short closeout summary."
 
 
 agent PlanAuthor[rally.base_agent.RallyManagedBaseAgent]:
-    role: "Draft the repair plan and make it clear which file stays current."
-    workflow: PlanAuthorWorkflow
+    role: "Write the repair plan and either pass the smoke test forward or finish it."
+    workflow: "Plan"
+        "Write `artifacts/repair_plan.md`."
+        "Pass the smoke test to RouteRepair only when it needs one more step."
+        "Otherwise finish the smoke test here."
     inherit rally_contract
     inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
         inherit rally_base_dir
@@ -79,57 +82,56 @@ agent PlanAuthor[rally.base_agent.RallyManagedBaseAgent]:
 
         work_brief: "Work Brief"
             WorkBrief
-    outputs: "Outputs"
-        RepairPlan
-        PlanAuthorTurnResult
-        rally.currentness.RallyCurrentArtifactCarry
-    handoff_routing: "Handoff Routing"
-        if_the_smoke_should_continue_into_route_repair: "If The Smoke Should Continue Into Route Repair"
-            route "Send the smoke test issue to RouteRepair." -> RouteRepair
-    final_output: PlanAuthorTurnResult
-
-
-workflow RouteRepairWorkflow[rally.currentness.RallyNoCurrentArtifactConvention]: "Route Repair Workflow"
-    inherit when_to_use
-    inherit law_form
-    inherit pickup_rule
-
-    smoke_note: "Smoke Note"
-        "This smoke test shows the `current none` path while the same owner keeps the work."
-
-    law:
-        active when RoutingFacts.needs_route_repair
-        current none
-        stop "No file stays current yet, so the same owner keeps the issue until the fix is done."
-
-
-agent RouteRepair[rally.base_agent.RallyManagedBaseAgent]:
-    role: "Keep the smoke test local with `current none` when no file stays current yet."
-    workflow: RouteRepairWorkflow
-    inherit rally_contract
-    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
-        inherit rally_base_dir
-        inherit rally_run_id
-        inherit rally_flow_code
 
         routing_facts: "Routing Facts"
             RoutingFacts
-    outputs: "Outputs"
-        RouteRepairTurnResult
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
+        inherit issue_note
+
+        repair_plan: "Repair Plan"
+            RepairPlan
+
+        turn_result: "Turn Result"
+            PlanAuthorTurnResult
     handoff_routing: "Handoff Routing"
-        if_local_route_repair_must_continue: "If Local Route Repair Must Continue"
-            route "Keep the smoke test issue with RouteRepair until the fix is done." -> RouteRepair
+        law:
+            active when true
+            stop "Hand off or finish the smoke test."
+            route "Send the smoke test to RouteRepair." -> RouteRepair when RoutingFacts.needs_route_repair
+    final_output: PlanAuthorTurnResult
+
+
+agent RouteRepair[rally.base_agent.RallyManagedBaseAgent]:
+    role: "Pick the next smoke-test owner from the emitted route choice."
+    workflow: "Route Repair"
+        "Choose whether the smoke test should close out now or loop back for one more pass."
+    inherit rally_contract
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
+        inherit issue_note
+
+        route_decision: "Route Decision"
+            RouteRepairDecision
+
+        turn_result: "Turn Result"
+            RouteRepairTurnResult
+    handoff_routing: "Handoff Routing"
+        law:
+            route_from RouteRepairDecision.route_choice as SmokeRoute:
+                SmokeRoute.closeout:
+                    route "Send the smoke test to Closeout." -> Closeout
+                SmokeRoute.retry:
+                    route "Send the smoke test back to PlanAuthor." -> PlanAuthor
     final_output: RouteRepairTurnResult
-
-
-workflow CloseoutWorkflow: "Closeout Workflow"
-    "End the smoke test with one final `done` result."
 
 
 agent Closeout[rally.base_agent.RallyManagedBaseAgent]:
     role: "End the smoke test with a final `done` result."
-    workflow: CloseoutWorkflow
+    workflow: "Closeout"
+        "End the smoke test with one final `done` result."
     inherit rally_contract
-    outputs: "Outputs"
-        CloseoutTurnResult
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
+        inherit issue_note
+
+        turn_result: "Turn Result"
+            CloseoutTurnResult
     final_output: CloseoutTurnResult

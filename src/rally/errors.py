@@ -8,3 +8,7 @@ class RallyUsageError(RallyError):
 
 class RallyConfigError(RallyError):
     """Raised when authored or compiled Rally inputs are incompatible."""
+
+
+class RallyStateError(RallyError):
+    """Raised when repo-local run state is missing or malformed."""
