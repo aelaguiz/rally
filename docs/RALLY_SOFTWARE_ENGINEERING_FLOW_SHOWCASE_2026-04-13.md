@@ -1,0 +1,963 @@
+---
+title: "Rally - Software Engineering Flow Showcase - Architecture Plan"
+date: 2026-04-13
+status: active
+fallback_policy: forbidden
+owners: [aelaguiz]
+reviewers: []
+doc_type: architectural_change
+related:
+  - docs/RALLY_MASTER_DESIGN_2026-04-12.md
+  - docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
+  - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
+  - stdlib/rally/prompts/rally/base_agent.prompt
+  - stdlib/rally/prompts/rally/turn_results.prompt
+  - src/rally/services/flow_build.py
+  - src/rally/services/flow_loader.py
+  - src/rally/services/home_materializer.py
+  - pyproject.toml
+  - ../doctrine/docs/LANGUAGE_REFERENCE.md
+  - ../doctrine/docs/SKILL_PACKAGE_AUTHORING.md
+  - ../doctrine/docs/WORKFLOW_LAW.md
+  - ../paperclip_agents/doctrine/prompts/core_dev/AGENTS.prompt
+  - ../paperclip_agents/doctrine/prompts/core_dev/common/role_home.prompt
+---
+
+# TL;DR
+
+## Outcome
+
+Add a new Rally flow, `software_engineering_demo`, that starts from
+`home/issue.md`, bootstraps a demo repo when none exists, keeps work growing on
+top of the last accepted demo branch, and runs this loop:
+
+`Architect -> Critic -> Developer -> Critic -> QaDocsTester -> Critic`
+
+The flow ends only when Critic says the issue is truly done.
+
+## Problem
+
+Rally can run a simple Doctrine-authored flow today, but it does not yet have a
+good demo for real software work. It also lacks clean support for Doctrine
+skill packages, carry-forward branch history for the demo repo, per-turn commit
+rules, and honest repo bootstrap for a repeatable engineering loop.
+
+## Approach
+
+Use the fullest clean Doctrine surface we already have for prompts: abstract
+agents, shared workflows, typed inputs and outputs, routed review behavior,
+Doctrine `review_family`, workflow law, and skill-package emit. Then add the
+smallest Rally runtime support needed to build and load Doctrine skills, seed
+or resume the demo repo, and fail loud when a turn tries to hand off dirty git
+state.
+
+## Plan
+
+1. Add Rally support for Doctrine-authored skills beside current markdown
+   skills.
+2. Add the demo repo bootstrap, dirty-git guardrails, and carry-forward branch
+   history path.
+3. Author the new flow and demo skill as a Doctrine showcase.
+4. Prove the loop on a blank demo repo and then on a second issue that builds
+   on the first run, then sync the live docs to shipped truth.
+
+## Non-negotiables
+
+- `home/issue.md` stays the only shared run ledger.
+- No second handoff artifact, packet, or sidecar control path.
+- Critic runs after every owner turn and is the only owner that can end the
+  flow as done.
+- Every turn that changes the demo repo must commit before handoff.
+- New issues must branch from the last accepted demo tip instead of starting
+  from scratch.
+- If planning finds a real Rally or Doctrine gap, we stop and talk about that
+  gap before we plan around it.
+- Doctrine source stays in `.prompt` files and generated readback stays
+  generated.
+- The demo stays self-contained to this repo and must not depend on hidden
+  machine-global state.
+
+<!-- arch_skill:block:planning_passes:start -->
+<!--
+arch_skill:planning_passes
+deep_dive_pass_1: done 2026-04-13
+external_research_grounding: skipped 2026-04-13 (repo-grounded planning was sufficient)
+deep_dive_pass_2: done 2026-04-13
+recommended_flow: deep dive -> phase plan -> consistency pass -> implement
+note: This block tracks stage order only. It never overrides readiness blockers caused by unresolved decisions.
+-->
+<!-- arch_skill:block:planning_passes:end -->
+
+# 0) Holistic North Star
+
+## 0.1 The claim (falsifiable)
+
+Rally can ship one self-contained software-engineering demo flow that feels
+real, shows off the best current Doctrine surface, and exposes the next missing
+Rally features by trying to use them in live flow code instead of in fake
+examples.
+
+This claim is true only if a user can:
+
+- start the flow with a plain issue in `home/issue.md`
+- get a usable demo repo even when no prior demo repo exists
+- see each owner commit after a code-changing turn
+- finish on Critic only when the issue is truly met
+- start a later issue and branch from the last accepted demo work
+- use at least one Doctrine-authored skill package and at least one normal
+  markdown skill in the same flow
+
+## 0.2 In scope
+
+- A new flow at `flows/software_engineering_demo/` with code `SED`.
+- Four concrete owners:
+  - `architect`
+  - `developer`
+  - `qa_docs_tester`
+  - `critic`
+- A hard route shape where every specialist turn goes to Critic next.
+- A demo repo at `home/repos/demo_repo`.
+- First-run bootstrap that creates a blank demo repo when there is no accepted
+  prior demo history.
+- Later-run bootstrap that starts a new issue branch from the last accepted
+  demo branch tip.
+- One commit rule for every repo-changing turn.
+- One Doctrine-authored demo git skill package with bundled helper files.
+- Continued support for current markdown skills like `repo-search`,
+  `pytest-local`, and `rally-kernel`.
+- Rally runtime work needed to build and copy Doctrine skill packages into the
+  run home.
+- Rally runtime work needed to fail loud on dirty git state at handoff when
+  the flow requires a commit.
+- Flow build, skill build, generated readback, tests, and one real demo proof
+  path.
+- Naming and documenting real Rally and Doctrine gaps that show up while we
+  try to keep the design clean.
+- Stopping to talk with the user when planning itself hits a real Rally or
+  Doctrine gap.
+
+Allowed architectural convergence scope:
+
+- add or reshape Rally build and run-home copy code so prompt-authored skills
+  can live beside markdown skills cleanly
+- add the narrow carry-forward repo history, branch, and commit support needed
+  for this flow
+- add flow-local setup and helper code that stays inside Rally's repo-first,
+  filesystem-first model
+- update current design docs in the same pass when runtime truth changes
+
+## 0.3 Out of scope
+
+- A generic multi-repo workflow product.
+- A GUI, dashboard, or database-owned control plane.
+- A second shared brief file or a second trusted handoff surface.
+- Silent cleanup, silent retries, or hidden git repair.
+- Editing the paired Doctrine repo as part of normal Rally implementation.
+- Generic concurrent active runs for one flow.
+- A fake demo that skips real branch, commit, or repo state.
+
+## 0.4 Definition of done (acceptance evidence)
+
+The work is done only when all of this is true:
+
+- `software_engineering_demo` compiles from `.prompt` source into generated
+  flow readback.
+- The new demo git skill compiles from `SKILL.prompt` into generated skill
+  readback.
+- Rally can copy both Doctrine-authored and markdown-authored skills into one
+  run home.
+- A first run can create a blank demo repo and finish one issue through the
+  full owner loop.
+- The git history in that demo repo shows one commit after each code-changing
+  owner turn.
+- A second issue can start from the last accepted demo branch tip and create a
+  new issue branch on top of earlier work.
+- Critic is the only owner that can finish the flow with `done`.
+- Rally unit tests pass for the touched runtime surfaces.
+- The smallest honest live proof path runs and its result is written down.
+- Any missing Doctrine or Rally features found during the work are named
+  plainly in this doc instead of being patched around.
+- If planning itself hits a real Rally or Doctrine gap, the planning pass stops
+  there and that gap is discussed before work continues.
+
+Behavior-preservation evidence:
+
+- existing Rally flow build still works for `_stdlib_smoke` and `poem_loop`
+- existing markdown skill copy still works
+- the current run, resume, and issue-ledger rules still hold
+
+## 0.5 Key invariants (fix immediately if violated)
+
+- `home/issue.md` is still the one shared run ledger.
+- Final JSON is still the one trusted turn-ending control path.
+- No hand-written build output under `flows/*/build/**`.
+- No hidden Rally state under `~/.rally`, `~/.config`, or similar paths.
+- No fake "commit succeeded" claim when the demo repo is still dirty.
+- No new parallel skill system that makes Doctrine skills and markdown skills
+  feel like two different products.
+- No branch reset that discards earlier accepted demo work.
+- No planning-around of a real Rally or Doctrine gap without first stopping and
+  talking about it.
+- No Rally-side patch around a missing Doctrine feature when the clean answer
+  is "Doctrine first."
+
+# 1) Key Design Considerations (what matters most)
+
+## 1.1 Priorities (ranked)
+
+1. Keep the authored flow and skills elegant enough to feel like a Doctrine
+   showcase, not a Rally workaround pile.
+2. Make the demo honestly useful for repeated software issues, not a one-shot
+   smoke test.
+3. Surface real Rally gaps by trying to use the flow for real work.
+4. Keep the runtime filesystem-first and repo-first.
+5. Preserve current Rally behavior for existing flows and existing markdown
+   skills.
+
+## 1.2 Constraints
+
+- The shared ledger must stay `home/issue.md`.
+- The flow must stay self-contained to this repo.
+- Rally still rebuilds flows from paired Doctrine targets in `pyproject.toml`.
+- Rally currently copies the union of allowed skills into one run home.
+- Rally currently validates skills by checking for `SKILL.md` with YAML
+  frontmatter.
+- Doctrine `emit_skill` works through configured targets today. It does not
+  yet have the direct `--entrypoint` and `--output-dir` mode that `emit_flow`
+  has.
+
+## 1.3 Architectural principles (rules we will enforce)
+
+- Keep one flow-owned demo repo path: `home/repos/demo_repo`.
+- Keep one branch per issue run, stacked on the last accepted demo tip.
+- Keep one commit checkpoint per code-changing owner turn.
+- Keep one flow skill story: Rally loads markdown skills and Doctrine-emitted
+  skills through one shared copy path.
+- Reuse Doctrine features before adding local prompt prose or local control
+  code.
+- If planning finds a real Rally or Doctrine gap, stop and talk about it
+  before choosing a workaround, fallback, or narrowed plan.
+- Fail loud on dirty git state, missing compiled readback, and missing branch
+  history facts.
+
+## 1.4 Known tradeoffs (explicit)
+
+- The cleanest long-term skill-build story may need a Doctrine improvement, but
+  the first Rally pass can still use named `emit_skill` targets in
+  `pyproject.toml`.
+- The cleanest long-term carry-forward repo history story may become a reusable
+  Rally service, but the first pass can truthfully bootstrap from existing run
+  data under `runs/` if that keeps the design simple.
+- Per-agent skill isolation is a real Rally gap today. The showcase should not
+  pretend that gap is solved before it is solved.
+- Accepted first-pass limit: authored role-local skill allowlists may stay true
+  in flow source while runtime skill exposure is still the per-flow union in
+  `home/skills/`. The plan should treat that as a real Rally gap, not as
+  solved behavior.
+- Current runtime now refreshes `home/agents/`, `home/skills/`, `home/mcps/`,
+  and `config.toml` on every start or resume, while still keeping
+  `setup_home_script` behind the one-time home-ready marker. That closes the
+  earlier capability-refresh blocker and becomes a behavior we must keep.
+
+# 2) Problem Statement (existing architecture + why change)
+
+## 2.1 What exists today
+
+- Rally ships one simple runnable flow, `poem_loop`, that proves the
+  issue-ledger-first loop.
+- `src/rally/services/flow_build.py` rebuilds flows with
+  `doctrine.emit_docs` only.
+- `src/rally/services/home_materializer.py` copies allowed skills by looking
+  for source-side `SKILL.md` bundles.
+- `src/rally/services/home_materializer.py` copies the per-flow union of
+  allowed skills and MCPs into one run home.
+- `src/rally/services/home_materializer.py` refreshes `home/agents/` on every
+  start or resume, and it now refreshes skills, MCPs, and `config.toml` before
+  it checks the home-ready marker.
+- `setup_home_script` already gives a clean hook for run-home bootstrap.
+- Rally already has a good front-door note skill in `skills/rally-kernel/`.
+- Doctrine already ships the language pieces we want for a richer demo:
+  abstract agents, shared workflows, review families, workflow law, typed
+  outputs, route semantics, and `skill package`.
+
+## 2.2 What’s broken / missing (concrete)
+
+- There is no real software-engineering showcase flow in Rally yet.
+- There is no first-class Rally path for Doctrine-authored skills.
+- There is no clean demo-repo bootstrap and branch-history contract.
+- There is no handoff-time git cleanliness rule for flows that require a
+  commit after each turn.
+- There is no proof flow today that pressures Critic-as-finisher across
+  architect, developer, and QA/docs/test work on one shared issue ledger.
+
+## 2.3 Constraints implied by the problem
+
+- The flow must lean on real repo state, git state, and run-home state.
+- The prompt design should use Doctrine features on purpose so missing support
+  shows up fast.
+- The runtime changes must stay narrow and reusable. This demo should reveal
+  missing framework seams, not add demo-only magic.
+- The planning process itself must stop on real framework gaps instead of
+  smoothing over them.
+
+<!-- arch_skill:block:research_grounding:start -->
+# 3) Research Grounding (external + internal “ground truth”)
+
+## 3.1 External anchors (papers, systems, prior art)
+
+- `../doctrine/docs/LANGUAGE_REFERENCE.md` — adopt Doctrine-owned prompt
+  features such as abstract agents, routed outputs, `review_family`, and
+  `skill package`; reject inventing a second Rally-only prompt language — the
+  showcase should push the shipped Doctrine surface first.
+- `../doctrine/docs/SKILL_PACKAGE_AUTHORING.md` — adopt `SKILL.prompt` plus
+  source-root bundled files as the first Doctrine skill shape; reject adding a
+  second Rally-only skill-package format — Doctrine already owns this package
+  model.
+- `../doctrine/doctrine/emit_skill.py` and `../doctrine/docs/EMIT_GUIDE.md` —
+  adopt named-target `emit_skill` for the first Rally pass; reject adding a
+  second skill registry in Rally; note a real Doctrine gap that does not block
+  the first pass: direct `emit_skill --entrypoint ... --output-dir ...` mode
+  does not exist today.
+- `../doctrine/docs/WORKFLOW_LAW.md` — adopt compiler-owned route semantics and
+  output truth for the critic loop; reject prose-only routing for this showcase
+  because the whole point is to show the richer Doctrine path.
+- `../paperclip_agents/doctrine/prompts/core_dev/AGENTS.prompt` and
+  `../paperclip_agents/doctrine/prompts/core_dev/common/role_home.prompt` —
+  adopt the family pattern where specialist turns route through Critic; reject
+  its extra artifact surfaces as-is because Rally must stay `home/issue.md`
+  first.
+
+## 3.2 Internal ground truth (code as spec)
+
+- Authoritative behavior anchors (do not reinvent):
+  - `src/rally/services/flow_build.py` — current canonical flow build path; it
+    runs `doctrine.emit_docs` only today.
+  - `src/rally/services/home_materializer.py` — current run-home sync and skill
+    copy path; it validates source-side `SKILL.md` bundles, refreshes
+    `home/skills/`, `home/mcps/`, and `config.toml` on each start or resume,
+    and still copies the union of all agent allowlists into one shared
+    `home/skills/`.
+  - `src/rally/services/flow_loader.py` — current `flow.yaml` contract,
+    including `allowed_skills`, `allowed_mcps`, and `setup_home_script`.
+  - `src/rally/services/run_store.py` — active and archived run model, flow
+    replacement, and monotonic run ids; archived runs already give a
+    filesystem-first source for carry-forward demo repo history.
+  - `src/rally/services/runner.py` — `rally run --new` archives the old active
+    run before the next run starts, which gives the demo a real place to pick
+    up prior repo state.
+  - `stdlib/rally/prompts/rally/base_agent.prompt` — current Rally-managed role
+    contract, required `rally-kernel`, and shared note/final-JSON rules.
+- Canonical path / owner to reuse:
+  - `src/rally/services/flow_build.py` — should own Doctrine flow and Doctrine
+    skill build orchestration; the setup script should not become a second
+    builder.
+  - `src/rally/services/home_materializer.py` — should own copying skills into
+    `home/skills/` and any future source-kind split between markdown skills and
+    compiled Doctrine skills.
+  - `flows/*/setup/*.sh` through `setup_home_script` — should own demo repo
+    bootstrap inside the run home; runtime files still must not author
+    instructions.
+  - `src/rally/services/run_store.py` plus archived run homes under
+    `runs/archive/` — should own first-pass carry-forward source discovery for
+    prior demo repo state.
+- Existing patterns to reuse:
+  - `pyproject.toml` emit targets plus `tests/unit/test_flow_build.py` — one
+    named target per emitted flow already exists; the first Doctrine skill pass
+    should reuse this target model instead of adding a second registry.
+  - `tests/unit/test_runner.py` setup-home fixture path — existing proof path
+    for flow setup and run-home behavior.
+  - `src/rally/services/runner.py` plus `tests/unit/test_runner.py` archive
+    behavior — existing filesystem-first replacement path for starting a new
+    issue on top of earlier work.
+- Prompt surfaces / agent contract to reuse:
+  - `stdlib/rally/prompts/rally/base_agent.prompt` — shared Rally-managed
+    inputs, required kernel skill, and final JSON rules.
+  - `stdlib/rally/prompts/rally/turn_results.prompt` — shared turn-ending
+    schema.
+  - `flows/poem_loop/prompts/AGENTS.prompt` — current Doctrine-authored
+    issue-ledger-first flow pattern.
+  - `skills/rally-kernel/SKILL.md` — current front-door note boundary.
+- Native model or agent capabilities to lean on:
+  - Codex runtime plus Rally launch rules — shell access, repo file access, git
+    commands, and direct `AGENTS.md` prompt injection already exist, so the
+    showcase does not need a parser or wrapper to fake git work.
+- Existing grounding / tool / file exposure:
+  - `src/rally/services/home_materializer.py` — prepares `home/repos/`,
+    `home/skills/`, `home/mcps/`, and `home/sessions/`.
+  - `src/rally/services/home_materializer.py` — passes `RALLY_RUN_HOME`,
+    `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_ISSUE_PATH`
+    into `setup_home_script`.
+  - `src/rally/services/flow_loader.py` — loads flow-owned `allowed_skills` and
+    `setup_home_script`.
+- Duplicate or drifting paths relevant to this change:
+  - `skills/*/SKILL.md` versus planned `skills/*/SKILL.prompt` — this is the
+    new mixed skill-source seam that Rally must own cleanly.
+  - `FlowAgent.allowed_skills` in `src/rally/domain/flow.py` versus the
+    per-flow union copy in `src/rally/services/home_materializer.py` — authored
+    role boundaries do not match runtime exposure today.
+- Capability-first opportunities before new tooling:
+  - reuse `setup_home_script` and archived run homes before adding a repo
+    registry or database
+  - reuse `pyproject.toml` emit targets before adding a Rally-side Doctrine
+    skill registry
+  - reuse Doctrine `review_family`, routed outputs, and workflow law before
+    adding extra deterministic critic scaffolding
+- Behavior-preservation signals already available:
+  - `tests/unit/test_flow_build.py` — protects flow build orchestration
+  - `tests/unit/test_flow_loader.py` — protects flow config loading and
+    compiled contract checks
+  - `tests/unit/test_runner.py` — protects setup execution, run-home
+    preparation, run replacement, and current skill copy behavior
+  - `tests/unit/test_run_store.py` — protects archive behavior and run-id
+    allocation
+
+## 3.3 Decision gaps that must be resolved before implementation
+
+- No new blockers remain from deep-dive pass 2.
+- The earlier capability-refresh gap is now resolved in
+  `src/rally/services/home_materializer.py`, and
+  `tests/unit/test_runner.py` now covers both capability refresh and stale
+  capability removal on resume.
+- Accepted first-pass limitation:
+  - authored per-agent skill boundaries already exist, but Rally still copies
+    the per-flow union of skills into one shared `home/skills/`
+  - checked `src/rally/services/home_materializer.py`,
+    `src/rally/domain/flow.py`,
+    `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, and
+    `docs/RALLY_MASTER_DESIGN_2026-04-12.md` first
+  - user accepted this as a known Rally limitation for the first demo, so the
+    plan may continue while still recording it as unresolved framework work
+<!-- arch_skill:block:research_grounding:end -->
+
+<!-- arch_skill:block:current_architecture:start -->
+# 4) Current Architecture (as-is)
+
+## 4.1 On-disk structure
+
+- `pyproject.toml`
+  - today it declares two Doctrine flow emit targets only:
+    - `_stdlib_smoke`
+    - `poem_loop`
+- `flows/<flow>/prompts/**`
+  - Doctrine prompt source
+- `flows/<flow>/build/agents/**`
+  - generated flow readback that Rally loads at runtime
+- `skills/<skill>/SKILL.md`
+  - current markdown skill source shape
+- `runs/active/<run-id>/home/`
+  - current prepared run world
+  - already includes `agents/`, `skills/`, `mcps/`, `sessions/`, `artifacts/`,
+    and `repos/`
+- `runs/archive/<run-id>/`
+  - archived prior run homes already exist and keep full on-disk history
+
+## 4.2 Control paths (runtime)
+
+Current command path for one flow:
+
+1. `src/rally/services/runner.py:run_flow` or `resume_run`
+   - takes the flow lock
+   - calls `src/rally/services/flow_build.py:ensure_flow_agents_built`
+2. `ensure_flow_agents_built`
+   - runs `doctrine.emit_docs` for one named flow target only
+3. `src/rally/services/flow_loader.py:load_flow_definition`
+   - reads `flow.yaml`
+   - validates compiled agent contracts
+4. `src/rally/services/home_materializer.py:prepare_run_home_shell`
+   - creates the run-home shell
+5. `src/rally/services/home_materializer.py:materialize_run_home`
+   - requires non-empty `home/issue.md`
+   - syncs compiled agents into `home/agents/`
+   - refreshes the union of allowed skills and MCPs into `home/skills/` and
+     `home/mcps/` on every start or resume
+   - rewrites `config.toml` on every start or resume
+   - runs `setup_home_script` once
+6. `src/rally/services/runner.py:_execute_until_stop`
+   - chains turns until `done`, `blocker`, runtime failure, or command turn cap
+7. `src/rally/services/runner.py:_execute_single_turn`
+   - builds the prompt from generated `AGENTS.md`
+   - invokes Codex
+   - parses final JSON
+   - writes the next run state and issue-log records
+
+Current fresh-run replacement path:
+
+1. `rally run <flow> --new`
+2. `src/rally/services/runner.py:_maybe_archive_replaced_run`
+3. `src/rally/services/run_store.py:archive_run`
+4. prior run moves to `runs/archive/<run-id>/`
+5. new run starts at the next run id
+
+## 4.3 Object model + key abstractions
+
+- `src/rally/domain/flow.py:FlowAgent`
+  - already models per-agent `allowed_skills` and `allowed_mcps`
+- `src/rally/domain/flow.py:FlowDefinition`
+  - owns the loaded runtime facts for one flow
+- `src/rally/services/flow_build.py`
+  - currently owns flow build orchestration only
+- `src/rally/services/home_materializer.py`
+  - currently owns skill copy, MCP copy, config writing, auth links, and setup
+- `src/rally/services/runner.py`
+  - owns run chaining, turn execution, and turn-result acceptance
+- `flows/*/setup/*.sh`
+  - already own flow-local run-home bootstrap work
+
+## 4.4 Observability + failure behavior today
+
+- Rally already logs:
+  - lifecycle events
+  - per-agent logs
+  - adapter launch records
+  - issue-log snapshots
+- Rally already fails loud on:
+  - missing or blank `home/issue.md`
+  - missing compiled agents
+  - missing `SKILL.md`
+  - setup-script failures
+  - non-interactive `--new` confirmation path
+- Rally does not yet log or enforce:
+  - Doctrine skill-build origin
+  - skill source-kind resolution
+  - guarded git repo cleanliness before handoff or done
+  - carry-forward demo repo source selection
+
+## 4.5 UI surfaces (ASCII mockups, if UI work)
+
+Not a UI feature. No mockup needed.
+<!-- arch_skill:block:current_architecture:end -->
+
+<!-- arch_skill:block:target_architecture:start -->
+# 5) Target Architecture (to-be)
+
+## 5.1 On-disk structure (future)
+
+- `flows/software_engineering_demo/flow.yaml`
+  - flow code `SED`
+  - four concrete owners
+  - new runtime field:
+    - `guarded_git_repos`
+    - first pass value: `["repos/demo_repo"]`
+- `flows/software_engineering_demo/prompts/**`
+  - Doctrine source for the showcase flow
+- `flows/software_engineering_demo/build/agents/**`
+  - generated flow readback
+- `flows/software_engineering_demo/setup/prepare_home.sh`
+  - flow-local demo repo bootstrap
+- `skills/demo-git/SKILL.prompt`
+  - Doctrine skill-package source
+- `skills/demo-git/build/**`
+  - generated Doctrine skill-package readback
+- markdown skills stay source-owned where they already live:
+  - `skills/repo-search/SKILL.md`
+  - `skills/pytest-local/SKILL.md`
+  - `skills/rally-kernel/SKILL.md`
+- `pyproject.toml`
+  - adds one flow emit target for `software_engineering_demo`
+  - adds one Doctrine skill emit target per Doctrine-authored skill
+  - first-pass naming rule:
+    - skill target name matches the skill slug
+    - example: `demo-git`
+
+## 5.2 Control paths (future)
+
+Future build and run path:
+
+1. `ensure_flow_agents_built`
+   - rebuilds the flow with `emit_docs`
+   - reads flow-owned allowed skills from `flow.yaml`
+   - rebuilds any allowed skill root that contains `SKILL.prompt` through
+     `emit_skill`
+2. `materialize_run_home`
+   - keeps current refresh-on-resume behavior for skills, MCPs, and
+     `config.toml`
+   - resolves each skill source kind by root file presence:
+     - `SKILL.md` only -> markdown skill source
+     - `SKILL.prompt` only -> Doctrine skill source
+     - both or neither -> fail loud
+   - copies markdown skills from source roots
+   - copies Doctrine skills from `skills/<skill>/build/`
+3. `setup_home_script`
+   - owns demo repo bootstrap inside `home/repos/demo_repo`
+   - first run:
+     - creates a blank git repo
+     - creates the first commit so branch-based follow-up work is possible
+   - later run:
+     - scans archived `SED-*` runs under `runs/archive/`
+     - picks the newest archived run whose state is `done` and whose demo repo
+       exists
+     - copies that repo, including `.git`, into the new run home
+   - then creates one new issue branch for the current run
+4. `runner._execute_single_turn`
+   - remains the only turn-execution entrypoint
+   - after Codex returns a non-sleep turn result and before Rally accepts that
+     result as routable or final, Rally checks each `guarded_git_repos` path
+   - if any guarded repo is dirty, Rally blocks the run instead of honoring the
+     handoff or done result
+5. Flow routing
+   - Architect, Developer, and QaDocsTester always route to Critic next
+   - Critic routes to the next real owner or finishes with `done`
+
+## 5.3 Object model + abstractions (future)
+
+- `src/rally/services/flow_build.py`
+  - stays the canonical build owner for Rally-managed compiled artifacts
+  - gains doctrine-skill build orchestration
+- `src/rally/services/home_materializer.py`
+  - stays the canonical run-home copy owner
+  - gains source-kind resolution for mixed markdown and Doctrine skills
+- `src/rally/domain/flow.py:FlowDefinition`
+  - gains `guarded_git_repos`
+- `src/rally/services/flow_loader.py`
+  - validates `runtime.guarded_git_repos`
+- `src/rally/services/runner.py`
+  - gains one narrow guarded-repo cleanliness check
+- `setup_home_script`
+  - stays the owner of flow-local repo bootstrap logic
+  - does not become a second instruction source or skill registry
+
+Prompt versus deterministic split:
+
+- Doctrine prompt source owns:
+  - role homes
+  - routed owner graph
+  - critic review structure
+  - issue-ledger behavior guidance
+- Deterministic Rally/runtime code owns:
+  - build orchestration
+  - source-kind resolution
+  - guarded git cleanliness checks
+  - archived-run discovery for carry-forward repo bootstrap
+  - run-home copy rules
+
+## 5.4 Invariants and boundaries
+
+- Prompt and skill source of truth:
+  - flow instructions live in `.prompt`
+  - Doctrine skill packages live in `SKILL.prompt`
+  - markdown skills live in `SKILL.md`
+- Runtime skill source-kind rule:
+  - exactly one of `SKILL.md` or `SKILL.prompt` may define a skill root
+- Build ownership:
+  - Rally owns when build happens
+  - Doctrine owns how prompt and skill compilation works
+- Carry-forward repo history source:
+  - first pass uses archived run homes only
+  - no DB, registry, or second repo-history sidecar
+- Git cleanliness:
+  - guarded repos must be clean before Rally accepts handoff or done
+- Capability refresh:
+  - run-home skills, MCPs, and `config.toml` refresh on every `run` and
+    `resume`
+  - `setup_home_script` still stays one-time behind the home-ready marker
+- Accepted first-pass limitation:
+  - runtime skill exposure may still be the per-flow union
+  - do not claim per-agent skill isolation at runtime
+
+## 5.5 UI surfaces (ASCII mockups, if UI work)
+
+Not a UI feature. No mockup needed.
+<!-- arch_skill:block:target_architecture:end -->
+
+<!-- arch_skill:block:call_site_audit:start -->
+# 6) Call-Site Audit (exhaustive change inventory)
+
+## 6.1 Change map (table)
+
+| Area | File | Symbol / Call site | Current behavior | Required change | Why | New API / contract | Tests impacted |
+| ---- | ---- | ------------------ | ---------------- | --------------- | --- | ------------------ | -------------- |
+| Doctrine flow build target | `pyproject.toml` | `[[tool.doctrine.emit.targets]]` | only `_stdlib_smoke` and `poem_loop` flow targets exist | add `software_engineering_demo` target | Rally must compile the new flow | one named flow target per runnable flow | flow build tests |
+| Doctrine skill build targets | `pyproject.toml` | `[[tool.doctrine.emit.targets]]` | no Doctrine skill targets exist in Rally today | add skill targets for Doctrine-authored skills such as `demo-git` | Rally needs a first-pass `emit_skill` path without a second registry | first-pass naming rule: target name matches skill slug | flow build tests |
+| Build orchestration | `src/rally/services/flow_build.py` | `ensure_flow_agents_built` | runs `emit_docs` for one flow target only | rebuild allowed Doctrine skills before run start | keep build ownership in one runtime path | build flow plus Doctrine skill packages from flow-owned allowlists | flow build tests |
+| Flow runtime contract | `src/rally/domain/flow.py` | `FlowDefinition` | no guarded repo list | add `guarded_git_repos` to the loaded flow contract | runner needs a typed runtime source for git guards | `runtime.guarded_git_repos: [run-home-relative path, ...]` | flow loader tests |
+| Flow loader | `src/rally/services/flow_loader.py` | `load_flow_definition` | validates adapter, turn cap, prompt inputs, and setup script only | load and validate `guarded_git_repos` | keep new runtime facts in `flow.yaml`, not in code constants | non-empty list of run-home-relative repo paths | flow loader tests |
+| Skill source-kind resolution | `src/rally/services/home_materializer.py` | `_copy_allowed_skills_and_mcps`, `_validate_skill_bundle`, `materialize_run_home` | refreshes markdown skills, MCPs, and `config.toml` on each materialization, but only from source-side `SKILL.md` bundles | detect markdown versus Doctrine skill roots and copy from the right source | keep one skill product story | exactly one of `SKILL.md` or `SKILL.prompt`; Doctrine skills copy from `build/` | runner tests |
+| Guarded git repo check | `src/rally/services/runner.py` | `_execute_single_turn` after `load_turn_result` and before accepted state write | no repo cleanliness check exists | block the run if any guarded repo is dirty | enforce the commit-after-turn rule honestly | guarded repo dirtiness blocks handoff or done | runner tests |
+| Run replacement source | `src/rally/services/run_store.py`, `src/rally/services/runner.py` | `archive_run`, `_maybe_archive_replaced_run` | archives prior active run and increments run id | reuse archived runs as the carry-forward demo repo source | avoid a second repo-history registry | newest archived done `SED-*` run is the first-pass carry-forward source | runner tests, run store tests |
+| Demo flow runtime config | `flows/software_engineering_demo/flow.yaml` | new file | flow does not exist | declare owners, allowlists, start owner, setup script, guarded repos, and turn cap | ship the showcase flow contract | `SED` runtime contract | flow loader and build tests |
+| Demo flow prompts | `flows/software_engineering_demo/prompts/**` | new files | flow does not exist | author shared role home, owners, routes, and critic logic | showcase Doctrine features on a real software-work loop | new flow prompt graph | compile/readback inspection |
+| Demo repo bootstrap | `flows/software_engineering_demo/setup/prepare_home.sh` | new file | no demo repo bootstrap exists | create or copy `home/repos/demo_repo`, then create the issue branch | make the demo real and repeatable | first-run blank repo, later-run copy from newest archived done run | runner tests and live proof |
+| Doctrine skill package | `skills/demo-git/**` | new files | no Doctrine skill exists in Rally today | add a script-backed demo git skill package | prove mixed skill-source support | `SKILL.prompt` plus bundled references/scripts and generated `build/` | compile/readback inspection |
+| Runtime docs | `docs/RALLY_MASTER_DESIGN_2026-04-12.md`, `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` | live design docs | current docs do not describe Doctrine skill builds or guarded git repos | sync the docs in the same pass if runtime truth changes | keep repo truth aligned | updated runtime doc truth | doc inspection |
+
+## 6.2 Migration notes
+
+- Canonical owner path / shared code path:
+  - build orchestration stays in `src/rally/services/flow_build.py`
+  - skill copy stays in `src/rally/services/home_materializer.py`
+  - turn-result acceptance and git guards stay in `src/rally/services/runner.py`
+  - demo repo bootstrap stays in `flows/software_engineering_demo/setup/prepare_home.sh`
+- Deprecated APIs (if any):
+  - none in the first pass
+- Delete list (what must be removed; include superseded shims/parallel paths if any):
+  - no second skill registry
+  - no repo-history DB or sidecar state
+  - no flow-name hardcoding for demo repo support
+  - no prose-only backup handoff path
+- Capability-replacing harnesses to delete or justify:
+  - do not add a git wrapper daemon, repo registry, or branch-tracking sidecar
+    when existing git state plus archived runs already give enough truth
+- Live docs/comments/instructions to update or delete:
+  - `docs/RALLY_MASTER_DESIGN_2026-04-12.md`
+  - `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`
+  - `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md`
+  - any new flow-local docs or comments that would otherwise claim per-agent
+    runtime skill isolation was solved
+- Behavior-preservation signals for refactors:
+  - `tests/unit/test_flow_build.py`
+  - `tests/unit/test_flow_loader.py`
+  - `tests/unit/test_runner.py`
+  - `tests/unit/test_run_store.py`
+  - existing `_stdlib_smoke` and `poem_loop` build/readback checks
+
+## Pattern Consolidation Sweep (anti-blinders; scoped by plan)
+
+| Area | File / Symbol | Pattern to adopt | Why (drift prevented) | Proposed scope (include/defer/exclude/blocker question) |
+| ---- | ------------- | ---------------- | ---------------------- | ------------------------------------- |
+| Doctrine skill builds | `src/rally/services/flow_build.py:ensure_flow_agents_built` | build Doctrine skills from flow-owned allowlists and `pyproject.toml` targets | avoids a second skill-build story | include |
+| Mixed skill copy | `src/rally/services/home_materializer.py` | one source-kind resolver for markdown and Doctrine skills | avoids split runtime behavior for skills | include |
+| Guarded git repos | `src/rally/services/flow_loader.py`, `src/rally/services/runner.py` | one reusable `guarded_git_repos` runtime field | avoids flow-name hardcoded git checks | include |
+| Carry-forward repo source | `flows/software_engineering_demo/setup/prepare_home.sh` | scan archived done runs before inventing a registry | keeps the first pass filesystem-first | include |
+| Existing markdown skills | `skills/repo-search`, `skills/pytest-local`, `skills/rally-kernel` | convert to Doctrine `SKILL.prompt` | not required to ship the demo | defer |
+| Per-agent skill isolation | `src/rally/services/home_materializer.py` | runtime role-local skill exposure | real gap, but user accepted it as first-pass limitation | defer |
+| Generic previous-run helper | `src/rally/services/run_store.py` or new helper module | reusable helper for “newest archived done run with repo path” | may be useful later, but setup script can own the first pass | defer |
+<!-- arch_skill:block:call_site_audit:end -->
+
+<!-- arch_skill:block:phase_plan:start -->
+# 7) Depth-First Phased Implementation Plan (authoritative)
+
+> Rule: systematic build, foundational first; every phase has exit criteria + explicit verification plan (tests optional). Refactors, consolidations, and shared-path extractions must preserve existing behavior with credible evidence proportional to the risk. For agent-backed systems, prefer prompt, grounding, and native-capability changes before new harnesses or scripts. No fallbacks/runtime shims - the system must work correctly or fail loudly (delete superseded paths). The authoritative checklist must name the actual chosen work, not unresolved branches or "if needed" placeholders. Prefer programmatic checks per phase; defer manual/UI verification to finalization. Avoid negative-value tests and heuristic gates (deletion checks, visual constants, doc-driven gates, keyword or absence gates, repo-shape policing). Also: document new patterns/gotchas in code comments at the canonical boundary (high leverage, not comment spam).
+
+## Phase 1 — Mixed skill runtime foundation
+
+* Goal:
+  Make Rally build, load, and materialize Doctrine-authored skills beside
+  markdown skills through one runtime path without breaking current flows.
+* Work:
+  - add the real `skills/demo-git/SKILL.prompt` source root and its
+    `pyproject.toml` emit target so the runtime proves against an actual
+    Doctrine skill package
+  - extend `src/rally/services/flow_build.py` so one flow start rebuilds the
+    flow and any allowed Doctrine skill roots
+  - extend `src/rally/services/home_materializer.py` so it resolves skill
+    source kind by root files, copies Doctrine skills from `build/`, keeps the
+    current refresh-on-run-and-resume behavior, and fails loud on missing or
+    ambiguous roots
+  - keep `rally-kernel` mandatory and keep current markdown skills working
+* Verification (required proof):
+  - `uv run pytest tests/unit/test_flow_build.py -q`
+  - `uv run pytest tests/unit/test_runner.py -q`
+  - inspect emitted `skills/demo-git/build/**`
+* Docs/comments (propagation; only if needed):
+  - update `docs/RALLY_MASTER_DESIGN_2026-04-12.md`,
+    `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, and
+    `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` for the mixed-skill source
+    model and the refresh-on-resume rule once the code lands
+* Exit criteria:
+  - one run home can contain markdown and Doctrine skills cleanly
+  - `_stdlib_smoke` and `poem_loop` still build and current markdown skills
+    still materialize correctly
+* Rollback:
+  - remove the Doctrine skill build path and return Rally to markdown-only
+    skill handling
+
+## Phase 2 — Demo repo bootstrap and dirty-git guardrails
+
+* Goal:
+  Make `software_engineering_demo` run against a real demo repo that stacks
+  across issues and blocks dirty handoffs.
+* Work:
+  - add `guarded_git_repos` to the loaded flow contract in
+    `src/rally/domain/flow.py` and `src/rally/services/flow_loader.py`
+  - add the guarded-repo cleanliness check in `src/rally/services/runner.py`
+    before Rally accepts handoff or done
+  - add `flows/software_engineering_demo/setup/prepare_home.sh` so first run
+    creates a blank repo plus seed commit, while later runs copy the newest
+    archived done `SED-*` repo including `.git`
+  - create one new issue branch per run and keep the carry-forward source
+    filesystem-first with no registry or sidecar
+* Verification (required proof):
+  - `uv run pytest tests/unit/test_flow_loader.py -q`
+  - `uv run pytest tests/unit/test_runner.py -q`
+  - inspect setup-script behavior in a prepared run home before the live proof
+* Docs/comments (propagation; only if needed):
+  - update the same live runtime docs for `guarded_git_repos`, archived-run
+    carry-forward, and the one-time `setup_home_script` rule
+  - add one short setup-script comment only where a failure mode would be hard
+    to see later
+* Exit criteria:
+  - runtime can load guard config, block dirty handoffs, and prepare a real
+    demo repo contract for first and later runs
+* Rollback:
+  - remove the guard field and demo bootstrap path and leave the new flow
+    unshipped
+
+## Phase 3 — Author the showcase flow and Doctrine skill surfaces
+
+* Goal:
+  Ship the actual `software_engineering_demo` flow and its authored skill
+  surfaces as a Doctrine showcase.
+* Work:
+  - create `flows/software_engineering_demo/flow.yaml` with owners, allowlists,
+    turn cap, setup script, and guarded repo path
+  - author `flows/software_engineering_demo/prompts/**` with a shared role
+    home, typed outputs, routed owner graph, and Doctrine `review_family` so
+    Critic reviews after every specialist turn and is the only finisher
+  - finish `skills/demo-git` with the real bundled script and reference files
+    the flow will use beside `repo-search`, `pytest-local`, and `rally-kernel`
+  - add the flow emit target, compile the flow, and emit the Doctrine skill
+    package readback
+* Verification (required proof):
+  - rebuild `software_engineering_demo` with Doctrine and inspect
+    `flows/software_engineering_demo/build/**`
+  - emit `demo-git` and inspect `skills/demo-git/build/**`
+* Docs/comments (propagation; only if needed):
+  - add only high-leverage comments at the runtime or setup boundary when the
+    rule would otherwise be easy to misread later
+* Exit criteria:
+  - source and generated readback match
+  - the authored flow has no unresolved routing, skill, or ownership choices
+* Rollback:
+  - keep the new flow present but not advertised until compile and readback are
+    clean
+
+## Phase 4 — End-to-end proof and truth sync
+
+* Goal:
+  Prove the showcase on real first and second issues and leave live docs aligned
+  with shipped truth.
+* Work:
+  - run `uv run pytest tests/unit -q`
+  - run one live issue from blank demo repo state
+  - run one later issue from the last accepted demo tip and inspect branch plus
+    commit history for stacked work and per-turn commits
+  - record any remaining Rally or Doctrine gaps surfaced by the live run in
+    this plan doc
+  - sync `docs/RALLY_MASTER_DESIGN_2026-04-12.md`,
+    `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, and
+    `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` to the final shipped behavior
+* Verification (required proof):
+  - `uv run pytest tests/unit -q`
+  - flow compile output
+  - skill compile output
+  - live Rally proof runs
+  - git log and branch inspection in `home/repos/demo_repo`
+* Docs/comments (propagation; only if needed):
+  - remove stale claims about markdown-only skill handling or the old
+    capability-refresh blocker
+* Exit criteria:
+  - the showcase works end to end, proof is written down, and remaining gaps
+    are named plainly
+* Rollback:
+  - keep `software_engineering_demo` present but not advertised as the showcase
+    until the proof is honest
+<!-- arch_skill:block:phase_plan:end -->
+
+# 8) Verification Strategy (common-sense; non-blocking)
+
+## 8.1 Build and compile proof
+
+- rebuild the new flow with Doctrine and inspect generated readback
+- emit the Doctrine skill package and inspect generated readback
+
+## 8.2 Runtime proof
+
+- run `uv run pytest tests/unit -q`
+- add or update only the tests needed for build, skill copy, setup, and git
+  guard behavior
+
+## 8.3 Live demo proof
+
+- run the flow once with no prior demo repo
+- run it again with a new issue and confirm a new branch was created on the
+  last accepted tip
+- inspect git log to confirm one commit after each code-changing owner turn
+
+## 8.4 Proof we should not add
+
+- no grep-only doc gates
+- no fake tests that only check for string presence in prompts
+- no second demo control plane just to simplify proof
+
+# 9) Rollout / Ops / Telemetry
+
+## 9.1 Rollout plan
+
+- ship the new flow as an optional demo flow
+- keep `poem_loop` and current runtime paths working while the new flow lands
+
+## 9.2 Ops truth
+
+- log bootstrap source, branch name, and git guard failures through normal
+  Rally logging paths
+- keep carry-forward repo history easy to find in the run files and the demo
+  repo itself
+
+## 9.3 Telemetry stance
+
+- no product telemetry work is needed
+- file-first Rally logs are enough for this demo
+
+<!-- arch_skill:block:consistency_pass:start -->
+## Consistency Pass
+- Reviewers: explorer 1, explorer 2, self-integrator
+- Scope checked:
+  - frontmatter and `planning_passes`
+  - `# TL;DR`
+  - `# 0)` through `# 10)`
+  - helper-block drift
+  - agreement between architecture, call-site audit, phase plan, verification,
+    rollout, and approved exceptions
+- Findings summary:
+  - `planning_passes` was stale because it still pointed at external research
+    as part of the active path even though this doc had already chosen the
+    repo-grounded path through phase-plan and consistency-pass
+  - the approved first-pass exception for per-flow union runtime skill exposure
+    remains visible, but it is an accepted limitation rather than an open
+    blocker
+- Integrated repairs:
+  - updated `planning_passes` to mark external research as skipped for this doc
+    and to show the chosen active stage order
+  - kept the accepted per-agent skill-isolation exception explicit across the
+    artifact instead of treating it as a hidden open question
+- Remaining inconsistencies:
+  - none
+- Unresolved decisions:
+  - none
+- Unauthorized scope cuts:
+  - none
+- Decision-complete:
+  - yes
+- Decision: proceed to implement? yes
+<!-- arch_skill:block:consistency_pass:end -->
+
+# 10) Decision Log (append-only)
+
+- 2026-04-13: This showcase stays on `home/issue.md` only. There is no second
+  handoff artifact.
+- 2026-04-13: Critic runs after every owner turn and is the only owner that can
+  finish the flow with `done`.
+- 2026-04-13: The first demo must use one Doctrine-authored skill package and
+  must keep existing markdown skills working in the same run.
+- 2026-04-13: New issues must stack on the last accepted demo branch tip
+  instead of restarting from a blank repo each time.
+- 2026-04-13: If planning finds a real Rally or Doctrine gap, that gap must be
+  discussed before the plan moves on.
+- 2026-04-13: The first demo may keep per-flow union runtime skill exposure
+  even though authored per-agent skill boundaries already exist. This is an
+  accepted Rally limitation for the first pass, not solved behavior.
+- 2026-04-13: Deep-dive pass 2 found a second Rally runtime gap: run homes
+  refresh compiled agents on start or resume, but not skills, MCPs, or
+  `config.toml` after first materialization. Planning stops here until the
+  showcase policy for capability refresh is chosen.
+- 2026-04-13: Verified current Rally runtime now refreshes skills, MCPs, and
+  `config.toml` on `run` and `resume`, while setup still stays one-time behind
+  the home-ready marker. The pass 2 blocker is closed.
+- 2026-04-13: The authoritative execution frontier starts with mixed-skill
+  runtime support, then repo bootstrap and git guards, then authored Doctrine
+  flow surfaces, then live proof plus doc truth sync. The earlier docs-only
+  contract-lock phase is planning work, not implementation work.
+- 2026-04-13: External research was intentionally skipped for this doc because
+  repo-grounded planning was sufficient. The consistency pass repaired
+  `planning_passes` to match the chosen path and cleared the artifact for
+  implementation.
