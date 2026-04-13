@@ -18,3 +18,9 @@ output shape RallyTurnResultJson: "Rally Turn Result JSON"
         "Use `done` with `summary` to finish the run."
         "Use `blocker` with `reason` to stop the run cleanly."
         "Use `sleep` with `reason` and `sleep_duration_seconds` to pause the run and wake the same owner later."
+
+
+output RallyTurnResult: "Rally Turn Result"
+    target: TurnResponse
+    shape: RallyTurnResultJson
+    requirement: Required

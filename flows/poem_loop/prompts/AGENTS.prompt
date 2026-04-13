@@ -20,57 +20,11 @@ inputs PoemLoopInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
         shared.inputs.PoemDraftFile
 
 
-skills PoemLoopSkills[rally.base_agent.RallyManagedSkills]: "Skills"
-    inherit rally_kernel
-
-
-outputs PoemWriterOutputs: "Outputs"
-    poem_draft: "Poem Draft"
-        shared.outputs.PoemDraft
-
-    writer_issue_note: "Writer Issue Note"
-        shared.outputs.WriterIssueNote
-
-    turn_result: "Turn Result"
-        WriterTurnResult
-
-
-outputs PoemCriticOutputs: "Outputs"
-    critic_issue_note: "Critic Issue Note"
-        shared.outputs.CriticIssueNote
-
-    turn_result: "Turn Result"
-        CriticTurnResult
-
-
 abstract agent PoemLoopRole[rally.base_agent.RallyManagedBaseAgent]:
     inherit rally_contract
     system_context: shared.contracts.PoemLoopSystemContext
     ground_truth: shared.contracts.IssueLedgerGroundTruth
     primary_path: shared.contracts.PrimaryPathRules
-
-
-output WriterTurnResult: "Writer Turn Result"
-    target: TurnResponse
-    shape: rally.turn_results.RallyTurnResultJson
-    requirement: Required
-
-    route_rules: "Writer Route Rules"
-        "Use `handoff` with `next_owner` set to `poem_critic` when the opening issue clearly names both poem type and subject."
-        "Use `blocker` when the opening issue is missing one or both."
-        "Keep unused fields as `null`."
-
-
-output CriticTurnResult: "Critic Turn Result"
-    target: TurnResponse
-    shape: rally.turn_results.RallyTurnResultJson
-    requirement: Required
-
-    route_rules: "Critic Route Rules"
-        "Use `handoff` with `next_owner` set to `poem_writer` when the poem needs another draft."
-        "Use `done` when the poem is accepted."
-        "Use `blocker` only when the current poem draft is missing or unusable."
-        "Keep unused fields as `null`."
 
 
 agent PoemWriter[PoemLoopRole]:
@@ -82,9 +36,17 @@ agent PoemWriter[PoemLoopRole]:
     your_job: roles.poem_writer.PoemWriterJob
     quality_bar: roles.poem_writer.PoemWriterQualityBar
     inputs: PoemLoopInputs
-    outputs: PoemWriterOutputs
-    skills: PoemLoopSkills
-    final_output: WriterTurnResult
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
+        override issue_note: "Issue Note"
+            shared.outputs.WriterIssueNote
+
+        poem_draft: "Poem Draft"
+            shared.outputs.PoemDraft
+
+        turn_result: "Turn Result"
+            rally.turn_results.RallyTurnResult
+    skills: rally.base_agent.RallyManagedSkills
+    final_output: rally.turn_results.RallyTurnResult
 
 
 agent PoemCritic[PoemLoopRole]:
@@ -96,6 +58,11 @@ agent PoemCritic[PoemLoopRole]:
     your_job: roles.poem_critic.PoemCriticJob
     quality_bar: roles.poem_critic.PoemCriticQualityBar
     inputs: PoemLoopInputs
-    outputs: PoemCriticOutputs
-    skills: PoemLoopSkills
-    final_output: CriticTurnResult
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
+        override issue_note: "Issue Note"
+            shared.outputs.CriticIssueNote
+
+        turn_result: "Turn Result"
+            rally.turn_results.RallyTurnResult
+    skills: rally.base_agent.RallyManagedSkills
+    final_output: rally.turn_results.RallyTurnResult

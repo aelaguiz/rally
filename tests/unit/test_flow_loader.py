@@ -60,9 +60,15 @@ class FlowLoaderTests(unittest.TestCase):
 
         self.assertIn("## Skills", writer_readback)
         self.assertIn("### rally-kernel", writer_readback)
+        self.assertIn("### Issue Note", writer_readback)
+        self.assertNotIn("\n### Writer Issue Note\n", writer_readback)
         self.assertIn("Artistic Rationale", writer_readback)
+        self.assertIn("### Rally Turn Result", writer_readback)
         self.assertIn('Append With: `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"`', writer_readback)
+        self.assertIn("### Issue Note", critic_readback)
+        self.assertNotIn("\n### Critic Issue Note\n", critic_readback)
         self.assertIn("Rationale Fit", critic_readback)
+        self.assertIn("### Rally Turn Result", critic_readback)
 
     def test_load_flow_definition_rejects_unsupported_contract_version(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
