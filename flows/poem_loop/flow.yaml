@@ -1,0 +1,18 @@
+name: poem_loop
+code: POM
+start_agent: 01_poem_writer
+agents:
+  01_poem_writer:
+    timeout_sec: 1200
+    allowed_skills: []
+    allowed_mcps: []
+  02_poem_critic:
+    timeout_sec: 1200
+    allowed_skills: []
+    allowed_mcps: []
+runtime:
+  adapter: codex
+  adapter_args:
+    model: gpt-5.4
+    reasoning_effort: high
+    project_doc_max_bytes: 0

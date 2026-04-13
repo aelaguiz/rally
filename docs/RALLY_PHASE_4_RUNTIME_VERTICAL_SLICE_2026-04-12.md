@@ -55,7 +55,6 @@ What is outside Phase 4:
 
 - `rally archive`
 - stale-run cleanup and diagnosis beyond the current lock and state checks
-- a second flow that proves the shape repeats
 
 # Stable Rules
 
@@ -123,6 +122,10 @@ The current checked-in runtime surface is:
 The live smoke now proves the full `single_repo_repair` loop:
 `scope_lead -> change_engineer -> proof_engineer -> acceptance_critic -> scope_lead -> done`.
 
+The checked-in second narrow flow is `poem_loop`.
+It keeps the human issue and durable notes on `home/issue.md` and keeps the
+only file artifact at `artifacts/poem.md`.
+
 # Proof Path
 
 Use the smallest honest proof for each layer:
@@ -139,6 +142,7 @@ The current core proof set is:
 
 - flow rebuild for `_stdlib_smoke`
 - flow rebuild for `single_repo_repair`
+- flow rebuild for `poem_loop`
 - `tests/unit/test_flow_loader.py`
 - `tests/unit/domain/test_turn_result_contracts.py`
 - `tests/unit/test_cli.py`
@@ -157,7 +161,7 @@ The next honest work is Phase 5 work:
 1. add `rally archive`
 2. add better stale-run diagnosis
 3. add a replay or viewer command for old runs
-4. prove the runtime shape on a second narrow flow
+4. prove the new narrow flow on a live Codex run
 
 # Live Truth
 

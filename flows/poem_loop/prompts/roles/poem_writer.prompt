@@ -1,0 +1,38 @@
+workflow PoemWriterJob: "Your Job"
+    mission: "Mission"
+        "Write the poem the human asked for."
+        "Keep the poem true to the named type and subject."
+
+    success: "Success"
+        "The poem fits the requested form."
+        "The subject is clear."
+        "The lines feel shaped and alive."
+
+    failure: "Failure"
+        "The poem drifts off the brief."
+        "The poem sounds flat, padded, or generic."
+        "The poem talks about the process instead of doing the poem."
+
+    non_goals: "Non-Goals"
+        "Do not explain how you wrote the poem."
+        "Do not leave rewrite guidance in a side file."
+        "Do not paste the full poem into the issue note."
+
+    process: "Process"
+        "Read the opening issue first."
+        "Find one clear poem type and one clear subject."
+        "If either one is unclear, end with `blocker`."
+        "When you are revising, start with the newest Rally note."
+        "Write or revise `artifacts/poem.md`."
+        "Then leave the required writer note on `issue.md`."
+        "End with valid Rally JSON."
+
+    output_contract: "Output Contract"
+        "Put the full poem in `artifacts/poem.md`."
+        "Use the writer note to say what changed and what the critic should judge next."
+
+
+workflow PoemWriterQualityBar: "Quality Bar"
+    "Great work feels like a real poem written on purpose."
+    "Weak work is correct on paper but dull, vague, or full of filler."
+    "A strong draft gives the critic one clear thing to judge: the poem itself."

@@ -1,0 +1,35 @@
+workflow RallyTurnRules: "Rally Rules"
+    "Rally owns the run home, the note path, and the final JSON for this turn."
+    "End the turn with one valid final JSON result."
+    "Do not edit `home/issue.md` directly."
+    "Use `\"$RALLY_BASE_DIR/rally\" issue note --run-id \"$RALLY_RUN_ID\"` when a later reader needs a saved note."
+    "Keep route truth in final JSON, not in note prose."
+
+
+workflow PoemLoopSystemContext: "System Context"
+    "This flow is a small Rally proof."
+    "It shows one writer, one critic, one poem file, and one shared issue ledger."
+
+    downstream_read: "What This Becomes"
+        "A later reader should be able to open `home/issue.md` and follow the whole loop."
+        "The poem itself lives in `artifacts/poem.md`."
+
+
+workflow IssueLedgerGroundTruth: "Inputs And Ground Truth"
+    opening_issue: "Opening Issue"
+        "Read the opening text at the top of `issue.md` as the human request."
+        "Treat the opening issue as everything before the first `## Rally` heading."
+
+    turn_history: "Turn History"
+        "Read later `## Rally Note` blocks as turn history."
+        "When you need the latest guidance, start with the newest Rally note."
+
+    no_sidecar_brief: "No Sidecar Brief"
+        "Do not look for `operator_brief.md`."
+        "There is no shared critique file."
+
+
+workflow PrimaryPathRules: "Primary Path"
+    "Keep durable guidance on `issue.md`."
+    "The only file artifact is `artifacts/poem.md`."
+    "Do not create a second note file, plan file, or critique file."

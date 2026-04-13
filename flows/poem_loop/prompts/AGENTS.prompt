@@ -1,0 +1,100 @@
+import rally.base_agent
+import rally.turn_results
+import shared.inputs
+import shared.outputs
+import shared.contracts
+import roles.poem_writer
+import roles.poem_critic
+
+
+inputs PoemLoopInputs: "Inputs"
+    rally_base_dir: "Rally Base Dir"
+        rally.base_agent.RallyBaseDir
+
+    rally_run_id: "Rally Run ID"
+        rally.base_agent.RallyRunId
+
+    rally_flow_code: "Rally Flow Code"
+        rally.base_agent.RallyFlowCode
+
+    issue_ledger: "Issue Ledger"
+        shared.inputs.IssueLedger
+
+    poem_draft_file: "Poem Draft File"
+        shared.inputs.PoemDraftFile
+
+
+outputs PoemWriterOutputs: "Outputs"
+    poem_draft: "Poem Draft"
+        shared.outputs.PoemDraft
+
+    writer_issue_note: "Writer Issue Note"
+        shared.outputs.WriterIssueNote
+
+    turn_result: "Turn Result"
+        WriterTurnResult
+
+
+outputs PoemCriticOutputs: "Outputs"
+    critic_issue_note: "Critic Issue Note"
+        shared.outputs.CriticIssueNote
+
+    turn_result: "Turn Result"
+        CriticTurnResult
+
+
+abstract agent PoemLoopRole:
+    rally_turn_rules: shared.contracts.RallyTurnRules
+
+    system_context: shared.contracts.PoemLoopSystemContext
+    ground_truth: shared.contracts.IssueLedgerGroundTruth
+    primary_path: shared.contracts.PrimaryPathRules
+
+
+output WriterTurnResult: "Writer Turn Result"
+    target: TurnResponse
+    shape: rally.turn_results.RallyTurnResultJson
+    requirement: Required
+
+    route_rules: "Writer Route Rules"
+        "Use `handoff` with `next_owner` set to `poem_critic` when the opening issue clearly names both poem type and subject."
+        "Use `blocker` when the opening issue is missing one or both."
+        "Keep unused fields as `null`."
+
+
+output CriticTurnResult: "Critic Turn Result"
+    target: TurnResponse
+    shape: rally.turn_results.RallyTurnResultJson
+    requirement: Required
+
+    route_rules: "Critic Route Rules"
+        "Use `handoff` with `next_owner` set to `poem_writer` when the poem needs another draft."
+        "Use `done` when the poem is accepted."
+        "Use `blocker` only when the current poem draft is missing or unusable."
+        "Keep unused fields as `null`."
+
+
+agent PoemWriter[PoemLoopRole]:
+    role: "Core job: write the requested poem and hand it to PoemCritic."
+    inherit rally_turn_rules
+    inherit system_context
+    inherit ground_truth
+    inherit primary_path
+    your_job: roles.poem_writer.PoemWriterJob
+    quality_bar: roles.poem_writer.PoemWriterQualityBar
+    inputs: PoemLoopInputs
+    outputs: PoemWriterOutputs
+    final_output: WriterTurnResult
+
+
+agent PoemCritic[PoemLoopRole]:
+    role: "Core job: judge the poem, ask for a rewrite when needed, and accept it only when it is ready."
+    inherit rally_turn_rules
+    inherit system_context
+    inherit ground_truth
+    inherit primary_path
+    your_job: roles.poem_critic.PoemCriticJob
+    quality_bar: roles.poem_critic.PoemCriticQualityBar
+    inputs: PoemLoopInputs
+    outputs: PoemCriticOutputs
+    final_output: CriticTurnResult

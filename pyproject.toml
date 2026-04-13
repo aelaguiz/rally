@@ -17,6 +17,13 @@ rally = "rally.cli:main"
 [tool.doctrine.compile]
 additional_prompt_roots = ["stdlib/rally/prompts"]
 
+[tool.doctrine.emit]
+
+[[tool.doctrine.emit.targets]]
+name = "poem_loop"
+entrypoint = "flows/poem_loop/prompts/AGENTS.prompt"
+output_dir = "flows/poem_loop/build/agents"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

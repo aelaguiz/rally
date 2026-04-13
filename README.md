@@ -411,7 +411,7 @@ It should not need them to be useful.
 
 ## A Concrete Example
 
-The first enduring Rally flow is `single_repo_repair`.
+The first enduring Rally flows are `single_repo_repair` and `poem_loop`.
 
 It captures the shape Rally cares about:
 
@@ -428,6 +428,18 @@ That is not a toy because it forces Rally to prove the hard parts:
 - typed currentness
 - review-driven routing
 - notes that do not control the flow
+
+The narrow `poem_loop` flow proves the same runtime shape without a repo setup
+step:
+
+1. A poem writer reads the opening issue from `home/issue.md`.
+2. The writer drafts `artifacts/poem.md`.
+3. The writer and critic keep durable guidance on `home/issue.md`.
+4. The critic either routes the poem back for another draft or accepts it and
+   ends the run.
+
+It still proves:
+
 - strict final turn control
 - honest resume
 

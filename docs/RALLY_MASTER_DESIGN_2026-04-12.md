@@ -433,6 +433,7 @@ At a high level, Phase 4 owns:
 - the first real `rally` CLI entrypoint
 - one real Codex adapter path
 - one real end-to-end execution path for `single_repo_repair`
+- one second deliberately narrow flow, `poem_loop`
 - run storage, home preparation, note and final-response materialization, sessions, and logs
 
 The exact checked-in structure, runtime-created structure, behavior list, and acceptance criteria now live in the Phase 4 doc rather than here.
@@ -449,7 +450,7 @@ At a high level, Phase 5 should add:
 - dirty-state refusal and stale-run diagnosis
 - the history-backed renderer already implied by the design
 - one explicit Rally-to-Doctrine compatibility boundary
-- one second deliberately narrow flow that proves the runtime shape repeats
+- a live proof run for the second narrow flow
 
 Phase 5 should still remain:
 
@@ -481,7 +482,6 @@ These notes are still useful, but they no longer need to dominate the doc.
 ### Deferred Questions
 
 - Recursion shape: nested child runs versus sibling runs with explicit parent references.
-- Which second deliberately narrow flow best exercises a new semantic path in Phase 5.
 - Whether `home/issue.md` will eventually need to split into multiple surfaces after real usage proves it is carrying too many concerns.
 
 ### Future Direction After Phase 5

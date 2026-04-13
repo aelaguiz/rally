@@ -30,6 +30,25 @@ class FlowLoaderTests(unittest.TestCase):
             repo_root / "stdlib/rally/schemas/rally_turn_result.schema.json",
         )
 
+    def test_load_flow_definition_supports_issue_ledger_first_flow_without_setup_or_prompt_inputs(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+
+        flow = load_flow_definition(repo_root=repo_root, flow_name="poem_loop")
+
+        self.assertEqual(flow.name, "poem_loop")
+        self.assertEqual(flow.code, "POM")
+        self.assertEqual(flow.start_agent_key, "01_poem_writer")
+        self.assertEqual(flow.agent("01_poem_writer").slug, "poem_writer")
+        self.assertEqual(flow.agent("02_poem_critic").slug, "poem_critic")
+        self.assertEqual(flow.agent("01_poem_writer").allowed_skills, ())
+        self.assertEqual(flow.agent("02_poem_critic").allowed_mcps, ())
+        self.assertIsNone(flow.setup_home_script)
+        self.assertIsNone(flow.adapter.prompt_input_command)
+        self.assertEqual(
+            flow.agent("01_poem_writer").compiled.final_output.schema_file,
+            repo_root / "stdlib/rally/schemas/rally_turn_result.schema.json",
+        )
+
     def test_load_flow_definition_rejects_unsupported_contract_version(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
