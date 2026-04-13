@@ -66,6 +66,18 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 2)
             self.assertIn("Run file does not exist", stderr.getvalue())
 
+    def test_issue_note_rejects_empty_body(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_run(repo_root=repo_root, run_id="FLW-1")
+            stderr = io.StringIO()
+
+            with patch("rally.cli._repo_root", return_value=repo_root), redirect_stderr(stderr):
+                exit_code = main(["issue", "note", "--run-id", "FLW-1", "--text", "   "])
+
+            self.assertEqual(exit_code, 2)
+            self.assertIn("Note body is empty", stderr.getvalue())
+
     def _write_run(self, *, repo_root: Path, run_id: str) -> Path:
         run_dir = repo_root / "runs" / run_id
         home_dir = run_dir / "home"

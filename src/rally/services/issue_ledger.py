@@ -23,6 +23,9 @@ def append_issue_note(
     note_markdown: str,
     now: datetime | None = None,
 ) -> IssueNoteAppendResult:
+    if not run_id.strip():
+        raise RallyStateError("Run id must not be empty.")
+
     note_body = _normalize_note_body(note_markdown)
     timestamp = now or datetime.now(UTC)
     run_dir = repo_root / "runs" / run_id
@@ -73,6 +76,7 @@ def _resolve_issue_file(*, run_dir: Path, run_record: dict[str, object]) -> Path
     if not isinstance(raw_issue_file, str) or not raw_issue_file.strip():
         raise RallyStateError("Run file `issue_file` must be a non-empty string when present.")
 
+    # Resolve the write target from Rally-owned run state, not from agent-supplied paths.
     issue_file = (run_dir / raw_issue_file).resolve()
     expected_issue_file = (run_dir / "home" / "issue.md").resolve()
     if issue_file != expected_issue_file:
@@ -85,7 +89,13 @@ def _resolve_issue_file(*, run_dir: Path, run_record: dict[str, object]) -> Path
 def _normalize_note_body(note_markdown: str) -> str:
     if not note_markdown.strip():
         raise RallyStateError("Note body is empty.")
-    return note_markdown.strip("\n")
+
+    lines = note_markdown.splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
 
 
 def _format_issue_note_block(*, run_id: str, note_body: str, timestamp: datetime) -> str:

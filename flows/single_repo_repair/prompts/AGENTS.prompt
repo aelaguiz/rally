@@ -237,9 +237,11 @@ review AcceptanceReview: "Acceptance Review"
         accept "The bug fix passes review." when contract.passes
 
     on_accept: "If Accepted"
+        current none
         route "Send the accepted test report back to ScopeLead to finish the run." -> ScopeLead
 
     on_reject: "If Rejected"
+        current none
         route "Send the requested changes back to ChangeEngineer." -> ChangeEngineer
 
 

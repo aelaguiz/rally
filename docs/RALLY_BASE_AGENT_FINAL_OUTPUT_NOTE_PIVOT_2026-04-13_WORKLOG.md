@@ -1,19 +1,23 @@
-# Worklog
+---
+title: "Rally - Base Agent And Final Output Pivot Worklog"
+date: 2026-04-13
+status: archived
+fallback_policy: forbidden
+owners: [aelaguiz]
+reviewers: []
+doc_type: archived_worklog
+related:
+  - docs/RALLY_BASE_AGENT_FINAL_OUTPUT_NOTE_PIVOT_2026-04-13.md
+  - docs/RALLY_MASTER_DESIGN_2026-04-12.md
+---
 
-Plan doc: docs/RALLY_BASE_AGENT_FINAL_OUTPUT_NOTE_PIVOT_2026-04-13.md
+# Archived Worklog
 
-## Initial entry
+This file is kept only as work history.
+It is not a source of truth.
 
-- Run started.
-- Current phase: Phase 1 - Land the shared stdlib contract.
+The shipped result is covered by:
 
-## 2026-04-13 - Authored cutover pass
-
-- Added `stdlib/rally/prompts/rally/base_agent.prompt` with inherited env-var inputs and Rally-managed `rally-kernel` doctrine.
-- Rewrote `stdlib/rally/prompts/rally/turn_results.prompt` and `stdlib/rally/prompts/rally/currentness.prompt`.
-- Deleted the old authored `notes.prompt`, `handoffs.prompt`, and `issue_ledger.prompt` surfaces.
-- Migrated `_stdlib_smoke` and `single_repo_repair` prompt entrypoints plus the touched `single_repo_repair` role prompts to the new base-agent and currentness model.
-- Recompiled both flows with the paired Doctrine compiler into `build/agents/*` using:
-  `uv run --project ../doctrine -- python - <<'PY' ... emit_target(...) ... PY`
-- Inspected representative emitted readback and contracts for `_stdlib_smoke` `PlanAuthor` and `single_repo_repair` `ScopeLead`.
-- User-directed rule applied: `rally-kernel` is Rally-managed ambient capability and should not require per-flow `allowed_skills` entries.
+- `docs/RALLY_MASTER_DESIGN_2026-04-12.md`
+- `docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md`
+- `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`

@@ -79,7 +79,7 @@ This is the canonical split between Doctrine and Rally.
 - deterministic build emission
 - generic final-output semantics
 - generic route semantics
-- generic currentness and review semantics when they are truly authored-language concerns
+- generic review semantics when they are truly authored-language concerns
 - machine-readable emitted build metadata Rally can consume without scraping Markdown
 
 ### Rally owns
@@ -219,8 +219,8 @@ If the result uses `kind: handoff`, that is only the label of the route-to-next-
 The end-turn helper inside the Rally kernel skill may help the agent shape that JSON, but it is not a second return path.
 The actual return still comes back through the adapter's strict final JSON-schema path.
 
-Currentness should stay typed.
-Rally should preserve one current artifact or `current none` rather than reconstructing current truth from prose.
+Rally does not add a shared file-state carrier on top of Doctrine.
+If a local authored review needs review-state syntax, treat that as local Doctrine syntax, not as a Rally communication channel.
 
 ### Standard Library And Kernel Skill
 
@@ -231,7 +231,7 @@ The standard library should stay light-touch.
 It should start with:
 
 - one tiny shared `rally.turn_results` final-output contract
-- one typed currentness law
+- one shared note path
 - one mandatory Rally kernel skill
 
 The Rally kernel skill should:
@@ -240,7 +240,7 @@ The Rally kernel skill should:
 - teach agents how to shape schema-valid end-of-turn JSON
 - remain helper-shaped rather than becoming a second runtime
 
-The checked-in note and handoff output prompts under `stdlib/rally/prompts/rally/` are transitional unless the design changes intentionally.
+The checked-in shared prompts under `stdlib/rally/prompts/rally/` should stay small and direct.
 The favored design is now:
 
 - `rally.turn_results` as the machine control contract

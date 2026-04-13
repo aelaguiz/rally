@@ -61,6 +61,46 @@ class IssueLedgerTests(unittest.TestCase):
             with self.assertRaisesRegex(RallyStateError, "Rally only writes"):
                 append_issue_note(repo_root=repo_root, run_id="FLW-1", note_markdown="### Note\n- hi")
 
+    def test_append_issue_note_rejects_invalid_yaml(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            run_dir = repo_root / "runs" / "FLW-1"
+            home_dir = run_dir / "home"
+            history_dir = run_dir / "issue_history"
+            home_dir.mkdir(parents=True)
+            history_dir.mkdir(parents=True)
+            (home_dir / "issue.md").write_text("# Brief\n", encoding="utf-8")
+            (run_dir / "run.yaml").write_text("id: [\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(RallyStateError, "is not valid YAML"):
+                append_issue_note(repo_root=repo_root, run_id="FLW-1", note_markdown="### Note\n- hi")
+
+    def test_append_issue_note_rejects_missing_issue_log(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            run_dir = repo_root / "runs" / "FLW-1"
+            history_dir = run_dir / "issue_history"
+            history_dir.mkdir(parents=True)
+            (run_dir / "run.yaml").write_text("id: FLW-1\nissue_file: home/issue.md\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(RallyStateError, "Issue log does not exist"):
+                append_issue_note(repo_root=repo_root, run_id="FLW-1", note_markdown="### Note\n- hi")
+
+    def test_append_issue_note_strips_only_outer_blank_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            append_issue_note(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                note_markdown="\n\n### Note\n- keep this line\n\n",
+                now=datetime(2026, 4, 13, 19, 30, tzinfo=UTC),
+            )
+
+            issue_text = issue_file.read_text(encoding="utf-8")
+            self.assertIn("### Note\n- keep this line\n", issue_text)
+
     def _write_run(
         self,
         *,

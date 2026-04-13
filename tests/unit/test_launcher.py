@@ -41,6 +41,20 @@ class LauncherTests(unittest.TestCase):
                     flow_code="FLW",
                 )
 
+    def test_build_codex_launch_env_rejects_blank_flow_code(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            run_home = repo_root / "runs" / "FLW-1" / "home"
+            run_home.mkdir(parents=True)
+
+            with self.assertRaisesRegex(RallyStateError, "Flow code must not be empty"):
+                build_codex_launch_env(
+                    repo_root=repo_root,
+                    run_home=run_home,
+                    run_id="FLW-1",
+                    flow_code="",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
