@@ -77,10 +77,10 @@ as a Codex alias or a thin CLI scrape.
 <!--
 arch_skill:planning_passes
 deep_dive_pass_1: done 2026-04-13
-external_research_grounding: not started
+external_research_grounding: not required 2026-04-13
 deep_dive_pass_2: done 2026-04-13
-recommended_flow: deep dive -> external research grounding -> deep dive again -> phase plan -> implement
-note: This block tracks stage order only. It never overrides readiness blockers caused by unresolved decisions.
+recommended_flow: completed planning arc for this doc: research -> deep dive -> deep dive again -> phase plan -> consistency-pass
+note: External research was not required for this doc because repo evidence plus local `../hermes-agent` grounding resolved the plan-shaping choices. This block tracks stage order only. It never overrides readiness blockers caused by unresolved decisions.
 -->
 <!-- arch_skill:block:planning_passes:end -->
 
@@ -472,8 +472,9 @@ Behavior-preservation evidence:
   proof matrix must cover flow loading, shared runner dispatch, shared home
   materialization, shared final-response loading, Codex preservation, shared
   event rendering, and the Hermes adapter path.
-- No user blocker question remains after deep-dive pass 2.
-- The artifact is ready for `phase-plan`.
+- No user blocker question remains after consistency-pass.
+- The artifact is decision-complete and ready for `implement` or
+  `implement-loop`.
 <!-- arch_skill:block:research_grounding:end -->
 
 <!-- arch_skill:block:current_architecture:start -->
@@ -815,12 +816,159 @@ Behavior-preservation signals for refactors:
 | ACP integration | Hermes ACP server and any future Rally ACP client | rich event transport only if the library path later proves insufficient | avoid an unnecessary v1 control surface | exclude |
 <!-- arch_skill:block:call_site_audit:end -->
 
+<!-- arch_skill:block:phase_plan:start -->
 # 7) Depth-First Phased Implementation Plan (authoritative)
 
-> Rule: systematic build, foundational first; every phase has exit criteria + explicit verification plan (tests optional). Refactors, consolidations, and shared-path extractions must preserve existing behavior with credible evidence proportional to the risk. For agent-backed systems, prefer prompt, grounding, and native-capability changes before new harnesses or scripts. No fallbacks/runtime shims - the system must work correctly or fail loudly (delete superseded paths). Prefer programmatic checks per phase; defer manual/UI verification to finalization. Avoid negative-value tests and heuristic gates (deletion checks, visual constants, doc-driven gates, keyword or absence gates, repo-shape policing). Also: document new patterns/gotchas in code comments at the canonical boundary (high leverage, not comment spam).
+> Rule: systematic build, foundational first; every phase has exit criteria + explicit verification plan (tests optional). Refactors, consolidations, and shared-path extractions must preserve existing behavior with credible evidence proportional to the risk. For agent-backed systems, prefer prompt, grounding, and native-capability changes before new harnesses or scripts. No fallbacks/runtime shims - the system must work correctly or fail loudly (delete superseded paths). The authoritative checklist must name the actual chosen work, not unresolved branches or "if needed" placeholders. Prefer programmatic checks per phase; defer manual/UI verification to finalization. Avoid negative-value tests and heuristic gates (deletion checks, visual constants, doc-driven gates, keyword or absence gates, repo-shape policing). Also: document new patterns/gotchas in code comments at the canonical boundary (high leverage, not comment spam).
 
-Deep-dive is complete. `phase-plan` is now the next command that should turn
-Sections 3 through 6 into the authoritative execution checklist.
+## Phase 1 — Shared adapter groundwork and front-door validation
+
+* Goal:
+  Establish the shared adapter boundary and shared final-response owner without
+  changing the shipped Codex runtime shape yet.
+* Work:
+  - Add `src/rally/adapters/base.py` with the `RuntimeAdapter` protocol and
+    shared adapter dataclasses.
+  - Add `src/rally/adapters/registry.py` with registry lookup plus
+    adapter-specific arg validation hooks.
+  - Move shared final-response loading to
+    `src/rally/services/final_response_loader.py`.
+  - Update current imports to use the shared loader.
+  - Update `src/rally/services/flow_loader.py` to validate adapters through the
+    registry.
+  - Keep the registry Codex-only in this phase so Rally does not claim Hermes
+    support before the Hermes adapter exists.
+  - Replace `tests/unit/test_result_contract.py` with
+    `tests/unit/test_final_response_loader.py`.
+  - Extend `tests/unit/test_flow_loader.py` for supported-adapter acceptance,
+    unknown-adapter rejection, and bad-adapter-args rejection.
+* Verification (required proof):
+  - `uv run pytest tests/unit/test_flow_loader.py tests/unit/test_final_response_loader.py tests/unit/domain/test_turn_result_contracts.py -q`
+* Docs/comments (propagation; only if needed):
+  - Add short code comments only at the shared loader and registry boundary if
+    the owner split would otherwise be easy to blur again.
+* Exit criteria:
+  - Shared final-response loading no longer lives under the Codex tree.
+  - Flow loading validates adapters through one shared registry.
+  - Rally still only accepts the adapters it can truthfully execute.
+* Rollback:
+  - Revert the registry and shared-loader extraction as one patch if Codex flow
+    loading or final-response parsing regresses.
+
+## Phase 2 — Cut Codex over to the shared adapter contract
+
+* Goal:
+  Put the existing Codex path behind the shared adapter contract while
+  preserving current Rally behavior.
+* Work:
+  - Add `src/rally/adapters/codex/adapter.py` as the Codex adapter entrypoint.
+  - Refactor `src/rally/services/runner.py` to resolve one adapter and dispatch
+    through the adapter contract instead of importing Codex helpers directly.
+  - Move Codex-specific launch and session orchestration fully under the Codex
+    adapter.
+  - Refactor `src/rally/services/home_materializer.py` so shared sync stays in
+    Rally and adapter bootstrap moves behind `adapter.prepare_home(...)`.
+  - Make `adapter.prepare_home(...)` run on every start or resume before any
+    home-ready early return so adapter-local config and auth stay fresh while
+    flow setup stays one-time.
+  - Remove `_invoke_codex()` and `_CodexInvocation` from shared `runner.py`.
+  - Remove `_write_codex_config()` and `_seed_codex_auth()` from shared
+    `home_materializer.py`.
+  - Update shared lifecycle wording so shared messages stop naming Codex when
+    the action is adapter-neutral.
+  - Add `tests/unit/test_home_materializer.py` and extend `tests/unit/test_runner.py`
+    for adapter dispatch and refresh-on-resume bootstrap behavior.
+* Verification (required proof):
+  - `uv run pytest tests/unit/test_runner.py tests/unit/test_home_materializer.py tests/unit/test_launcher.py tests/unit/test_codex_event_stream.py tests/unit/test_run_events.py -q`
+* Docs/comments (propagation; only if needed):
+  - Add one short code comment at the adapter dispatch boundary in
+    `runner.py`.
+  - Add one short code comment at the shared-vs-adapter bootstrap split in
+    `home_materializer.py`.
+* Exit criteria:
+  - Shared runtime no longer imports Codex helper modules directly.
+  - Codex still runs through Rally's existing `run` and `resume` front door.
+  - Shared home materialization owns Rally policy, while Codex owns Codex
+    bootstrap details.
+* Rollback:
+  - Revert the contract cutover as one patch if Codex run/resume behavior or
+    shared-home refresh behavior regresses.
+
+## Phase 3 — Add the Hermes adapter and guarded Hermes enablement
+
+* Goal:
+  Add Hermes as a real second adapter without widening Rally policy or adding a
+  second control path.
+* Work:
+  - Add `src/rally/adapters/hermes/adapter.py` plus supporting Hermes modules
+    for home bootstrap, session storage, turn artifacts, and event mapping.
+  - Use the library path through `AIAgent.run_conversation()` rather than the
+    Hermes CLI or ACP.
+  - Generate `home/hermes/config.yaml` from Rally policy with translated
+    `mcp_servers` and explicit non-interactive approval settings.
+  - Keep Hermes state inside `home/hermes/`, including `state.db`,
+    `sessions/`, and subprocess `HOME`.
+  - Project Rally-managed skills into the Hermes home without relying on
+    Hermes CLI `sync_skills()` auto-sync.
+  - Emit Rally `EventDraft`s from Hermes callbacks and write the final
+    `last_message.json` file for the shared final-response loader.
+  - Register `hermes` in `src/rally/adapters/registry.py` only after the
+    adapter implementation exists and its unit coverage is in place.
+  - Add `tests/unit/test_hermes_adapter.py` for callback mapping, config
+    translation, approval clamping, session handling, and final-response
+    writeback.
+* Verification (required proof):
+  - `uv run pytest tests/unit/test_hermes_adapter.py tests/unit/test_flow_loader.py tests/unit/test_runner.py tests/unit/test_run_events.py -q`
+* Docs/comments (propagation; only if needed):
+  - Add one short code comment where Hermes approval clamping is enforced.
+  - Add one short code comment where Rally policy is translated into Hermes MCP
+    config.
+* Exit criteria:
+  - Rally can truthfully load a flow with `runtime.adapter: hermes`.
+  - Hermes runs through the same Rally turn-result path and the same issue-ledger
+    model.
+  - Hermes does not depend on CLI scraping, ACP, or global skill sync.
+* Rollback:
+  - If Hermes fails contract proof, remove Hermes from the registry and revert
+    the unfinished Hermes adapter work rather than shipping partial support.
+
+## Phase 4 — Final proof, cleanup, and live truth sync
+
+* Goal:
+  Prove both adapters through Rally, remove stale runtime truth, and leave the
+  repo with one honest multi-adapter story.
+* Work:
+  - Run the full Rally unit suite.
+  - Run one small live Codex Rally flow after the refactor.
+  - Run one honest Hermes Rally flow through Rally. If local provider or auth
+    setup blocks that proof, record the exact blocker in this plan and do not
+    claim full Hermes support.
+  - Delete any leftover superseded shared-runtime Codex paths, including the
+    old Codex result-contract module and any renamed test file that still keeps
+    stale ownership alive.
+  - Update `docs/RALLY_MASTER_DESIGN_2026-04-12.md`,
+    `docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md`,
+    `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, and
+    `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` to match the shipped runtime.
+  - Update any shared runner comments or operator-facing wording that still
+    teach Codex-only behavior where the runtime is now shared.
+* Verification (required proof):
+  - `uv run pytest tests/unit -q`
+  - one small live Codex Rally run
+  - one honest Hermes Rally run, or one explicit blocker recorded in the plan
+* Docs/comments (propagation; only if needed):
+  - Sync the four live runtime docs named in Section 6.2.
+  - Keep only the high-leverage boundary comments added in earlier phases.
+* Exit criteria:
+  - Rally has one honest adapter boundary and one honest live-doc story.
+  - Codex proof still passes after the extraction.
+  - Hermes proof passes through Rally, or the plan names the exact blocker and
+    Rally does not claim Hermes support yet.
+* Rollback:
+  - Do not ship the Hermes support claim if the final proof is missing.
+    Revert the unsupported Hermes enablement and doc claim rather than keeping
+    a half-supported adapter in live truth.
+<!-- arch_skill:block:phase_plan:end -->
 
 # 8) Verification Strategy (common-sense; non-blocking)
 
@@ -885,6 +1033,33 @@ Sections 3 through 6 into the authoritative execution checklist.
   the broken adapter contract.
 - Any new adapter-local files should live in the run tree and be inspectable
   without extra tools.
+
+<!-- arch_skill:block:consistency_pass:start -->
+## Consistency Pass
+- Reviewers: explorer 1, explorer 2, self-integrator
+- Scope checked:
+  - frontmatter, `planning_passes`, `# TL;DR`, and Sections `0)` through `10)`
+  - outcome, scope, canonical owner path, required deletes, execution order,
+    verification burden, rollout obligations, and helper-block drift
+- Findings summary:
+  - `planning_passes` still showed an older stage sequence after `phase-plan`
+  - the two cold-reader passes found no silent scope cut, missing required
+    migration, or unresolved plan-shaping decision elsewhere in the artifact
+- Integrated repairs:
+  - updated `planning_passes` to record that external research was not required
+    for this doc and that `consistency-pass` completed the planning arc
+  - updated Section `3.3` to remove the stale `phase-plan` readiness note and
+    mark the artifact ready for implementation
+- Remaining inconsistencies:
+  - none
+- Unresolved decisions:
+  - none
+- Unauthorized scope cuts:
+  - none
+- Decision-complete:
+  - yes
+- Decision: proceed to implement? yes
+<!-- arch_skill:block:consistency_pass:end -->
 
 # 10) Decision Log (append-only)
 
@@ -999,3 +1174,37 @@ Follow-ups
 - Use `phase-plan` to sequence the shared extraction first.
 - Keep `consistency-pass` focused on doc and proof alignment after the phase
   plan lands.
+
+## 2026-04-13 - Sequence implementation as shared groundwork first, Hermes second
+
+Context
+
+Phase planning had to turn the settled architecture into one execution order
+that would keep Codex safe while adding Hermes cleanly.
+
+Options
+
+- Add Hermes support directly inside the shared-runtime refactor.
+- Build the shared adapter boundary, cut Codex over first, then add Hermes on
+  top of the proven boundary.
+- Add Hermes first and clean up the shared runtime later.
+
+Decision
+
+Sequence the work in four phases:
+1. shared adapter groundwork and front-door validation,
+2. Codex cutover to the shared adapter contract,
+3. Hermes adapter implementation and guarded enablement,
+4. final proof plus live-doc sync.
+
+Consequences
+
+- Rally keeps one truthful shipped path at each stage instead of carrying a
+  fake-generic runtime in the middle.
+- Hermes is not registered as supported until the Hermes adapter and its proof
+  exist.
+- The durable runtime docs move only after the code and proof path are real.
+
+Follow-ups
+
+- Run `consistency-pass` after this phase plan to cold-read the whole artifact.
