@@ -6,7 +6,7 @@ output RepairPlan: "Repair Plan"
         path: "artifacts/repair_plan.md"
     shape: MarkdownDocument
     requirement: Required
-    "Write the current repair plan that defines the narrow seeded-bug seam."
+    "Write the repair plan for the chosen fix path."
 
 
 output VerificationReport: "Verification Report"
@@ -14,7 +14,7 @@ output VerificationReport: "Verification Report"
         path: "artifacts/verification.md"
     shape: MarkdownDocument
     requirement: Required
-    "Write the deterministic local verification record for the seeded-bug repair."
+    "Write the local test report for the bug fix."
 
 
 output ScopeLeadTurnResult: "Scope Lead Turn Result"
@@ -23,7 +23,7 @@ output ScopeLeadTurnResult: "Scope Lead Turn Result"
     requirement: Required
 
     purpose: "Purpose"
-        "End the scope-lead turn with one structured Rally turn result."
+        "End the scope-lead turn with one Rally result JSON."
         "Use `handoff` on the planning turn and `done` on the final closeout turn."
 
 
@@ -33,7 +33,7 @@ output ChangeEngineerTurnResult: "Change Engineer Turn Result"
     requirement: Required
 
     purpose: "Purpose"
-        "End the change-engineer turn with one structured Rally turn result."
+        "End the change-engineer turn with one Rally result JSON."
 
 
 output ProofEngineerTurnResult: "Proof Engineer Turn Result"
@@ -42,7 +42,7 @@ output ProofEngineerTurnResult: "Proof Engineer Turn Result"
     requirement: Required
 
     purpose: "Purpose"
-        "End the proof-engineer turn with one structured Rally turn result."
+        "End the proof-engineer turn with one Rally result JSON."
 
 
 output AcceptanceCriticTurnResult: "Acceptance Critic Turn Result"
@@ -51,4 +51,4 @@ output AcceptanceCriticTurnResult: "Acceptance Critic Turn Result"
     requirement: Required
 
     purpose: "Purpose"
-        "End the acceptance-critic turn with one structured Rally turn result."
+        "End the acceptance-critic turn with one Rally result JSON."

@@ -19,13 +19,13 @@ related:
 # TL;DR
 
 Outcome
-- Build the first runnable Rally runtime so `rally run single_repo_repair --brief-file flows/single_repo_repair/fixtures/briefs/single_repo_repair.md` completes the seeded-bug flow end to end on Codex, persists all Rally-owned state under `runs/`, routes handoffs only from schema-validated final JSON, preserves note-before-handoff ledger ordering, injects `RALLY_RUN_ID` through the launch harness on every turn, and resumes interrupted runs without creating a second run or leaking state outside the repo root.
+- Build the first runnable Rally runtime so `rally run single_repo_repair --brief-file flows/single_repo_repair/fixtures/briefs/single_repo_repair.md` completes the seeded-bug flow end to end on Codex, persists all Rally-owned state under `runs/`, routes route-to-next-owner outcomes only from schema-validated final JSON, preserves note-before-final-response ledger ordering, injects `RALLY_RUN_ID` and `RALLY_FLOW_CODE` through the launch harness on every turn, and resumes interrupted runs without creating a second run or leaking state outside the repo root.
 
 Problem
 - Rally now has the authored Phase 1 standard library, the authored Phase 2 single-repo repair flow, and compiled build readback, but it still has no runtime package, no CLI, no run-store, no ledger/session orchestration, no Codex adapter path, and its checked-in shared turn-result contract plus emitted build surfaces are still behind the latest routed-final-output definition.
 
 Approach
-- Implement a thin `src/rally/` runtime that treats Doctrine-authored assets as input, materializes one run home, launches Codex with an explicit contract, validates the shared `rally.turn_results` JSON, appends notes and handoffs into `home/issue.md`, snapshots ledger history after every Rally-owned append, and routes ownership from validated `next_owner` keys rather than from handoff prose.
+- Implement a thin `src/rally/` runtime that treats Doctrine-authored assets as input, materializes one run home, launches Codex with an explicit contract, validates the shared `rally.turn_results` JSON, appends notes and normalized final-turn response records into `home/issue.md`, snapshots ledger history after every Rally-owned append, and routes ownership from validated `next_owner` keys rather than from any prose surface.
 - Use a compatibility-first cutover: align the shared `rally.turn_results` handoff contract so machine routing lives in validated JSON, emit one compiler-owned per-agent `AGENT.json` sidecar adjacent to each `AGENTS.md` for final-output metadata, then make `flow_loader.py` consume those surfaces with no Markdown scraping.
 - Keep the checked-in runtime modular from the first commit: pure domain contracts, narrow filesystem services, and adapter-only external IO, so `runner.py` stays orchestration-only instead of becoming a catch-all module.
 
@@ -34,11 +34,11 @@ Plan
 - Keep the slice intentionally narrow: one adapter, one flow family, one prepared home, one active owner, one active run per flow, and no new scheduler, GUI, database, or second runtime path.
 
 Non-negotiables
-- No routing from handoff prose or note text.
+- No routing from prose or note text.
 - No side-door instruction surfaces; only compiled flow build output is injected.
-- The launch harness must inject `RALLY_RUN_ID=<run-id>` into every Rally-managed agent process. If it does not, the run is invalid.
+- The launch harness must inject `RALLY_RUN_ID=<run-id>` and `RALLY_FLOW_CODE=<flow-code>` into every Rally-managed agent process. If it does not, the run is invalid.
 - Notes preserve durable context only; they must not affect routing, currentness, or terminal control flow.
-- Handoff prose remains the human pickup record, not the control-plane route source.
+- There is no human handoff, human pickup record, or separate handoff artifact; Rally stamps normalized final-turn readback into `home/issue.md`.
 - No god-module runtime surface; each module should have one clear reason to change.
 - No Rally-owned state outside the repo root.
 - No runtime fallbacks, no compatibility shims, and no Markdown scraping to paper over missing Doctrine support.
@@ -63,7 +63,7 @@ Rally can add a thin Phase 4 runtime vertical slice that executes the authored `
 This claim is false if any of the following remain true after the slice lands:
 
 - `rally run single_repo_repair --brief-file flows/single_repo_repair/fixtures/briefs/single_repo_repair.md` cannot complete the authored happy path from `01_scope_lead` back to `01_scope_lead`.
-- routing still depends on handoff prose or note text instead of schema-validated final JSON
+- routing still depends on prose or note text instead of schema-validated final JSON
 - notes can change owner selection, currentness, or terminal control flow
 - Rally writes its own control-plane state under `~/.rally`, `~/.config`, or similar global locations
 - `rally resume <run-id>` creates a replacement run, rewrites prior ledger history, or discards prior logs
@@ -78,10 +78,13 @@ This claim is false if any of the following remain true after the slice lands:
 - one-active-run-per-flow locking at `runs/active/<flow>.lock`
 - run directory creation with `run.yaml`, `state.yaml`, `logs/`, `issue_history/`, and `home/`
 - home materialization for compiled agents, allowlisted skills, allowlisted MCPs, and the prepared fixture repo
-- ledger append behavior for setup notes, agent-authored notes, handoffs, closeout, blocker, and sleep records
-- note-before-handoff ordering when both are emitted in one turn
+- the mandatory Rally kernel skill plus the minimal shared CLI note path and end-turn helper contract
+- the shared `rally issue note` surface used by both agents and operators, with stdin, file-path, and inline-text note input
+- the tiny adapter-backed helper seam for branch-name generation and markdown cleanup
+- ledger append behavior for setup notes, agent-authored notes, normalized final-turn response records, and runner-generated terminal or status records
+- note-before-final-response ordering when both are emitted in one turn
 - routing from validated `final_output.next_owner`, where that value comes from the authored routed owner key rather than human-readable titles
-- Codex launch proof surfaces: chosen `cwd`, `CODEX_HOME`, harness-injected `RALLY_RUN_ID`, disabled ambient project-doc discovery, explicit compiled-doctrine injection, explicit MCP assembly, and explicit final-output JSON schema
+- Codex launch proof surfaces: chosen `cwd`, `CODEX_HOME`, harness-injected `RALLY_RUN_ID`, harness-injected `RALLY_FLOW_CODE`, disabled ambient project-doc discovery, explicit compiled-doctrine injection, explicit MCP assembly, and explicit final-output JSON schema
 - session sidecars and honest same-run resume behavior
 - unit and end-to-end proof for happy-path, resume, failure-path, and `sleep` branch coverage
 - a fail-loud Doctrine compatibility boundary for any machine-readable final-output and route metadata Rally needs
@@ -101,19 +104,21 @@ This claim is false if any of the following remain true after the slice lands:
 ## 0.4 Definition of done (acceptance evidence)
 
 - `rally run single_repo_repair --brief-file flows/single_repo_repair/fixtures/briefs/single_repo_repair.md` succeeds from a clean repo state when the required compiled build input is present.
-- The run creates the Phase 4 run-home shape, preserves the original brief at the top of `home/issue.md`, and appends setup notes, agent notes, and handoffs below it.
-- Every Codex turn leaves an `adapter_launch` proof record showing the Rally-owned launch contract, including harness-injected `RALLY_RUN_ID` and explicit final-output schema injection.
+- The run creates the Phase 4 run-home shape, preserves the original brief at the top of `home/issue.md`, and appends setup notes, agent notes, and normalized final-turn response records below it.
+- Every Codex turn leaves an `adapter_launch` proof record showing the Rally-owned launch contract, including harness-injected `RALLY_RUN_ID`, harness-injected `RALLY_FLOW_CODE`, and explicit final-output schema injection.
+- The shared `rally issue note` command is the durable-note write surface for both agents and operators and supports stdin, file-path, and inline-text note input.
 - Happy-path routing follows the authored ownership chain `01_scope_lead -> 02_change_engineer -> 03_proof_engineer -> 04_acceptance_critic -> 01_scope_lead` and ends in `done`.
-- An interrupted run after at least one handoff can be resumed under the same run id with preserved logs, ledger history, and sessions.
+- An interrupted run after at least one routed turn can be resumed under the same run id with preserved logs, ledger history, and sessions.
 - Failure paths such as invalid final JSON, missing compiled build input, missing current artifact, invalid next-owner key, or attempted home escape fail loudly and preserve archaeology.
 
 ## 0.5 Key invariants (fix immediately if violated)
 
-- Route from validated final JSON, never from handoff prose.
+- Route from validated final JSON, never from prose.
 - Bind machine routing from structural owner keys, not display titles.
-- The launch harness injects `RALLY_RUN_ID` on every Rally-managed turn, and Rally fails loud if that env var is missing from a launch.
+- The launch harness injects `RALLY_RUN_ID` and `RALLY_FLOW_CODE` on every Rally-managed turn, and Rally fails loud if either env var is missing from a launch.
 - Notes are durable context only; they never carry trusted routing or currentness truth.
-- If a turn emits both a note and a handoff, append the note first and the handoff second.
+- If a turn emits both a note and a final turn result, append the note first and the normalized final-turn response second.
+- The Rally kernel skill's end-turn helper is guidance only; the actual end-of-turn return path remains the adapter's strict final JSON surface.
 - Keep `home/issue.md` as the semantic ledger and `issue_history/` as full-file archaeological snapshots after every Rally-owned append.
 - Keep one active run per flow and clear the lock only on honest terminal outcomes.
 - Keep all Rally-owned state inside this repo and all adapter-local state inside the run home.
@@ -127,7 +132,7 @@ This claim is false if any of the following remain true after the slice lands:
 
 1. Preserve the authored/runtime ownership boundary instead of making Phase 4 succeed by weakening the design.
 2. Make the `single_repo_repair` happy path really runnable from `rally run`, not just locally simulated in prose.
-3. Honor the new routing contract exactly: routing truth lives in schema-validated final JSON, not in handoff prose.
+3. Honor the new routing contract exactly: routing truth lives in schema-validated final JSON, not in prose.
 4. Keep the runtime small, filesystem-native, and easy to excavate from one run directory.
 5. Fail loudly on missing compiler/runtime prerequisites rather than smuggling in fallback behavior.
 
@@ -136,7 +141,7 @@ This claim is false if any of the following remain true after the slice lands:
 - The repo root is fixed as Rally home and must retain the top-level shape `flows/`, `stdlib/`, `skills/`, `mcps/`, and `runs/`.
 - The current repo has authored doctrine and build readback but no `src/rally/`, no `tests/`, and no checked-in `runs/` placeholder directories yet.
 - The active flow contract already declares per-agent skills, MCP allowlists, timeouts, and Codex adapter args in `flows/single_repo_repair/flow.yaml`.
-- The authored flow already emits notes, handoffs, review output, and a schema-backed `final_output` contract, so the runtime must consume those surfaces honestly rather than inventing parallel ones.
+- The checked-in authored flow still contains legacy note and handoff surfaces alongside review output and a schema-backed `final_output` contract, but Phase 4 must consume the pivoted model honestly: notes plus one schema-backed final turn result, not a second handoff artifact.
 - The master design now assumes route-readable outputs are available from Doctrine, including on split `comment_output` plus `final_output` review paths.
 - The checked-in shared `stdlib/rally` turn-result contract is still behind that latest routing definition today: the current handoff JSON schema lacks structural `next_owner`, and the current prompt surface does not yet bind `route.next_owner.key` into the handoff branch.
 - The runtime may claim explicit instruction and MCP isolation only to the extent Codex can actually prove it.
@@ -145,10 +150,11 @@ This claim is false if any of the following remain true after the slice lands:
 
 - `flow.yaml` owns runtime contract and allowlists; compiled build output is injected doctrine readback, not authored runtime config.
 - The runner treats generated `AGENTS.md` as injected instruction payload only, and treats emitted `AGENT.json` as compiler-owned metadata that points at the authored final-output contract.
-- The shared `rally.turn_results` contract is the machine control surface: its handoff branch must carry structural `next_owner` via `route.next_owner.key`, and `AGENT.json` must never become a second routing truth path.
+- The shared `rally.turn_results` contract is the machine control surface: its `handoff` branch must carry structural `next_owner` via `route.next_owner.key`, and `AGENT.json` must never become a second routing truth path.
 - The final-output contract is strict JSON with schema validation before runtime dispatch.
-- The launch harness is responsible for injecting `RALLY_RUN_ID=<run-id>` on every turn; agents must not infer active-run identity from cwd, path shape, or home layout.
-- On `handoff`, Rally routes from validated `next_owner` and separately appends the authored handoff ledger block as human pickup context.
+- The launch harness is responsible for injecting `RALLY_RUN_ID=<run-id>` and `RALLY_FLOW_CODE=<flow-code>` on every turn; agents must not infer active-run identity from cwd, path shape, or home layout.
+- The Rally kernel skill should teach agents to use the same `rally issue note` executable surface operators use, and that command should accept stdin, file-path, and inline-text note input.
+- On every turn, Rally appends any note first and then appends normalized final-turn readback derived from the validated JSON result. If the result is `handoff`, Rally routes from validated `next_owner`; it does not append a separate handoff artifact.
 - `home/issue.md` is the live semantic ledger; `run.yaml`, `state.yaml`, `logs/`, `sessions/`, and locks are runtime sidecars.
 - Every Rally-owned ledger append is followed by a full-copy snapshot in `issue_history/`.
 - Keep policy and IO split by file: domain contracts stay free of filesystem and subprocess concerns, services own one runtime responsibility each, adapters translate to Codex, and `runner.py` coordinates rather than implements those details itself.
@@ -169,7 +175,7 @@ This claim is false if any of the following remain true after the slice lands:
 ## 2.1 What exists today
 
 - `docs/RALLY_MASTER_DESIGN_2026-04-12.md` defines the full Rally design, including Phase 4 checked-in structure, runtime-created run structure, required behavior, and acceptance criteria.
-- `stdlib/rally/prompts/rally/` already contains shared authored surfaces for issue-ledger append, notes, handoffs, currentness, and turn results.
+- `stdlib/rally/prompts/rally/` already contains shared authored surfaces for issue-ledger append, notes, handoffs, currentness, and turn results, but the note and handoff output shapes are transitional rather than the target runtime contract.
 - `flows/single_repo_repair/` already contains the authored flow contract, prompts, compiled readback, home setup script, skills, MCP surface, brief, and seeded-bug fixture repo.
 - The seeded bug is real and reproducible in the fixture repo.
 - `pyproject.toml` currently sets the Doctrine compile prompt root but does not expose a runnable `rally` CLI yet.
@@ -179,8 +185,8 @@ This claim is false if any of the following remain true after the slice lands:
 - There is no runtime package to load flow definitions, create run directories, materialize run homes, or orchestrate turns.
 - There is no implementation of active-flow locking, issue-ledger append behavior, issue-history snapshots, run-state persistence, or adapter-launch logging.
 - There is no Codex adapter path that enforces `CODEX_HOME`, `cwd`, explicit instruction injection, MCP assembly, or strict final-output schema injection.
-- There is no launch-harness path that proves every Rally-managed agent process receives `RALLY_RUN_ID=<run-id>`.
-- There is no runner implementation of the latest routing rules, especially routing from validated `next_owner`, note-before-handoff ordering, and notes that preserve context without affecting control flow.
+- There is no launch-harness path that proves every Rally-managed agent process receives `RALLY_RUN_ID=<run-id>` and `RALLY_FLOW_CODE=<flow-code>`.
+- There is no runner implementation of the latest routing rules, especially routing from validated `next_owner`, note-before-final-response ordering, and notes that preserve context without affecting control flow.
 - There is no resume path that reopens an existing run honestly under the same run id.
 - The current checked-in build readback has no emitted `AGENT.json` sidecar, so Rally has no clean precompiled metadata contract for final-output schema resolution.
 - The current checked-in shared `stdlib/rally/schemas/rally_turn_result.schema.json` still allows `handoff` results with `kind` only, so the authored machine contract does not yet match the latest master-design rule that `handoff` must carry structural `next_owner`.
@@ -202,13 +208,13 @@ This claim is false if any of the following remain true after the slice lands:
 ## 3.2 Internal ground truth (code as spec)
 
 - Authoritative behavior anchors (do not reinvent):
-  - `docs/RALLY_MASTER_DESIGN_2026-04-12.md` — defines the checked-in Phase 4 runtime package shape, runtime-created run structure, routed-final-output semantics, note-before-handoff ordering, resume behavior, and acceptance criteria.
+  - `docs/RALLY_MASTER_DESIGN_2026-04-12.md` — defines the checked-in Phase 4 runtime package shape, runtime-created run structure, routed-final-output semantics, note-before-final-response ordering, resume behavior, and acceptance criteria.
   - `flows/single_repo_repair/flow.yaml` — defines the runtime contract Rally must consume as input: start agent, per-agent timeouts, skill/MCP allowlists, adapter selection, and `project_doc_max_bytes: 0`.
-  - `flows/single_repo_repair/prompts/AGENTS.prompt` — defines the authored ownership chain, routed handoff edges, review split, note outputs, and per-agent `final_output`.
+  - `flows/single_repo_repair/prompts/AGENTS.prompt` — defines the authored ownership chain, routed ownership edges, review split, note outputs, and per-agent `final_output`.
   - `flows/single_repo_repair/prompts/shared/{inputs,outputs,review}.prompt` — define the flow-owned artifacts, review contract, routed-next-owner expectations, and turn-result surfaces the runtime must honor.
-  - `stdlib/rally/prompts/rally/{issue_ledger,handoffs,notes,currentness,turn_results}.prompt` — define the shared ledger append target, durable note boundary, handoff/currentness carriers, and schema-backed final turn result contract.
+  - `stdlib/rally/prompts/rally/{issue_ledger,handoffs,notes,currentness,turn_results}.prompt` — define the shared ledger append target, durable note boundary, typed currentness surface, transitional note and handoff authoring surfaces, and the schema-backed final turn result contract.
   - `stdlib/rally/schemas/rally_turn_result.schema.json` and `stdlib/rally/examples/rally_turn_result.example.json` — are the shared machine contract Rally must enforce, and they currently lag the latest master-design handoff rule because the handoff branch does not yet require `next_owner`.
-  - `flows/_stdlib_smoke/prompts/AGENTS.prompt` — proves the Rally stdlib note, handoff, currentness, and `final_output` surfaces compile together on concrete agents.
+  - `flows/_stdlib_smoke/prompts/AGENTS.prompt` — proves the Rally stdlib note, currentness, and `final_output` surfaces compile together on concrete agents while the note and handoff authoring surfaces remain transitional.
   - `flows/single_repo_repair/setup/prepare_home.sh` — defines the start-of-flow home setup contract and shows that setup notes append below the original brief.
   - `flows/single_repo_repair/fixtures/tiny_issue_service/README.md` and `flows/single_repo_repair/fixtures/tiny_issue_service/tests/test_pagination.py` — define the seeded bug and the deterministic local verification signal.
   - `pyproject.toml` — proves Rally still lacks the `src/rally/` runtime package and CLI entrypoint Phase 4 needs.
@@ -276,10 +282,10 @@ This claim is false if any of the following remain true after the slice lands:
   4. prepare one run home
   5. wake the current owner on Codex
   6. accept a strict final JSON result
-  7. append notes and or handoffs into `home/issue.md`
+  7. append notes and normalized final-turn response records into `home/issue.md`
   8. route to the next owner or terminate the run
 - Current routing semantics are authored and compiler-owned, but no shipped Rally code consumes them yet.
-- Current build input is insufficient for a clean runtime because it ships Markdown readback only, while Phase 4 requires emitted metadata plus the shared authored/schema handoff contract without recompiling prompts or scraping `AGENTS.md`.
+- Current build input is insufficient for a clean runtime because it ships Markdown readback only, while Phase 4 requires emitted metadata plus the shared authored/schema final-turn contract without recompiling prompts or scraping `AGENTS.md`.
 - The current shared turn-result schema is also insufficient for the latest routing plan because it cannot yet encode the structural `next_owner` key Rally is supposed to route from on `handoff`.
 
 ## 4.3 Object model + key abstractions
@@ -289,12 +295,13 @@ This claim is false if any of the following remain true after the slice lands:
 - Current Doctrine-owned authored/runtime surfaces already present:
   - shared issue-ledger append target
   - shared issue note output
-  - shared handoff/currentness outputs
+  - shared currentness output
+  - transitional handoff output shapes
   - schema-backed `TurnResponse` final outputs
   - routed ownership semantics readable from ordinary outputs and split `final_output`
 - Current missing abstraction boundary:
   - there is no compiler-owned emitted JSON sidecar that turns in-memory compiled final-output metadata into a checked-in build artifact Rally can consume at runtime
-  - the shared Rally-authored turn-result contract has not yet been updated so that `handoff` carries routed owner truth structurally inside the JSON schema itself
+  - the shared Rally-authored turn-result contract has not yet been updated so that `handoff` carries routed owner truth structurally inside the JSON schema itself and no separate handoff artifact is needed
 
 ## 4.4 Observability + failure behavior today
 
@@ -363,16 +370,18 @@ Not applicable. Phase 4 is CLI-only runtime work.
    - Rally-chosen `cwd`
    - `CODEX_HOME=<run-home>`
    - `RALLY_RUN_ID=<run-id>` injected by the harness on every turn
+   - `RALLY_FLOW_CODE=<flow-code>` injected by the harness on every turn
    - ambient project-doc discovery disabled
    - explicit compiled-doctrine injection from emitted `AGENTS.md`
    - explicit final-output JSON schema resolved through emitted `AGENT.json`
    - explicit MCP config assembled from allowlisted repo-local definitions
 7. `adapters/codex/result_contract.py` validates the returned final JSON against the shared turn-result contract and returns a typed `TurnResult`.
 8. If the turn emitted a note, `services/issue_ledger.py` appends it first and snapshots ledger history.
-9. If the turn emitted a handoff, `services/runner.py` routes from validated `next_owner`, asks `services/issue_ledger.py` to append the authored handoff pickup record and snapshot again, asks `services/run_store.py` to update `state.yaml`, and wakes the resolved next owner in the same run home.
-10. On `done` or `blocker`, `services/runner.py` asks `services/issue_ledger.py` and `services/run_store.py` to record terminal state, preserve the run directory, and clear the active lock.
-11. On `sleep`, `services/runner.py` records the request, keeps the same owner, blocks inline in the simple model, and later wakes the same run again.
-12. On interruption, `services/runner.py` preserves the run directory and asks `adapters/codex/session_store.py` to preserve sessions; `rally resume <run-id>` reopens the same run and continues from stored state instead of creating a replacement run.
+9. `services/issue_ledger.py` appends normalized final-turn readback derived from the validated `TurnResult` and snapshots ledger history again.
+10. If the turn result is `handoff`, `services/runner.py` routes from validated `next_owner`, asks `services/run_store.py` to update `state.yaml`, and wakes the resolved next owner in the same run home.
+11. On `done` or `blocker`, `services/runner.py` asks `services/run_store.py` to record terminal state, preserve the run directory, and clear the active lock.
+12. On `sleep`, `services/runner.py` records the request, keeps the same owner, blocks inline in the simple model, and later wakes the same run again.
+13. On interruption, `services/runner.py` preserves the run directory and asks `adapters/codex/session_store.py` to preserve sessions; `rally resume <run-id>` reopens the same run and continues from stored state instead of creating a replacement run.
 
 ## 5.3 Module boundaries + abstractions (future)
 
@@ -395,7 +404,7 @@ Not applicable. Phase 4 is CLI-only runtime work.
   - owns run-id creation, lock lifecycle, `run.yaml`, and `state.yaml`
   - does not render ledger text, parse final JSON, or assemble adapter launches
 - `services/issue_ledger.py`
-  - owns ledger append formatting and `issue_history/` snapshots
+  - owns note append formatting, normalized final-turn readback rendering, and `issue_history/` snapshots
   - does not choose routes or clear locks
 - `services/home_materializer.py`
   - owns home copy/setup/materialization only
@@ -437,7 +446,7 @@ Not applicable. Phase 4 is CLI-only runtime work.
 - `RunState`
   - small machine-readable current state persisted to `state.yaml`
 - `LedgerAppend`
-  - runner-owned append operation for notes, handoffs, terminal records, and snapshots
+  - runner-owned append operation for notes, normalized final-turn response records, and snapshots
 - `AdapterLaunchRecord`
   - explicit proof of the Codex launch contract per turn
 - `CodexSessionRecord`
@@ -450,9 +459,9 @@ Not applicable. Phase 4 is CLI-only runtime work.
 - Route only from validated `TurnResult.next_owner` on `handoff`.
 - Treat `next_owner` as the structural agent key that came from compiler-owned route semantics, not as display text.
 - Keep notes as advisory durable context only.
-- Keep handoff prose as the human pickup record only.
+- Do not invent a separate handoff artifact; Rally stamps normalized final-turn readback into `home/issue.md`.
 - Use emitted `AGENT.json` for runtime final-output metadata resolution and emitted `AGENTS.md` for explicit instruction injection.
-- Keep `handoff.next_owner` in the shared `rally.turn_results` schema and validated final JSON, not in `AGENT.json` and not in handoff prose.
+- Keep `handoff.next_owner` in the shared `rally.turn_results` schema and validated final JSON, not in `AGENT.json` and not in prose.
 - Never rebuild semantic truth by parsing generated `AGENTS.md`.
 - Fail loudly if the flow roster, emitted agent contract, final-output schema metadata, or routed owner key cannot be resolved honestly.
 - Fail loudly if `AGENT.json` points outside the repo root or if the resolved schema no longer matches the Rally handoff contract.
@@ -474,22 +483,23 @@ Not applicable. The operator surface remains CLI plus run-directory artifacts.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Packaging | `pyproject.toml` | project metadata | no CLI entrypoint | add package metadata and `rally` console entrypoint | make Phase 4 runnable from repo root | `rally run`, `rally resume` | CLI smoke, e2e entry |
 | Runtime package | `src/rally/__init__.py` | package root | missing | create package root | establish checked-in runtime ownership | importable `rally` package | unit import smoke |
-| CLI | `src/rally/__main__.py`, `src/rally/cli.py` | command parsing | missing | add `run` and `resume` commands with exact Phase 4 flags | operator surface must be real | CLI contract | CLI tests |
+| CLI | `src/rally/__main__.py`, `src/rally/cli.py` | command parsing | missing | add `run`, `resume`, and `issue note` commands with exact Phase 4 flags and note-input modes | operator and agent note surface must be real | CLI contract | CLI tests |
 | Domain contracts | `src/rally/domain/{flow.py,run.py,turn_result.py}` | pure runtime contracts | missing | define pure typed contracts for flow loading, run state, and final turn results with no filesystem or adapter IO | keep policy separate from IO and make future extraction cheap | typed domain layer | domain unit tests |
 | Flow loading | `src/rally/services/flow_loader.py` | flow/build preflight | missing | load `flow.yaml`, validate emitted agent directories, require `AGENT.json`, resolve repo-root-relative final-output schema support files, and fail loud on missing or incompatible compiler-owned metadata or unsupported sidecar version | preserve authored/runtime split without runtime recompilation | `FlowDefinition`, `CompiledAgentContract`, `TurnResultContract` loader | `test_flow_loader.py` |
 | Run store | `src/rally/services/run_store.py` | run identity, lock, state | missing | create run ids, lock files, `run.yaml`, `state.yaml`, active-lock lifecycle | one-active-run-per-flow and resume depend on it | `RunRecord`, `RunState` | `test_run_store.py` |
-| Ledger | `src/rally/services/issue_ledger.py` | append + snapshot behavior | missing | append setup notes, notes, handoffs, and terminal records; write `issue_history/` snapshots after every Rally-owned append | live semantic ledger is central Phase 4 truth | `LedgerAppend` contract | `test_issue_ledger.py` |
+| Ledger | `src/rally/services/issue_ledger.py` | append + snapshot behavior | missing | append setup notes, notes, normalized final-turn response records, and runner-generated terminal records; write `issue_history/` snapshots after every Rally-owned append | live semantic ledger is central Phase 4 truth | `LedgerAppend` contract | `test_issue_ledger.py` |
 | Materialization | `src/rally/services/home_materializer.py` | home preparation | missing | copy full emitted agent directories, allowlisted skills, allowlisted MCPs, and fixture repo into `home/`; run `setup/prepare_home.sh` once | agents must live inside one prepared home and archaeology should keep compiler-owned sidecars | home materialization contract | `test_home_materializer.py` |
 | Eventing | `src/rally/services/event_log.py` | run-local logs | missing | write `logs/events.jsonl`, per-agent logs, and `adapter_launch/*.json` | Phase 4 requires archaeological and launch-contract proof | event-log format | event/log tests |
-| Runner orchestration | `src/rally/services/runner.py` | turn orchestration | missing | drive wake, handoff, done, blocker, sleep, state updates, and resume path while delegating IO and parsing to owning modules | keep the state machine explicit without creating a god module | runner state machine | runner tests, e2e |
-| Codex adapter | `src/rally/adapters/codex/launcher.py` | process launch | missing | enforce `cwd`, `CODEX_HOME`, harness-injected `RALLY_RUN_ID`, config override, explicit doctrine injection, MCP assembly, and output schema | honor no-side-door contract and make issue-note writes honest | launch contract | adapter launch tests |
+| Runner orchestration | `src/rally/services/runner.py` | turn orchestration | missing | drive wake, `handoff`, done, blocker, sleep, state updates, normalized final-turn readback, and resume path while delegating IO and parsing to owning modules | keep the state machine explicit without creating a god module | runner state machine | runner tests, e2e |
+| Codex adapter | `src/rally/adapters/codex/launcher.py` | process launch | missing | enforce `cwd`, `CODEX_HOME`, harness-injected `RALLY_RUN_ID`, harness-injected `RALLY_FLOW_CODE`, config override, explicit doctrine injection, MCP assembly, and output schema | honor no-side-door contract and make issue-note writes honest | launch contract | adapter launch tests |
+| Internal helper seam | `src/rally/internal/*` or equivalent | tiny schema-bound maintenance tasks | missing | shell through the same adapter stack for low-thinking strict-JSON tasks such as branch-name generation and rough-input markdown cleanup | keep these transforms on a shared Rally-owned path instead of ad hoc parsing or wrapper scripts | narrow helper contract | helper seam tests |
 | Result contract | `src/rally/adapters/codex/result_contract.py` | final JSON validation | missing | validate strict turn result and resolve routed owner keys | routing must be machine-shaped | `TurnResult` parser | `test_codex_result_contract.py` |
 | Session store | `src/rally/adapters/codex/session_store.py` | resume sidecars | missing | persist and reload per-agent session metadata | resume must continue same run honestly | `CodexSessionRecord` | resume tests |
 | Authored flow input | `flows/single_repo_repair/flow.yaml` | runtime contract | already defines start agent, allowlists, adapter args | consume as input; only edit if runtime validation exposes a real contract bug | Phase 4 should not weaken authored source | loader preflight | flow-loader tests |
 | Emitted build input | `flows/single_repo_repair/build/agents/*/AGENTS.md` | explicit instruction readback | already emitted | keep as instruction payload only; do not parse for runtime semantics | preserve authored/runtime split | explicit doctrine injection | e2e behavior |
 | Emitted build input | `flows/single_repo_repair/build/agents/*/AGENT.json` | compiler-owned sidecar | missing | add emitted per-agent JSON sidecar with final-output schema metadata | Rally needs precompiled semantic input | `CompiledAgentContract` | loader tests, e2e |
-| Authored flow input | `flows/single_repo_repair/prompts/AGENTS.prompt` | routed ownership chain, notes, handoffs, final outputs | already authored | consume as input; do not rewrite to fit runtime | preserve Phase 2 authored surfaces | compatibility boundary | e2e behavior |
-| Stdlib authored contract | `stdlib/rally/prompts/rally/turn_results.prompt` | shared final-output doctrine | schema-backed control union exists but does not yet author handoff `next_owner` from `route.next_owner.key` | add the latest master-design handoff-control and handoff-readback pattern to the shared contract | machine routing must live in final JSON, not prose or sidecar metadata | shared `RallyTurnResultJson` authored contract | `_stdlib_smoke`, loader tests, e2e |
+| Authored flow input | `flows/single_repo_repair/prompts/AGENTS.prompt` | routed ownership chain, notes, legacy handoff shapes, final outputs | already authored | consume as input while pivoting to notes plus one final turn result; do not rewrite to fit runtime shortcuts | preserve Phase 2 authored surfaces while honoring the Phase 3 pivot | compatibility boundary | e2e behavior |
+| Stdlib authored contract | `stdlib/rally/prompts/rally/turn_results.prompt` | shared final-output doctrine | schema-backed control union exists but does not yet author handoff `next_owner` from `route.next_owner.key` | add the latest master-design route-control and normalized-readback pattern to the shared contract | machine routing must live in final JSON, not prose or sidecar metadata | shared `RallyTurnResultJson` authored contract | `_stdlib_smoke`, loader tests, e2e |
 | Stdlib machine contract | `stdlib/rally/schemas/rally_turn_result.schema.json` | strict JSON schema | handoff requires only `kind` | require `next_owner` on `handoff` and keep the other tagged branches unchanged | Codex strict output must enforce the real routing contract | shared `TurnResultContract` | contract tests, adapter tests, e2e |
 | Stdlib example | `stdlib/rally/examples/rally_turn_result.example.json` | payload example | does not yet demonstrate structural handoff owner | update the example to show `handoff.next_owner` using a structural agent key | keep emitted/readable contract aligned for operators and tests | example alignment | contract tests |
 | Stdlib input | `stdlib/rally/prompts/rally/{issue_ledger,handoffs,notes,currentness,turn_results}.prompt` | shared authored contracts | already authored | consume as input; do not fork parallel runtime semantics | preserve Phase 1 authored surfaces | compatibility boundary | e2e + contract tests |
@@ -518,7 +528,7 @@ Not applicable. The operator surface remains CLI plus run-directory artifacts.
   - update `pyproject.toml` to reflect the real CLI once added
   - add a short code comment at the compatibility boundary explaining why Rally consumes `AGENT.json` and never scrapes `AGENTS.md`
   - add a short code comment at the result-contract boundary explaining that `handoff.next_owner` lives in validated JSON, not in sidecar metadata or prose
-  - add a short code comment at the ledger append boundary explaining note-before-handoff ordering and why notes are non-routing context
+  - add a short code comment at the ledger append boundary explaining note-before-final-response ordering and why notes are non-routing context
 - Behavior-preservation signals for refactors:
   - seeded-bug happy path must remain the canonical preservation signal for the authored ownership chain
   - resume must preserve run id, logs, and ledger history
@@ -595,9 +605,10 @@ Work
   - initial brief write
   - setup-note append
   - note append
-  - handoff append
-  - terminal record append
+  - normalized final-turn response append
+  - runner-generated terminal record append
   - full-copy `issue_history/` snapshots after every Rally-owned append
+- Implement the shared `rally issue note` CLI path on top of that ledger service, with stdin, file-path, and inline-text note input.
 - Implement `home_materializer.py` to:
   - copy full emitted agent directories into `home/agents/`
   - materialize only allowlisted skills and MCPs into `home/skills/` and `home/mcps/`
@@ -608,6 +619,7 @@ Work
 
 Verification (smallest signal)
 - Unit coverage for lock acquisition and cleanup, run directory creation, ledger append plus snapshot behavior, and allowlist-only home materialization.
+- CLI coverage for `rally issue note` stdin, file-path, and inline-text note input against the Rally-owned append path.
 - One repo-local test that proves the original brief stays at the top of `home/issue.md` and setup notes append below it.
 
 Docs/comments (propagation; only if needed)
@@ -631,18 +643,21 @@ Work
   - Rally-chosen `cwd`
   - `CODEX_HOME` rooted at the run home
   - `RALLY_RUN_ID=<run-id>` injected by the launch harness
+  - `RALLY_FLOW_CODE=<flow-code>` injected by the launch harness
   - disabled ambient project-doc discovery
   - explicit compiled-doctrine injection
   - explicit MCP config from allowlisted repo-local definitions
   - explicit final-output JSON schema
 - Implement `adapters/codex/result_contract.py` for strict turn-result validation and routed-owner resolution, including the rule that `handoff.next_owner` comes from validated JSON rather than sidecar metadata or prose.
 - Implement `adapters/codex/session_store.py` for per-agent saved session sidecars and honest same-run resume.
+- Implement the tiny adapter-backed helper seam for low-thinking strict-JSON tasks such as branch-name generation and rough-input markdown cleanup, keeping it out of the turn-routing path.
 - Implement `services/runner.py` to:
   - launch the current owner
   - validate final turn results before dispatch
   - append notes without changing routing or currentness
-  - append handoffs only after routing from validated `next_owner`
-  - enforce note-before-handoff ordering when both exist
+  - append normalized final-turn readback for every turn
+  - route `handoff` only from validated `next_owner`
+  - enforce note-before-final-response ordering when both exist
   - update `state.yaml`
   - clear the active lock only on terminal outcomes
   - preserve runs and sessions on interruption
@@ -650,8 +665,8 @@ Work
 - Keep `services/runner.py` orchestration-only; if schema resolution, ledger rendering, path derivation, or adapter launch construction starts living there, split it back into the owning service or adapter immediately.
 
 Verification (smallest signal)
-- Unit coverage for final-result validation, invalid routed-owner failure, note-before-handoff ordering, terminal-state lock clearing, resume state restoration, and `sleep` branch handling.
-- A small runner-level integration test that proves notes do not affect owner selection or currentness, and that handoff routing does not fall back to sidecar metadata or handoff prose.
+- Unit coverage for final-result validation, invalid routed-owner failure, note-before-final-response ordering, terminal-state lock clearing, resume state restoration, and `sleep` branch handling.
+- A small runner-level integration test that proves notes do not affect owner selection or currentness, and that `handoff` routing does not fall back to sidecar metadata or prose.
 
 Docs/comments (propagation; only if needed)
 - Add one short boundary comment near routed-owner handling explaining why machine routing binds from structural keys rather than titles or prose.
@@ -671,14 +686,14 @@ Goal
 
 Work
 - Add `tests/e2e/test_seeded_bug_happy_path.py` for the authored ownership chain and terminal `done` outcome.
-- Add `tests/e2e/test_seeded_bug_resume.py` for interruption after at least one handoff and same-run resume.
+- Add `tests/e2e/test_seeded_bug_resume.py` for interruption after at least one routed turn and same-run resume.
 - Prove the canary no-side-door contract.
 - Prove failure-path preservation for invalid final JSON, missing compiled build input, missing current artifact, invalid routed owner, and attempted home escape.
 - Keep archive behavior thin unless needed for honest closeout of the finished run.
 
 Verification (smallest signal)
 - Real end-to-end `rally run` and `rally resume` proof against the `single_repo_repair` flow.
-- One proof that `logs/adapter_launch/*.json` plus the prepared home surface are enough to show there was no instruction-side-door fallback and that the enforced schema still required structural handoff `next_owner`.
+- One proof that `logs/adapter_launch/*.json` plus the prepared home surface are enough to show there was no instruction-side-door fallback, that the launch harness injected both `RALLY_RUN_ID` and `RALLY_FLOW_CODE`, and that the enforced schema still required structural handoff `next_owner`.
 - Unit coverage already in place for `sleep`; no separate seeded-bug `sleep` scenario required.
 
 Docs/comments (propagation; only if needed)
@@ -703,12 +718,12 @@ Rollback
 - `tests/unit/test_run_store.py`
   - run id creation, active-lock behavior, terminal lock clearing
 - `tests/unit/test_issue_ledger.py`
-  - brief-first ledger order, note append, handoff append, terminal records, issue-history snapshots
+  - brief-first ledger order, note append, normalized final-turn response append, terminal records, issue-history snapshots
 - `tests/unit/test_home_materializer.py`
   - allowlist-only materialization and home setup integration
 - `tests/unit/test_codex_result_contract.py`
   - strict final-output validation, structural `handoff.next_owner` enforcement, routed-owner resolution, and invalid-owner failure
-- unit coverage for runner `sleep` branch, note-before-handoff ordering, and the orchestration-only dependency seams between runner, services, and adapters
+- unit coverage for runner `sleep` branch, note-before-final-response ordering, and the orchestration-only dependency seams between runner, services, and adapters
 
 ## 8.2 Integration tests (flows)
 
@@ -726,7 +741,7 @@ Rollback
 ## 8.3 E2E / device tests (realistic)
 
 - One real `rally run single_repo_repair --brief-file ...` happy path.
-- One interrupted-run `rally resume <run-id>` proof after at least one handoff.
+- One interrupted-run `rally resume <run-id>` proof after at least one routed turn.
 - One no-side-door canary proof.
 - No negative-value gates:
   - no doc-inventory checks
@@ -746,7 +761,7 @@ Rollback
 
 - `logs/events.jsonl` is the primary structured run telemetry.
 - `logs/agents/*.jsonl` are per-agent filtered slices.
-- `logs/adapter_launch/*.json` are the proof surface for the Codex launch contract, including the required harness-injected `RALLY_RUN_ID`.
+- `logs/adapter_launch/*.json` are the proof surface for the Codex launch contract, including the required harness-injected `RALLY_RUN_ID` and `RALLY_FLOW_CODE`.
 - No external metrics backend is required for this slice.
 
 ## 9.3 Operational runbook
@@ -840,14 +855,14 @@ Rollback
 ## 2026-04-12 - Route from final JSON, not ledger prose
 
 Context
-- The master design now treats route-aware `final_output` as ready to implement, and the flow doctrine already models routed ownership edges separately from durable handoff prose.
+- The master design now treats route-aware `final_output` as ready to implement, and the flow doctrine already models routed ownership edges separately from durable serialized notes.
 
 Options
-- Keep routing truth in handoff prose.
-- Route from validated final-output JSON and keep handoff prose as the human pickup record.
+- Keep routing truth outside the final JSON and let notes or separate readback text imply where control goes next.
+- Route from validated final-output JSON only and let Rally stamp normalized readback into `issue.md`.
 
 Decision
-- Route from validated final-output JSON only. Treat handoff prose as durable human pickup context, not as the control-plane route source.
+- Route from validated final-output JSON only. There is no separate handoff artifact; Rally stamps normalized final-turn readback into `issue.md`.
 
 Consequences
 - The runtime must validate final-output JSON before dispatch.
@@ -856,7 +871,7 @@ Consequences
 
 Follow-ups
 - Verify the exact Doctrine-emitted surfaces Rally can consume without Markdown scraping.
-- Add runner tests for invalid-owner failure and note-before-handoff ordering.
+- Add runner tests for invalid-owner failure and note-before-final-response ordering.
 
 ## 2026-04-12 - Notes stay non-routing and non-currentness
 
@@ -875,7 +890,7 @@ Consequences
 - Verification must include a proof that notes do not alter routing behavior.
 
 Follow-ups
-- Add ledger and runner coverage for note append behavior and note-before-handoff ordering.
+- Add ledger and runner coverage for note append behavior and note-before-final-response ordering.
 
 ## 2026-04-12 - No Markdown scraping fallback
 
@@ -926,7 +941,7 @@ Context
 
 Options
 - Keep routed owner truth implicit in emitted metadata and infer the next owner from sidecar data.
-- Keep routed owner truth in handoff prose and let the final JSON only say `kind: handoff`.
+- Keep routed owner truth outside the final JSON and let the final JSON only say `kind: handoff`.
 - Put structural `next_owner` directly in the shared `rally.turn_results` JSON contract and let `AGENT.json` only point Rally at that schema.
 
 Decision
@@ -935,11 +950,11 @@ Decision
 Consequences
 - `stdlib/rally/prompts/rally/turn_results.prompt`, `stdlib/rally/schemas/rally_turn_result.schema.json`, and the shared example all need to align on the handoff branch.
 - `flow_loader.py` and `result_contract.py` must validate that the resolved schema still requires `next_owner` on `handoff`.
-- The handoff ledger block remains human pickup context only and must not regain control-plane routing authority.
+- Rally should stamp normalized final-turn readback into `issue.md` and should not regain a separate handoff artifact.
 
 Follow-ups
 - Recompile Rally flow builds after the stdlib contract update and Doctrine emit support both land.
-- Keep `_stdlib_smoke` proving the shared route-aware final-output contract, not just the prose handoff surfaces.
+- Keep `_stdlib_smoke` proving the shared route-aware final-output contract, not a second handoff surface.
 
 ## 2026-04-12 - Phase 4 starts with compatibility-first cutover
 

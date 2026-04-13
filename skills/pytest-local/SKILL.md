@@ -1,21 +1,21 @@
 # pytest-local
 
-Use this skill when a Rally flow turn needs deterministic local pytest
-verification inside a prepared repo.
+Use this skill when a Rally turn needs a repeatable local pytest check inside a
+prepared repo.
 
 ## What It Does
 
-- runs `python -m pytest` from the prepared repo root
-- captures the exact command and result for proof or repro writeups
-- keeps verification local and deterministic
+- Run `python -m pytest` from the prepared repo root.
+- Capture the exact command and result for test notes or repro steps.
+- Keep the check local and repeatable.
 
 ## Use It For
 
-- reproducing the seeded bug
-- proving the local fix
-- collecting the exact failing or passing test command for the next owner
+- Reproducing the seeded bug.
+- Proving the local fix.
+- Collecting the exact failing or passing test command for the next person.
 
 ## Do Not Use It For
 
-- broad environment repair
-- long-running non-pytest validation
+- Broad environment repair.
+- Long-running non-pytest validation.

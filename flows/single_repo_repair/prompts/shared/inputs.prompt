@@ -2,7 +2,7 @@ input WorkBrief: "Work Brief"
     source: Prompt
     shape: MarkdownDocument
     requirement: Required
-    "Use the operator brief as the seeded-bug issue description."
+    "Use the operator brief as the bug report for this run."
 
 
 input FixtureRepoReadme: "Fixture Repo README"
@@ -10,7 +10,7 @@ input FixtureRepoReadme: "Fixture Repo README"
         path: "repos/tiny_issue_service/README.md"
     shape: MarkdownDocument
     requirement: Required
-    "Use the fixture repo README as the stable local description of the seeded bug and local verification command."
+    "Use the fixture repo README as the local bug description and local test command."
 
 
 input RepairPlanCurrent: "Repair Plan Current"
@@ -18,7 +18,7 @@ input RepairPlanCurrent: "Repair Plan Current"
         path: "artifacts/repair_plan.md"
     shape: MarkdownDocument
     requirement: Advisory
-    "Use the current repair plan when this turn needs the current implementation seam."
+    "Use the current repair plan when this turn needs the chosen fix path."
 
 
 input VerificationReportCurrent: "Verification Report Current"
@@ -26,11 +26,11 @@ input VerificationReportCurrent: "Verification Report Current"
         path: "artifacts/verification.md"
     shape: MarkdownDocument
     requirement: Advisory
-    "Use the current verification record when this turn needs the proof surface."
+    "Use the current test report when this turn needs the latest check result."
 
 
 input AcceptanceFacts: "Acceptance Facts"
     source: Prompt
     shape: JsonObject
     requirement: Required
-    "Use the acceptance facts that say whether the bug still reproduces and whether the verification record contains the required regression proof."
+    "Use the acceptance facts that say whether the bug still happens and whether the report includes the needed regression test result."

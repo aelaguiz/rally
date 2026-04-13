@@ -1,21 +1,21 @@
 # repo-search
 
-Use this skill when a Rally flow turn needs exact file-level grounding inside a
-prepared local repo.
+Use this skill when a Rally turn needs exact file-level grounding inside a
+prepared repo.
 
 ## What It Does
 
-- locate the exact files, symbols, and tests that matter for the current issue
-- prefer `rg` for search and `rg --files` for inventory
-- surface the exact paths the next owner should read now
+- Find the exact files, symbols, and tests that matter for the current bug.
+- Prefer `rg` for search and `rg --files` for inventory.
+- Show the exact paths the next person should read now.
 
 ## Use It For
 
-- finding the seeded bug location
-- finding the matching test coverage
-- confirming the exact repo files named in a handoff
+- Finding the seeded bug location.
+- Finding the matching test coverage.
+- Confirming the exact repo files named in a handoff.
 
 ## Do Not Use It For
 
-- broad architecture redesign
-- environment repair that is not needed for the current repo search
+- Broad architecture redesign.
+- Environment repair that is not needed for the current repo search.

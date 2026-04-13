@@ -1,6 +1,5 @@
-import rally.handoffs
+import rally.base_agent
 import rally.currentness
-import rally.notes
 import rally.turn_results
 import shared.inputs
 import shared.outputs
@@ -19,11 +18,11 @@ workflow ScopeLeadWorkflow[rally.currentness.RallyCarryCurrentArtifactConvention
     inherit pickup_rule
 
     flow_story: "Flow Story"
-        "On the opening turn, read the operator brief, decide the narrow repair seam, write `artifacts/repair_plan.md`, and hand the same issue to ChangeEngineer."
-        "When accepted proof returns later, use the accepted verification record to close the run with a structured `done`."
+        "On the first turn, read the operator brief, choose the smallest fix path, write `artifacts/repair_plan.md`, and pass the bug to ChangeEngineer."
+        "When the test report comes back accepted, use it to finish the run with `done`."
 
     law:
-        current artifact shared.outputs.RepairPlan via rally.handoffs.RallyCurrentArtifactHandoff.current_artifact
+        current artifact shared.outputs.RepairPlan via rally.currentness.RallyCurrentArtifactCarry.current_artifact
 
 
 workflow ChangeEngineerWorkflow[rally.currentness.RallyCarryCurrentArtifactConvention]: "Change Engineer Workflow"
@@ -33,10 +32,10 @@ workflow ChangeEngineerWorkflow[rally.currentness.RallyCarryCurrentArtifactConve
     inherit pickup_rule
 
     flow_story: "Flow Story"
-        "Keep `artifacts/repair_plan.md` as the durable current basis while changing `repos/tiny_issue_service`."
+        "Keep `artifacts/repair_plan.md` as the plan you follow while changing `repos/tiny_issue_service`."
 
     law:
-        current artifact shared.outputs.RepairPlan via rally.handoffs.RallyCurrentArtifactHandoff.current_artifact
+        current artifact shared.outputs.RepairPlan via rally.currentness.RallyCurrentArtifactCarry.current_artifact
 
 
 workflow ProofEngineerWorkflow[rally.currentness.RallyCarryCurrentArtifactConvention]: "Proof Engineer Workflow"
@@ -46,83 +45,123 @@ workflow ProofEngineerWorkflow[rally.currentness.RallyCarryCurrentArtifactConven
     inherit pickup_rule
 
     flow_story: "Flow Story"
-        "Write `artifacts/verification.md` and keep that verification record current while routing the seeded-bug issue forward or back."
+        "Write `artifacts/verification.md` and keep using it while the bug moves forward or back."
 
     law:
-        current artifact shared.outputs.VerificationReport via rally.handoffs.RallyCurrentArtifactHandoff.current_artifact
+        current artifact shared.outputs.VerificationReport via rally.currentness.RallyCurrentArtifactCarry.current_artifact
 
 
-agent ScopeLead:
-    role: "Core job: shape the seeded-bug repair, keep the repair plan current, and close the run after accepted proof."
+skills ScopeLeadSkills[rally.base_agent.RallyManagedSkills]: "Skills"
+    inherit rally_kernel
+
+    skill repo_search: shared.skills.RepoSearchSkill
+        requirement: Required
+
+
+skills ChangeEngineerSkills[rally.base_agent.RallyManagedSkills]: "Skills"
+    inherit rally_kernel
+
+    skill repo_search: shared.skills.RepoSearchSkill
+        requirement: Required
+
+    skill pytest_local: shared.skills.PytestLocalSkill
+        requirement: Advisory
+
+
+skills ProofEngineerSkills[rally.base_agent.RallyManagedSkills]: "Skills"
+    inherit rally_kernel
+
+    skill pytest_local: shared.skills.PytestLocalSkill
+        requirement: Required
+
+    skill repo_search: shared.skills.RepoSearchSkill
+        requirement: Advisory
+
+
+skills AcceptanceCriticSkills[rally.base_agent.RallyManagedSkills]: "Skills"
+    inherit rally_kernel
+
+    skill repo_search: shared.skills.RepoSearchSkill
+        requirement: Required
+
+
+agent ScopeLead[rally.base_agent.RallyManagedBaseAgent]:
+    role: "Core job: pick the fix plan, keep the repair plan current, and close the run after the review passes."
     your_job: roles.scope_lead.ScopeLeadJob
     workflow: ScopeLeadWorkflow
-    inputs: "Inputs"
-        shared.inputs.WorkBrief
-        shared.inputs.VerificationReportCurrent
+    inherit rally_contract
+    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
+        inherit rally_base_dir
+        inherit rally_run_id
+        inherit rally_flow_code
+
+        work_brief: "Work Brief"
+            shared.inputs.WorkBrief
+
+        verification_report_current: "Verification Report Current"
+            shared.inputs.VerificationReportCurrent
     outputs: "Outputs"
         shared.outputs.RepairPlan
         shared.outputs.ScopeLeadTurnResult
-        rally.notes.RallyIssueNote
-        rally.handoffs.RallyCurrentArtifactHandoff
-    skills: "Skills"
-        can_run: "Can Run"
-            skill repo_search: shared.skills.RepoSearchSkill
-                requirement: Required
+        rally.currentness.RallyCurrentArtifactCarry
+    skills: ScopeLeadSkills
     handoff_routing: "Handoff Routing"
-        if_the_repair_plan_is_ready: "If The Repair Plan Is Ready"
-            route "Send the narrow repair plan to ChangeEngineer." -> ChangeEngineer
+        if_the_repair_plan_is_ready: "If The Plan Is Ready"
+            route "Send the repair plan to ChangeEngineer." -> ChangeEngineer
     final_output: shared.outputs.ScopeLeadTurnResult
 
 
-agent ChangeEngineer:
-    role: "Core job: repair the seeded bug in the prepared repo while keeping the repair plan as the durable current basis."
+agent ChangeEngineer[rally.base_agent.RallyManagedBaseAgent]:
+    role: "Core job: fix the bug in the prepared repo while keeping the repair plan current."
     your_job: roles.change_engineer.ChangeEngineerJob
     workflow: ChangeEngineerWorkflow
-    inputs: "Inputs"
-        shared.inputs.FixtureRepoReadme
-        shared.inputs.RepairPlanCurrent
+    inherit rally_contract
+    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
+        inherit rally_base_dir
+        inherit rally_run_id
+        inherit rally_flow_code
+
+        fixture_repo_readme: "Fixture Repo Readme"
+            shared.inputs.FixtureRepoReadme
+
+        repair_plan_current: "Repair Plan Current"
+            shared.inputs.RepairPlanCurrent
     outputs: "Outputs"
         shared.outputs.RepairPlan
         shared.outputs.ChangeEngineerTurnResult
-        rally.notes.RallyIssueNote
-        rally.handoffs.RallyCurrentArtifactHandoff
-    skills: "Skills"
-        can_run: "Can Run"
-            skill repo_search: shared.skills.RepoSearchSkill
-                requirement: Required
-
-            skill pytest_local: shared.skills.PytestLocalSkill
-                requirement: Advisory
+        rally.currentness.RallyCurrentArtifactCarry
+    skills: ChangeEngineerSkills
     handoff_routing: "Handoff Routing"
-        if_the_repo_change_is_ready_for_proof: "If The Repo Change Is Ready For Proof"
-            route "Send the updated repo state and current repair plan to ProofEngineer." -> ProofEngineer
+        if_the_repo_change_is_ready_for_proof: "If The Repo Change Is Ready For Checks"
+            route "Send the updated repo and repair plan to ProofEngineer." -> ProofEngineer
     final_output: shared.outputs.ChangeEngineerTurnResult
 
 
-agent ProofEngineer:
-    role: "Core job: run deterministic local proof, write the verification record, and route either a clean proof handoff or an exact failure."
+agent ProofEngineer[rally.base_agent.RallyManagedBaseAgent]:
+    role: "Core job: run the local check, write the test report, and send back either a pass or the exact failure."
     your_job: roles.proof_engineer.ProofEngineerJob
     workflow: ProofEngineerWorkflow
-    inputs: "Inputs"
-        shared.inputs.FixtureRepoReadme
-        shared.inputs.RepairPlanCurrent
+    inherit rally_contract
+    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
+        inherit rally_base_dir
+        inherit rally_run_id
+        inherit rally_flow_code
+
+        fixture_repo_readme: "Fixture Repo Readme"
+            shared.inputs.FixtureRepoReadme
+
+        repair_plan_current: "Repair Plan Current"
+            shared.inputs.RepairPlanCurrent
     outputs: "Outputs"
         shared.outputs.VerificationReport
         shared.outputs.ProofEngineerTurnResult
-        rally.notes.RallyIssueNote
-        rally.handoffs.RallyCurrentArtifactHandoff
-    skills: "Skills"
-        can_run: "Can Run"
-            skill pytest_local: shared.skills.PytestLocalSkill
-                requirement: Required
-
-            skill repo_search: shared.skills.RepoSearchSkill
-                requirement: Advisory
+        rally.currentness.RallyCurrentArtifactCarry
+    skills: ProofEngineerSkills
     handoff_routing: "Handoff Routing"
-        if_verification_clears_the_gate: "If Verification Clears The Gate"
-            route "Send the current verification record to AcceptanceCritic." -> AcceptanceCritic
+        if_verification_clears_the_gate: "If Checks Pass"
+            route "Send the current test report to AcceptanceCritic." -> AcceptanceCritic
 
-        if_verification_finds_a_real_failure: "If Verification Finds A Real Failure"
+        if_verification_finds_a_real_failure: "If Checks Find A Real Failure"
             route "Send the exact failure back to ChangeEngineer." -> ChangeEngineer
     final_output: shared.outputs.ProofEngineerTurnResult
 
@@ -143,34 +182,39 @@ review AcceptanceReview: "Acceptance Review"
     start_review: "Start Review"
         reject "The verification report still shows the seeded bug reproducing." when shared.inputs.AcceptanceFacts.issue_still_reproducible
 
-    contract_checks: "Contract Checks"
+    contract_checks: "Review Checks"
         reject contract.regression_guard when shared.inputs.AcceptanceFacts.missing_regression_proof
-        accept "The seeded bug fix clears the acceptance review contract." when contract.passes
+        accept "The bug fix passes review." when contract.passes
 
     on_accept: "If Accepted"
         current artifact shared.inputs.VerificationReportCurrent via shared.review.AcceptanceReviewComment.current_artifact
-        route "Accepted proof returns to ScopeLead for final closeout." -> ScopeLead
+        route "Send the accepted test report back to ScopeLead to finish the run." -> ScopeLead
 
     on_reject: "If Rejected"
         current artifact shared.inputs.VerificationReportCurrent via shared.review.AcceptanceReviewComment.current_artifact
-        route "Changes requested returns to ChangeEngineer for another repair pass." -> ChangeEngineer
+        route "Send the requested changes back to ChangeEngineer." -> ChangeEngineer
 
 
-agent AcceptanceCritic:
-    role: "Core job: review the current verification record, give findings first, and route exactly one next owner."
+agent AcceptanceCritic[rally.base_agent.RallyManagedBaseAgent]:
+    role: "Core job: review the current test report, start with findings, and choose exactly one next owner."
     your_job: roles.acceptance_critic.AcceptanceCriticJob
     review: AcceptanceReview
-    inputs: "Inputs"
-        shared.inputs.RepairPlanCurrent
-        shared.inputs.VerificationReportCurrent
-        shared.inputs.AcceptanceFacts
+    inherit rally_contract
+    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
+        inherit rally_base_dir
+        inherit rally_run_id
+        inherit rally_flow_code
+
+        repair_plan_current: "Repair Plan Current"
+            shared.inputs.RepairPlanCurrent
+
+        verification_report_current: "Verification Report Current"
+            shared.inputs.VerificationReportCurrent
+
+        acceptance_facts: "Acceptance Facts"
+            shared.inputs.AcceptanceFacts
     outputs: "Outputs"
         shared.review.AcceptanceReviewComment
         shared.outputs.AcceptanceCriticTurnResult
-        rally.notes.RallyIssueNote
-        rally.handoffs.RallyCurrentArtifactHandoff
-    skills: "Skills"
-        can_run: "Can Run"
-            skill repo_search: shared.skills.RepoSearchSkill
-                requirement: Required
+    skills: AcceptanceCriticSkills
     final_output: shared.outputs.AcceptanceCriticTurnResult

@@ -1,12 +1,12 @@
-workflow AcceptanceReviewContract: "Acceptance Review Contract"
+workflow AcceptanceReviewContract: "Acceptance Checks"
     seeded_bug_fixed: "Seeded Bug Fixed"
         "Confirm the verification record shows that page 1 now includes the first issue."
 
     regression_guard: "Regression Guard"
-        "Confirm the verification record includes the deterministic local test command and its result."
+        "Confirm the report includes the local test command and its result."
 
     repair_scope: "Repair Scope"
-        "Confirm the change stayed on the narrow repair seam named in the repair plan."
+        "Confirm the change stayed inside the fix named in the repair plan."
 
 
 output AcceptanceReviewComment: "Acceptance Review Comment"
@@ -15,29 +15,29 @@ output AcceptanceReviewComment: "Acceptance Review Comment"
     requirement: Required
 
     verdict: "Verdict"
-        "Say whether the review accepted the verification record or requested changes."
+        "Say whether the review accepts the test report or asks for changes."
 
     reviewed_artifact: "Reviewed Artifact"
-        "Name the reviewed artifact this review judged."
+        "Name the file this review judged."
 
     findings_first_summary: "Findings First Summary"
-        "Lead with the reviewer findings, then say what decision follows from them."
+        "Start with the findings, then say what decision follows."
 
     output_contents_that_matter: "Output Contents That Matter"
-        "Summarize the exact parts of the repair plan and verification record the next owner should read first."
+        "Summarize the exact parts of the repair plan and test report the next person should read first."
 
     current_artifact: "Current Artifact" when present(current_artifact):
-        "Name the verification record that remains current after this review outcome."
+        "Name the test report that still matters after this review."
 
     next_owner: "Next Owner"
-        "Name {{ScopeLead}} when the review accepts and {{ChangeEngineer}} when the review requests changes."
+        "Name {{ScopeLead}} when the review accepts and {{ChangeEngineer}} when it asks for changes."
 
     failure_detail: "Failure Detail" when verdict == ReviewVerdict.changes_requested:
         failing_gates: "Failing Gates"
-            "Name every failing review gate in authored order."
+            "Name every failed check in order."
 
     trust_surface:
         current_artifact when present(current_artifact)
 
     standalone_read: "Standalone Read"
-        "A downstream owner should be able to read this comment alone and understand the findings, the verdict, the verification artifact that remains current, who owns next, and what to read now."
+        "A later reader should be able to read this comment alone and know the findings, the verdict, which test report still matters, who goes next, and what to read first."

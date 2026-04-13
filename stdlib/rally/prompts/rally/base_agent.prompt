@@ -1,0 +1,65 @@
+output shape RallyEnvText: "Rally Env Text"
+    kind: PlainText
+
+
+input RallyBaseDir: "Rally Base Dir"
+    source: EnvVar
+        env: "RALLY_BASE_DIR"
+    shape: DirectoryPath
+    requirement: Required
+    "Read this environment variable as the absolute path to the Rally repo root."
+
+
+input RallyRunId: "Rally Run ID"
+    source: EnvVar
+        env: "RALLY_RUN_ID"
+    shape: RallyEnvText
+    requirement: Required
+    "Read this environment variable as the active Rally run id."
+
+
+input RallyFlowCode: "Rally Flow Code"
+    source: EnvVar
+        env: "RALLY_FLOW_CODE"
+    shape: RallyEnvText
+    requirement: Required
+    "Read this environment variable as the active Rally flow code."
+
+
+skill RallyKernelSkill: "rally-kernel"
+    purpose: "Use the shared Rally kernel skill to leave notes and end the turn with valid JSON."
+
+    use_when: "Use When"
+        "Use this when a note should still matter after the current turn."
+        "Use this when the turn needs the shared Rally rules for valid final JSON."
+
+
+inputs RallyManagedInputs: "Inputs"
+    rally_base_dir: "Rally Base Dir"
+        RallyBaseDir
+
+    rally_run_id: "Rally Run ID"
+        RallyRunId
+
+    rally_flow_code: "Rally Flow Code"
+        RallyFlowCode
+
+
+skills RallyManagedSkills: "Skills"
+    skill rally_kernel: RallyKernelSkill
+        requirement: Required
+        reason: "Rally provides this skill on every Rally-managed turn."
+
+
+abstract agent RallyManagedBaseAgent:
+    abstract role
+
+    rally_contract: "Rally Contract"
+        "Rally owns the run home, the note path, and the final JSON rules for this turn."
+        "Use final JSON for `handoff`, `done`, `blocker`, or `sleep`."
+        "Use the shared `rally-kernel` skill when you need a note that should still matter after this turn."
+        "Do not edit `home/issue.md` directly."
+        "Read run identity from `RALLY_BASE_DIR`, `RALLY_RUN_ID`, and `RALLY_FLOW_CODE`."
+
+    inputs: RallyManagedInputs
+    skills: RallyManagedSkills

@@ -1,6 +1,5 @@
-import rally.handoffs
+import rally.base_agent
 import rally.currentness
-import rally.notes
 import rally.turn_results
 
 
@@ -8,14 +7,14 @@ input WorkBrief: "Work Brief"
     source: Prompt
     shape: MarkdownDocument
     requirement: Required
-    "Use the prompt brief as the work description for the smoke flow."
+    "Use the prompt brief as the work description for this smoke test."
 
 
 input RoutingFacts: "Routing Facts"
     source: Prompt
     shape: JsonObject
     requirement: Required
-    "Use the routing facts that say whether the smoke should demonstrate the shared no-current local-repair path."
+    "Use the routing facts that say whether this smoke test should show the `current none` path while the same owner keeps the work."
 
 
 output RepairPlan: "Repair Plan"
@@ -23,7 +22,7 @@ output RepairPlan: "Repair Plan"
         path: "artifacts/repair_plan.md"
     shape: MarkdownDocument
     requirement: Required
-    "Write the current repair plan to a flow-owned artifact."
+    "Write the repair plan to `artifacts/repair_plan.md`."
 
 
 output PlanAuthorTurnResult: "Plan Author Turn Result"
@@ -32,8 +31,8 @@ output PlanAuthorTurnResult: "Plan Author Turn Result"
     requirement: Required
 
     purpose: "Purpose"
-        "End the plan-author turn with one structured Rally turn result."
-        "Use `handoff` with structural `next_owner` when the smoke continues to RouteRepair."
+        "End the plan-author turn with one Rally result JSON."
+        "Use `handoff` with `next_owner` when the smoke test continues to RouteRepair."
 
 
 output RouteRepairTurnResult: "Route Repair Turn Result"
@@ -42,8 +41,8 @@ output RouteRepairTurnResult: "Route Repair Turn Result"
     requirement: Required
 
     purpose: "Purpose"
-        "End the route-repair turn with one structured Rally turn result."
-        "Use `handoff` with structural `next_owner` when the no-current handoff keeps the issue local."
+        "End the route-repair turn with one Rally result JSON."
+        "Use `handoff` with `next_owner` when RouteRepair keeps the issue local."
 
 
 output CloseoutTurnResult: "Closeout Turn Result"
@@ -52,8 +51,8 @@ output CloseoutTurnResult: "Closeout Turn Result"
     requirement: Required
 
     purpose: "Purpose"
-        "End the closeout turn with one structured Rally turn result."
-        "Use `done` with `summary` to close the smoke."
+        "End the closeout turn with one Rally result JSON."
+        "Use `done` with `summary` to finish the smoke test."
 
 
 workflow PlanAuthorWorkflow[rally.currentness.RallyCarryCurrentArtifactConvention]: "Plan Author Workflow"
@@ -63,25 +62,30 @@ workflow PlanAuthorWorkflow[rally.currentness.RallyCarryCurrentArtifactConventio
     inherit pickup_rule
 
     smoke_note: "Smoke Note"
-        "This smoke keeps `artifacts/repair_plan.md` as the durable current artifact."
+        "This smoke test keeps `artifacts/repair_plan.md` as the one file that still matters."
 
     law:
-        current artifact RepairPlan via rally.handoffs.RallyCurrentArtifactHandoff.current_artifact
+        current artifact RepairPlan via rally.currentness.RallyCurrentArtifactCarry.current_artifact
 
 
-agent PlanAuthor:
-    role: "Draft the repair plan and leave one current-artifact handoff."
+agent PlanAuthor[rally.base_agent.RallyManagedBaseAgent]:
+    role: "Draft the repair plan and make it clear which file stays current."
     workflow: PlanAuthorWorkflow
-    inputs: "Inputs"
-        WorkBrief
+    inherit rally_contract
+    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
+        inherit rally_base_dir
+        inherit rally_run_id
+        inherit rally_flow_code
+
+        work_brief: "Work Brief"
+            WorkBrief
     outputs: "Outputs"
         RepairPlan
         PlanAuthorTurnResult
-        rally.notes.RallyIssueNote
-        rally.handoffs.RallyCurrentArtifactHandoff
+        rally.currentness.RallyCurrentArtifactCarry
     handoff_routing: "Handoff Routing"
         if_the_smoke_should_continue_into_route_repair: "If The Smoke Should Continue Into Route Repair"
-            route "Send the smoke issue to RouteRepair." -> RouteRepair
+            route "Send the smoke test issue to RouteRepair." -> RouteRepair
     final_output: PlanAuthorTurnResult
 
 
@@ -91,37 +95,41 @@ workflow RouteRepairWorkflow[rally.currentness.RallyNoCurrentArtifactConvention]
     inherit pickup_rule
 
     smoke_note: "Smoke Note"
-        "This smoke proves the no-current handoff path while structural routing keeps the issue local."
+        "This smoke test shows the `current none` path while the same owner keeps the work."
 
     law:
         active when RoutingFacts.needs_route_repair
         current none
-        stop "No durable artifact is current yet, so the same owner keeps the issue until repair completes."
+        stop "No file stays current yet, so the same owner keeps the issue until the fix is done."
 
 
-agent RouteRepair:
-    role: "Leave the shared no-current handoff when the smoke is only repairing locally."
+agent RouteRepair[rally.base_agent.RallyManagedBaseAgent]:
+    role: "Keep the smoke test local with `current none` when no file stays current yet."
     workflow: RouteRepairWorkflow
-    inputs: "Inputs"
-        RoutingFacts
+    inherit rally_contract
+    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
+        inherit rally_base_dir
+        inherit rally_run_id
+        inherit rally_flow_code
+
+        routing_facts: "Routing Facts"
+            RoutingFacts
     outputs: "Outputs"
         RouteRepairTurnResult
-        rally.notes.RallyIssueNote
-        rally.handoffs.RallyNoCurrentArtifactHandoff
     handoff_routing: "Handoff Routing"
         if_local_route_repair_must_continue: "If Local Route Repair Must Continue"
-            route "Keep the smoke issue with RouteRepair until repair completes." -> RouteRepair
+            route "Keep the smoke test issue with RouteRepair until the fix is done." -> RouteRepair
     final_output: RouteRepairTurnResult
 
 
 workflow CloseoutWorkflow: "Closeout Workflow"
-    "End the smoke with one terminal done result."
+    "End the smoke test with one final `done` result."
 
 
-agent Closeout:
-    role: "End the smoke with a terminal done result."
+agent Closeout[rally.base_agent.RallyManagedBaseAgent]:
+    role: "End the smoke test with a final `done` result."
     workflow: CloseoutWorkflow
+    inherit rally_contract
     outputs: "Outputs"
-        rally.notes.RallyIssueNote
         CloseoutTurnResult
     final_output: CloseoutTurnResult
