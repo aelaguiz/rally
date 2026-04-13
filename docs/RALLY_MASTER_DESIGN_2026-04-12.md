@@ -66,6 +66,7 @@ For Codex, Rally should enforce this through the adapter launch contract rather 
 
 - set `project_doc_max_bytes = 0` so Codex does not auto-discover ambient `AGENTS.md` or `AGENTS.override.md`
 - inject the compiled agent doctrine explicitly instead of relying on ambient project-doc discovery
+- inject `RALLY_RUN_ID=<run-id>` on every launched agent process so Rally-owned skills can resolve the current run honestly through the CLI
 - fail closed if Rally cannot prove what instruction surface the adapter is actually seeing
 
 Rally should explicitly ban:
@@ -169,7 +170,7 @@ The key idea is simple:
 - Doctrine owns authored agent and flow doctrine through `.prompt` files.
 - The filesystem owns the real runtime source of truth.
 - Codex CLI and similar adapters are the actual execution engines.
-- Rally is the thin runtime that runs from repo root, executes a start-of-flow home-setup script, materializes the declared agent artifacts into that home, launches adapters with an explicit contract such as `cwd`, `CODEX_HOME`, disabled ambient project-doc loading, and explicit instruction injection, injects only the allowed home-local skills and MCP definitions, resumes sessions honestly, appends handoffs, and moves work from one agent to the next.
+- Rally is the thin runtime that runs from repo root, executes a start-of-flow home-setup script, materializes the declared agent artifacts into that home, launches adapters with an explicit contract such as `cwd`, `CODEX_HOME`, disabled ambient project-doc loading, and explicit instruction injection, injects only the allowed home-local skills and MCP definitions, resumes sessions honestly, appends serialized issue notes, records normalized turn results, and routes work from one agent to the next.
 
 That is a very different center of gravity from Paperclip.
 
@@ -181,10 +182,10 @@ The current reference stack solves real problems, but it does so with more contr
 
 Paperclip proves that the following problems are real:
 
-- driving many coding agents at once needs honest ownership and handoff semantics
+- driving many coding agents at once needs honest ownership, serialized issue history, and explicit routing semantics
 - resumable sessions matter
 - skills need runtime injection and capability scoping
-- work needs a durable current artifact and a durable handoff
+- work needs a durable current artifact and a durable append-only issue history
 - execution needs strong home binding and recovery after interruption
 
 But Paperclip also brings many things we likely do not want in the center of the system:
@@ -401,9 +402,9 @@ The `agent_configs.json` idea is basically right, even if Rally should likely re
 It is useful to let an agent have one formal `AGENTS.md` contract plus any number of additional Doctrine-backed generated artifacts.
 `SOUL.md` is a reasonable convention for one of those, but Rally should not hardcode that name, meaning, or location.
 
-### 4. One current artifact, one handoff, one next owner
+### 4. One current artifact, one routed next owner
 
-That contract shape is highly reusable and should carry forward.
+That contract shape is highly reusable and should carry forward, but the route decision should live in the turn result rather than in a separate authored handoff object.
 
 ## What Rally Should Explicitly Cut
 
@@ -554,7 +555,9 @@ A durable file that can become the current artifact for a lane or run.
 
 ### Ledger
 
-The append-only run truth surface that records setup notes, agent-authored notes, handoffs, current artifact changes, ownership transitions, and runner-generated status records in a human-readable form.
+The append-only run truth surface that records setup notes, agent-authored notes, normalized final-turn response records, handoffs, current artifact changes, ownership transitions, and runner-generated status records in a human-readable form.
+It is also the only forward communication layer between agents.
+Future agents should read the ledger plus any declared current artifacts to understand what happened before their turn.
 
 ### Session Record
 
@@ -648,12 +651,14 @@ A strong starting point is:
 ### Why this shape
 
 - `flows/<flow-slug>` is durable authored source plus compiled readback.
+- each `flow.yaml` must also declare a human-readable `name` plus a validated three-letter uppercase `code`
 - `stdlib/rally/` is the Rally-owned Doctrine standard library. It lives in this repo, not in the Doctrine compiler repo.
 - `skills/` and `mcps/` are stable repo-root capability libraries, not configurable global roots.
 - `runs/<run-id>` is concrete execution state.
 - `runs/<run-id>/home/` is the only world agents live in.
 - `runs/archive/` is where closed-out runs can move once the operator archives an issue.
 - `runs/active/<flow-slug>.lock` is the simple v1 enforcement point for one active run per flow.
+- `<run-id>` means the full prefixed run id such as `FLW-1` or `CDR-342`, not the bare per-flow counter alone
 - `home/issue.md` starts with the operator's brief exactly as entered and then grows append-only from there.
 - `issue_history/` stores full-copy backups of `home/issue.md` after every Rally-owned ledger append so the run can be read archaeologically over time.
 - numbered agent directory names make canonical flow position visible in logs, snapshots, and session records.
@@ -680,9 +685,13 @@ The later Codex adapter section is the Rally-owned implementation contract for t
 For Codex, the minimum required contract is:
 
 - `CODEX_HOME=<flow-home>`
+- `RALLY_RUN_ID=<run-id>` injected by the Rally launch harness on every turn
 - `project_doc_max_bytes = 0`
 - explicit injection of the compiled agent doctrine through Codex's explicit instructions channel
 - explicit `cwd` chosen by Rally
+
+This is not optional convenience.
+The always-present Rally issue skill depends on the launch harness injecting `RALLY_RUN_ID` so `rally issue note` can resolve the live run and `home/issue.md` without trusting a guessed path.
 
 The runtime should reject or ignore any attempt to add instruction prose from:
 
@@ -718,7 +727,9 @@ The user intent is clear: the filesystem should own the truth, and a run should 
 
 The best current interpretation is:
 
-- `home/issue.md` should be the semantic source of truth for the run's setup notes, agent notes, handoffs, and runner status records.
+- `home/issue.md` should be the semantic source of truth for the run and the only agent-to-agent communication layer.
+- every forward communication that one agent leaves for later agents should land in `home/issue.md`: setup notes, agent-authored notes, normalized final-turn response records, handoffs, and runner-generated status records.
+- future agents should read the latest `home/issue.md` and any declared current artifacts to understand what is going on, rather than reconstructing prior turns from `state.yaml`, event logs, session sidecars, or adapter-private residue.
 - it should start with the operator's human-authored brief exactly as entered, with nothing prepended above it
 - Rally, the setup script, and later agents may only append after that starting brief
 - after each Rally-owned ledger append, Rally should write a full-copy backup of the current `home/issue.md` into `runs/<run-id>/issue_history/`
@@ -754,29 +765,35 @@ We should not try to fully author that standard library in this doc.
 What it should minimally define is the smallest shared Doctrine contract that keeps Rally flows disciplined without turning the standard library into a second framework inside the framework.
 
 The first job of the standard library is not a universal artifact taxonomy.
-It is a small portable issue-ledger, currentness, and handoff convention:
+It is a very small Rally kernel contract:
 
 - productive turns emit explicit Doctrine `output` artifacts
-- flows share one ledger-append target for durable human-readable issue notes and handoffs
+- every agent gets one always-available Rally issue skill that can append serialized durable notes into `home/issue.md`
+- every Rally-managed turn ends with one validated structured turn result
+- Rally renders that validated turn result back into `home/issue.md` so agents do not need a second communication channel to understand prior turn outcomes
 - one artifact is explicitly current when a turn ends, or the turn uses `current none`
-- that currentness is carried through a trusted handoff field
 - downstream turns read declared `input` artifacts instead of reconstructing truth from prose alone
 
-Routing control should not live in handoff prose forever.
-The desired end state is:
+This doc should now be explicit about the semantic split:
 
-- the control-plane next owner lives in the validated final turn result
-- the durable handoff block stays focused on pickup truth and human readability
-- if the issue ledger shows the next owner for humans, Rally should stamp or derive it from the final turn result rather than trusting a second independently authored routing field
+- there is no such thing as a human handoff
+- there is no separate authored handoff object
+- there are only in-order serialized notes written through a Rally-owned capability
+- and the end-of-turn control result that tells Rally whether to route, stop, block, or sleep
+
+If we keep the word `handoff` anywhere, it should only be the label of the
+route-to-next-owner branch inside the final structured turn result.
+It should not name a second authored note type, a second trust surface, or a
+second routing channel.
 
 That means the standard library should start with light-touch conventions for:
 
-- a shared issue-ledger append target
-- a shared note output shape for durable context that is not itself routing or currentness truth
-- shared handoff output shape for turns that leave one current artifact
-- shared handoff output shape for route-only or blocked turns that leave no current artifact
-- a trusted `current_artifact` carrier field and the currentness law that uses it
-- the minimal companion fields that make the handoff readable on its own, such as what changed and what to use now, plus optional rendered next-owner text derived from the final turn result when helpful for humans
+- one required Rally issue skill that is injected into every agent home
+- one tiny shared `rally.turn_results` final-output module for the machine turn result
+- the rule that issue-log notes are durable context, not routing truth
+- the rule that routing truth lives only in the validated final turn result
+- the rule that Rally, not agent-authored prose, owns materialization order in `home/issue.md`
+- the currentness law that preserves one current artifact or `current none`
 
 The standard library should not standardize every artifact body.
 It should not bless one framework-level plan, report, or similar universal file shape.
@@ -790,27 +807,32 @@ The standard library does not need a giant universal input model to make this wo
 
 ### Current Standard Library Shape
 
-The authored Rally half of this design is now implemented in this repo.
+The checked-in Rally surfaces currently still reflect the earlier
+Doctrine-output approach for notes and handoffs.
+This doc is now saying that approach should be narrowed.
 
-What is done today:
+What should survive from the current work:
+
+- `stdlib/rally/prompts/rally/turn_results.prompt`
+- `stdlib/rally/schemas/rally_turn_result.schema.json`
+- `stdlib/rally/examples/rally_turn_result.example.json`
+- a mandatory Rally kernel skill under `skills/` that every agent gets
+- `flows/_stdlib_smoke/prompts/AGENTS.prompt` or its replacement wired to `final_output:`
+
+What should be treated as transitional and cut back:
 
 - `stdlib/rally/prompts/rally/issue_ledger.prompt`
 - `stdlib/rally/prompts/rally/handoffs.prompt`
 - `stdlib/rally/prompts/rally/notes.prompt`
-- `stdlib/rally/prompts/rally/currentness.prompt`
-- `stdlib/rally/prompts/rally/turn_results.prompt`
-- `stdlib/rally/schemas/rally_turn_result.schema.json`
-- `stdlib/rally/examples/rally_turn_result.example.json`
-- `flows/_stdlib_smoke/prompts/AGENTS.prompt` wired to `final_output:`
+- any design that makes a note or handoff an authored Doctrine output target rather than a Rally-owned capability
 
 What that means:
 
-- Rally now has one shared authored issue-ledger append target
-- Rally now has one shared authored handoff/currentness surface
-- Rally now has one tiny shared authored issue-note surface
-- Rally now has one tiny shared authored final-turn result contract surface
-- the smoke flow proves the authored shape compiles with shared notes, handoffs, and `final_output:` on concrete agents
-- that authored shape was compile-checked against the local Doctrine branch carrying `final_output` support
+- Rally should keep one tiny shared authored final-turn result contract surface
+- Rally should stop pretending that note-writing is best modeled as a Doctrine output target
+- Rally should stop modeling a separate authored handoff artifact at all
+- the smoke flow should prove strict final-output compilation plus the always-present Rally issue capability, not a second handoff output contract
+- the current checked-in doctrine-output experiment was still useful because it clarified that `final_output:` is the right control-plane surface and that the note and handoff materialization problem belongs in Rally
 
 Doctrine route-output support has now landed locally as well:
 
@@ -826,34 +848,32 @@ Doctrine route-output support has now landed locally as well:
 That changes the Rally routing plan from "wanted future direction" to "ready
 to implement when the runtime work begins":
 
-- the authored handoff surface should stop being the control-plane routing source
 - `rally.turn_results` should carry routing truth through the final JSON
   contract
-- the durable handoff ledger block should become a separate human pickup record
-  that may render next-owner text derived from the routed final result when
-  useful for readers
+- any durable note text in the issue log should be written through a Rally-owned capability, not by pretending there is a second routing artifact
+- if Rally wants a route-facing summary line in the issue log, Rally should stamp it from the routed final result
 
 What is not done yet:
 
 - Rally runner-side consumption of the final turn result
 - adapter-side schema injection and result dispatch
-- ledger append ordering and note / handoff / closeout / blocker / sleep runtime behavior
+- the always-present Rally issue skill and its write path into `home/issue.md`
+- ledger append ordering for note / turn-result / closeout / blocker / sleep runtime behavior
 
 The current implemented standard library stays intentionally small.
 
 Likely source layout:
 
 ```text
+skills/
+  rally-issue/
+    SKILL.md
 stdlib/
   rally/
     examples/
       rally_turn_result.example.json
     prompts/
       rally/
-        issue_ledger.prompt
-        handoffs.prompt
-        notes.prompt
-        currentness.prompt
         turn_results.prompt
     schemas/
       rally_turn_result.schema.json
@@ -862,92 +882,78 @@ stdlib/
 With the assumed Doctrine cross-root import contract, `stdlib/rally/prompts/`
 is the configured additional prompt root and `stdlib/rally/prompts/rally/` is
 the actual importable package path. Future flows therefore import
-`rally.issue_ledger`, `rally.handoffs`, `rally.notes`, `rally.currentness`,
-and `rally.turn_results`.
+`rally.turn_results` for the machine turn result and rely on the mandatory
+Rally issue skill for serialized issue-log writes.
 
 What those modules should roughly own:
 
-- `issue_ledger.prompt`
-  - the Rally-owned output target for appending durable issue-ledger content into the live issue ledger
-  - the generic append contract shared by setup notes, agent notes, handoffs, and runner-generated status records
-
-- `handoffs.prompt`
-  - one shared output shape for turns that leave one current artifact
-  - one shared output shape for route-only, blocked, or review turns that leave no current artifact
-  - the minimal shared fields: what changed, current artifact when one exists, and what to use now
-  - if the issue ledger renders next-owner text for humans, that text should eventually be derived from the final turn result rather than trusted as an independently authored routing field
-  - the trusted carrier fields that downstream turns may rely on
-
-- `notes.prompt`
-  - one small shared note output for durable context that should survive into the issue ledger
-  - no trusted routing or currentness fields
-  - guidance that notes are for preserved context, not for smuggling handoff truth
-
-- `currentness.prompt`
-  - the reusable convention for `current artifact ... via ...`
-  - the reusable convention for `current none`
-  - any very small helper workflows or declarations needed so Rally flows do not hand-author the carrier pattern from scratch every time
+- `skills/rally-issue/SKILL.md`
+  - the Rally-owned capability for reading the current issue log
+  - the Rally-owned capability for appending durable serialized notes into the live issue ledger
+  - the only agent-facing write surface for forward communication outside the final turn result
+  - requires harness-injected `RALLY_RUN_ID` so note writes resolve the current run through Rally-owned code rather than direct filesystem guesses
+  - no trusted routing field and no second control plane
 
 - `turn_results.prompt`
   - the shared JSON-schema-backed final turn result shape for Rally-managed turns
   - the minimal tagged runtime outcome union Rally expects from the adapter
-  - the control-plane routing field for handoff outcomes
-  - no durable handoff prose, no ledger target, and no scheduler keywords
+  - the control-plane routing field for route-to-next-owner outcomes
+  - no serialized note prose, no ledger target, and no scheduler keywords
+
+- currentness helpers if they survive
+  - the reusable convention for `current artifact ...`
+  - the reusable convention for `current none`
+  - no dependence on a separate authored handoff carrier
 
 The intended usage pattern is:
 
 - a flow declares its own concrete artifact outputs
 - that same flow declares its own `TurnResponse` final output using the shared `rally.turn_results` JSON shape
-- any turn may also emit the shared `rally.notes.RallyIssueNote` when durable context matters for later readers
-- that same flow reuses the Rally stdlib handoff output
-- the producing turn carries one current artifact through the stdlib handoff carrier
+- any turn may use the mandatory Rally issue skill when durable context matters for later readers
 - the downstream turn declares the artifact it depends on as an explicit input
-- route-only or blocked turns use the stdlib no-current handoff plus `current none`
+- route-only or blocked turns use `current none` plus the final structured turn result
 
 That means a flow-owned artifact might be something like an analysis note, implementation artifact, verification artifact, or acceptance artifact.
 The Rally standard library does not decide that artifact's body or filename.
 It only decides how the turn carries forward current truth about that artifact.
 
-The intended authored shape should be roughly:
+The intended shape should be roughly:
 
 ```text
 flow-owned output artifact
-  + stdlib handoff output
-  + stdlib currentness convention
+  + optional serialized issue notes via Rally skill
+  + strict final turn result
   = portable pickup truth for the next owner
 ```
 
 That is enough structure for the first example flows.
 It gives Rally strong output and pickup discipline without locking the whole framework into a giant predeclared artifact system.
 
-### Handoffs Versus Notes Versus End-Of-Turn Results
+### Serialized Notes Versus End-Of-Turn Results
 
 Decision:
-Rally will use three separate surfaces, not one overloaded lifecycle surface.
+Rally will use two forward-communication primitives and only two:
 
-Handoffs are durable issue-ledger content for the next owner.
-They live in the Doctrine-authored Rally standard library and should answer:
-
-- what changed
-- what artifact is current now when one exists
-- what to use now
-- any optional rendered next-owner text for human readability
+- in-order serialized notes written through a Rally-owned issue capability
+- one end-of-turn control result
 
 Notes are optional durable issue-ledger context.
-They also live in the Doctrine-authored Rally standard library and should answer:
+They should answer:
 
 - what context is worth preserving for a downstream owner or a later turn of the same owner
 - why that context matters
 
-They are not trusted routing or currentness carriers.
-Currentness belongs in the handoff/currentness surfaces, not in notes.
+They are not trusted routing carriers.
+There is no such thing as a human handoff and there is no separate authored handoff artifact.
+If the issue log contains route-facing prose, Rally should stamp it from the validated turn result rather than trusting an agent-authored parallel object.
 Routing belongs in the final turn result, not in notes.
-They must not replace a handoff, and Rally must not interpret them as control-flow or pickup truth.
+Notes are durable context only.
 
 End-of-turn results are the turn-ending assistant response contract.
-They are not issue-ledger prose and they are not part of the handoff/currentness contracts.
 They tell Rally what runtime action to take after the agent turn ends.
-For handoff outcomes, they should also tell Rally exactly who owns next.
+They are machine-shaped first, but they are not allowed to become a second hidden communication plane.
+Rally should validate the final turn result and then append a normalized record of that result into `home/issue.md` so later agents can read the same turn outcome in the single communication log.
+For route-to-next-owner outcomes, they should also tell Rally exactly who owns next.
 
 Doctrine now gives Rally the generic route-reading substrate it needs for this:
 
@@ -958,8 +964,8 @@ Doctrine now gives Rally the generic route-reading substrate it needs for this:
   branches do not route
 - for machine routing, Rally should bind from `route.next_owner.key`, not
   `route.next_owner` or `route.next_owner.title`
-- `route.next_owner.title` and `route.summary` remain useful for human-readable
-  ledger prose or rendered readback
+- `route.next_owner.title` and `route.summary` remain useful when Rally renders
+  human-readable runtime readback into the issue log
 
 Rally should still keep one tiny shared authored module for this contract so
 flows do not drift.
@@ -978,7 +984,7 @@ Rally's policy layer is stricter:
 - that final output must be backed by a JSON schema
 - Rally passes that schema to the adapter as the required final turn contract
 - Rally interprets the returned JSON into runtime behavior
-- when `kind` is `handoff`, that JSON must carry the exact `next_owner` Rally will route to
+- when `kind` is the route-to-next-owner branch, that JSON must carry the exact `next_owner` Rally will route to
 - that `next_owner` value should be the structural Doctrine agent key emitted
   from `route.next_owner.key`
 
@@ -991,22 +997,23 @@ Free-form final text is insufficient for end-of-turn control flow.
 The minimum tagged outcome family should be:
 
 - `handoff`
-  - the turn produced a normal same-issue handoff result
-  - the final JSON says that Rally should take the handoff path and names the exact `next_owner`
+  - this is just the route-to-next-owner branch of the final turn result
+  - it is not a second authored handoff object
+  - the final JSON says that Rally should route and names the exact `next_owner`
   - Rally routes from that schema-validated field
-  - Rally appends the separate authored handoff block to `home/issue.md` as the durable pickup record rather than as the control-plane route source
+  - Rally appends a normalized final-response record to `home/issue.md`
 - `done`
   - the flow is complete
-  - Rally appends a Rally-generated final closeout block and marks the run done
+  - Rally appends the validated final response and a Rally-generated final closeout block to `home/issue.md`, then marks the run done
 - `blocker`
   - the flow is ending in blocker or error state
-  - Rally appends a Rally-generated blocker record and stops the run cleanly
+  - Rally appends the validated final response and a Rally-generated blocker record to `home/issue.md`, then stops the run cleanly
 - `sleep`
   - the flow is not done and wants the runner to wake it again later
-  - Rally records the request, blocks inline in the simple model, and later wakes the same flow again
+  - Rally appends the validated final response to `home/issue.md`, records the request, blocks inline in the simple model, and later wakes the same flow again
 
-If a turn emits both a note and a handoff, Rally should append the note first and the handoff second.
-That keeps the handoff as the terminal pickup record for that turn while still preserving the extra context note in the same ledger.
+If a turn emits a note, Rally should append the note before the normalized final-response record.
+That preserves the in-order issue history without inventing a separate handoff artifact class.
 
 The important rule is that this surface should be machine-shaped, not
 prose-shaped.
@@ -1113,7 +1120,8 @@ The flow ends when it ends, and it does so through the mandatory Doctrine-native
 It likely needs:
 
 ```yaml
-name: core-dev
+name: Core Dev Repair
+code: CDR
 start_agent: 01_core_dev_lead
 setup_home_script: setup/prepare_home.sh
 agents:
@@ -1140,6 +1148,25 @@ runtime:
 ```
 
 The key point is that this file should declare runtime availability, not authored semantic preference or extra instruction prose.
+
+Each flow should have two stable identities:
+
+- the directory slug such as `core-dev`, which is the durable machine-facing flow key used in paths like `flows/<flow-slug>/`
+- the required declared `name` and `code` in `flow.yaml`, where:
+  - `name` is the human-readable flow title Rally shows to operators
+  - `code` is the validated three-letter uppercase short code used as the run-id prefix
+
+The validation rule for `code` should be simple:
+
+- exactly three uppercase ASCII letters
+- unique across all flows in the repo
+- required for every runnable flow
+
+Examples:
+
+- `FLW`
+- `CDR`
+- `BUG`
 
 Each agent entry should have a required timeout setting.
 That timeout is part of the runtime contract, not an optional hint.
@@ -1183,23 +1210,42 @@ Provisional v1 shape:
 Likely fields:
 
 ```yaml
-id: 2026-04-12T14-30-00Z-core-dev-fix-abc
-flow: core-dev
+id: CDR-342
+number: 342
+flow:
+  slug: core-dev
+  name: Core Dev Repair
+  code: CDR
 status: active
 started_at: 2026-04-12T14:30:00Z
 current_owner: 02_bugfix_engineer
 current_artifact: artifacts/fix-plan.md
 home:
-  path: runs/2026-04-12T14-30-00Z-core-dev-fix-abc/home
+  path: runs/CDR-342/home
 adapter:
   type: codex
 ```
 
 This is the compact machine summary of the run identity, not the append-only narrative.
 
+Run numbering should be per flow:
+
+- each flow's counter starts at `1`
+- each new run of that flow increments by `1`
+- the full run id is `<FLOW_CODE>-<number>`
+
+Examples:
+
+- the first run of flow code `FLW` is `FLW-1`
+- the three-hundred-forty-second run of flow code `CDR` is `CDR-342`
+
+The bare number is not a stable global identifier.
+When this doc says `<run-id>`, it means the full prefixed id such as `CDR-342`.
+
 ## Proposed `issue.md`
 
 `home/issue.md` should be the primary human-readable run record.
+It should also be the only forward communication layer between agents.
 
 It should begin with the operator's brief exactly as typed.
 Rally should not prepend a generated header, YAML frontmatter, or machine metadata above that brief.
@@ -1207,7 +1253,7 @@ Rally should not prepend a generated header, YAML frontmatter, or machine metada
 After the initial brief exists, the file grows append-only.
 Rally may append structured sections after the brief.
 The setup script may append flow-specific runtime notes after the brief.
-Agents may append notes or handoffs after that.
+Rally should record every agent-authored forward communication in this file after that: serialized notes and normalized final-turn response records.
 After each Rally-owned append, Rally should snapshot the full file into `runs/<run-id>/issue_history/`.
 
 Possible shape:
@@ -1230,21 +1276,36 @@ We need a real fix, not a band-aid.
 The upgrade crash only reproduced on the iOS happy path after a stale session restore.
 If a later turn sees auth noise again, check the last resume edge before reopening the whole purchase flow.
 
-## Handoffs
+## Turn Responses
 
-### 2026-04-12T14:41:10Z - 01_core_dev_lead -> 02_bugfix_engineer
+### 2026-04-12T14:41:08Z - 01_core_dev_lead
 
-Current Artifact: artifacts/fix-plan.md
-What Changed:
-...
-What To Use Now:
-...
-Next Owner: 02_bugfix_engineer
+Kind: handoff
+Next Owner Key: 02_bugfix_engineer
+Runtime Meaning: wake `02_bugfix_engineer` in the same run home
+
+## Turn Responses
+
+### 2026-04-12T15:05:44Z - 04_acceptance_critic
+
+Kind: done
+Summary: The verification record clears the acceptance gate and the run can close.
 ```
 
 This file should stay readable and editable by humans.
 Its top should always remain the operator-authored brief, not Rally-generated metadata.
 The history copies are for archaeology; `home/issue.md` remains the live truth surface.
+Future agents should read the latest `home/issue.md` first when they need to understand prior turns.
+`run.yaml`, `state.yaml`, `logs/events.jsonl`, and session sidecars exist for orchestration and archaeology, not as a second communication layer for agents.
+
+Examples of how the single-log communication model should work:
+
+- Route-to-next-owner turn:
+  the agent writes or updates artifacts, Rally records any optional note, and Rally then records the structured final response that says `kind: handoff` and names the structural `next_owner`. That is the route decision. There is no second authored handoff object.
+- Done turn:
+  Rally records the structured final response that says `kind: done` plus the terminal summary in `home/issue.md`; a later reader does not need to inspect `state.yaml` to know how the run ended.
+- Blocker or sleep turn:
+  Rally records the structured final response in `home/issue.md` and then records the blocker or sleep status there as the human-readable continuation or stop record.
 
 ## Run Lifecycle
 
@@ -1257,11 +1318,11 @@ The happy path should look like this:
 5. The setup script receives the path to `home/issue.md`, prepares `runs/<run-id>/home/` exactly how the flow expects, including repos, worktrees, env files, and any other non-instruction runtime assets, and may append setup notes to the end of `home/issue.md`.
 6. Rally copies each agent's compiled build output into that run's home, then materializes the allowed skills and MCP definitions inside that home.
 7. Rally starts per-run event capture and invokes the start agent through the chosen adapter, using an initial wake for a fresh session or a resume envelope for a compatible existing one.
-8. The agent writes artifacts and may append a durable note and or a handoff entry to `home/issue.md`.
-9. If a turn emits both a note and a handoff, Rally appends the note first and the handoff second.
+8. The agent writes artifacts, may append serialized notes through the Rally issue capability, and emits one structured final turn result.
+9. Rally appends those communication records into `home/issue.md` in one place: note first when present, normalized final-turn response second.
 10. After each Rally-owned ledger append, Rally writes a timestamped full-copy backup of `home/issue.md` into `runs/<run-id>/issue_history/`.
 11. Rally updates `state.yaml`, current owner, current artifact, and session sidecars.
-12. The next agent runs in the same prepared home, again using that agent's own compatible resumed session when possible and an initial wake otherwise.
+12. The next agent runs in the same prepared home, again using that agent's own compatible resumed session when possible and an initial wake otherwise, and it reads the latest `home/issue.md` plus declared current artifacts to understand the prior turn.
 13. The flow eventually emits one structured final turn result such as `blocker`, `done`, or `sleep`, and Rally responds accordingly.
 
 At a high level:
@@ -1328,8 +1389,8 @@ Proposed primary commands:
 
 ```bash
 rally run <flow> <issue-file>
-rally resume <run-id>
-rally archive <run-id>
+rally resume <FLOW_CODE>-<n>
+rally archive <FLOW_CODE>-<n>
 ```
 
 ### `rally run`
@@ -1610,7 +1671,7 @@ That message should say, in effect:
 
 - you are being woken for the first time on this run
 - this is your prepared home
-- `home/issue.md` is the live truth surface
+- `home/issue.md` is the live truth surface and the only forward communication log between agents
 - follow `AGENTS.md`, any Doctrine-backed generated artifacts it explicitly references, and the latest issue state
 
 ### Resume
@@ -1622,7 +1683,7 @@ That message should say, in effect:
 - you have been woken up again
 - you were resumed by `<previous-owner-agent-id>`
 - since you were last woken, these agents operated: `<agent-id list>`
-- check the latest `home/issue.md`
+- check the latest `home/issue.md` first because that is where prior agents left notes, handoffs, and normalized turn outcomes
 - continue following `AGENTS.md`, any Doctrine-backed generated artifacts it explicitly references, and the latest issue state
 
 The important point is that Rally is not inventing new authored instructions here.
@@ -2029,6 +2090,7 @@ Keep the numbered-directory convention.
 Treat the number as canonical authored identity only.
 Never let Rally infer real execution order from numbering, file order, or roster order.
 Execution should always come from explicit routes and the validated final turn result, not from numbering, file order, roster order, or handoff prose.
+Execution should not depend on any separate authored handoff object because there should not be one.
 
 The precise Rally routing algorithm should be:
 
@@ -2038,25 +2100,23 @@ The precise Rally routing algorithm should be:
 4. If `kind == handoff`, Rally reads `next_owner` from the validated JSON.
 5. Rally treats that value as the structural Doctrine agent key, not a title.
 6. Rally resolves that key against the compiled flow roster for the same run.
-7. Rally appends the separate authored handoff ledger block for pickup context.
+7. Rally appends a normalized final-response record to `home/issue.md` so later agents can read the same outcome in the single communication log.
 8. Rally updates run state and wakes the resolved next owner in the same home.
 
 If the final JSON names an unknown owner key, Rally should fail loud instead of
 guessing from titles or handoff prose.
 
-### 8. Handoffs Must Be Structured And Readable On Their Own
+### 8. Serialized Notes Must Be Structured And Readable On Their Own
 
 Design consideration:
 The next owner should not need to reconstruct state from scattered side files.
 
 Suggested solution:
-Put the default handoff block shape in the Rally standard library.
-Require Rally flows and agents to inherit that default shape, while still allowing narrow flow-specific extension where needed.
-Every handoff should be self-contained enough that the next agent can continue from the issue alone.
-At minimum, it should carry current artifact, what changed, and what to use now.
-If the issue ledger shows next-owner text for humans, Rally should stamp or derive that from the validated final turn result rather than trusting it as a second control-plane field.
-The handoff should carry the current artifact truth and pickup contract, not replace the artifact itself.
-Downstream agents should still read declared artifact inputs rather than treating handoff prose as the full source of truth.
+Put the default serialized-note contract behind a Rally-owned issue capability, not a second Doctrine output target.
+Require Rally flows and agents to use that one capability for durable note writes.
+Every note should be self-contained enough that a later reader can understand the preserved context from the issue log alone.
+If the issue log shows route-facing prose for humans, Rally should stamp or derive that from the validated final turn result rather than trusting it as a second control-plane field.
+Downstream agents should still read declared artifact inputs rather than treating issue prose as the full source of truth.
 
 ### 9. Currentness Must Be Typed, Not Just Described
 
@@ -2283,12 +2343,12 @@ It is not something Rally should assume from defaults.
 
 Status:
 the authored standard-library half of this phase is now done in this repo.
+The note and handoff parts of that authored surface should be treated as provisional because Phase 3 will pivot them into a Rally-owned issue capability.
 
 What is implemented:
 
-- shared handoff output shape for one-current-artifact turns
-- shared handoff output shape for `current none` turns
-- trusted currentness carrier convention
+- provisional shared note and handoff output shapes that clarified the problem
+- provisional currentness carrier convention tied to that earlier approach
 - one tiny shared `rally.turn_results` final-output contract module
 - schema and example assets for that shared final-output contract
 - the import and composition pattern Rally flows use to adopt those conventions
@@ -2296,12 +2356,13 @@ What is implemented:
 
 What remains in this phase:
 
-- Rally runner-side loading of the resolved `final_output` contract from Doctrine
-- adapter-side schema injection such as Codex `final_output_json_schema`
-- runtime dispatch of `handoff`, `done`, `blocker`, and `sleep`
+- no additional Phase 1 work
+- the note and handoff surfaces are intentionally revisited in Phase 3
+- runtime execution belongs to Phase 4
 
-The authored doctrine surface is now locked enough to move on to runtime wiring.
-The remaining work is runtime and adapter integration, not more stdlib shape invention.
+The surviving authored doctrine surface is now locked enough to move on.
+The `turn_results` contract should carry forward.
+The note and handoff half should not harden further before the Phase 3 pivot.
 
 ### Phase 2: Build One Single-Repo Repair Flow
 
@@ -2325,7 +2386,7 @@ What is implemented:
 What remains in this phase:
 
 - no additional authored surfaces
-- runtime execution belongs to Phase 3
+- runtime execution belongs to Phase 4
 
 After the standard library exists, build one enduring illustrative flow around a seeded bug in a small sample repo.
 
@@ -2354,7 +2415,7 @@ Use four generic agents with numbered directories so the authored order is obvio
   - works in `home/repos/<sample-repo>`
   - makes the code change
   - runs small local checks
-  - hands off the current basis clearly
+  - records the current basis clearly
 - `03_proof_engineer`
   - runs deterministic verification
   - writes `artifacts/verification.md`
@@ -2373,8 +2434,8 @@ The example flow should be authored so later runtime work can prove all of these
 - Rally copies that build output into `runs/<run-id>/home/agents/...` with no handwritten overlay docs
 - `flow.yaml` is the runtime contract for numbered agents, per-agent timeouts, allowed skills, at least one allowed MCP, and explicit Codex launch settings
 - `setup/prepare_home.sh` is the contract for preparing the only world the agents see, including the target repo, any needed setup artifacts, `home/issue.md`, home-local skills, and home-local MCP config
-- the run keeps one live semantic ledger in `home/issue.md`, starting with the operator brief exactly as entered and appending setup notes and handoffs after that
-- handoffs stay structured and durable rather than chatty, carrying fields equivalent to what changed, use now, current basis, proof location, and next owner
+- the run keeps one live semantic ledger in `home/issue.md`, starting with the operator brief exactly as entered and appending setup notes, serialized notes, and normalized final-turn response records after that
+- Rally never invents a second authored handoff artifact; route truth comes from the final turn result and durable context comes from serialized notes
 - one owner is active at a time, and the next owner can pick up from the run home plus the ledger without hidden state
 - the flow uses real current artifacts, not just the mutable repo, with `artifacts/repair_plan.md` and `artifacts/verification.md` as the first concrete examples
 - proof is independent from implementation
@@ -2395,16 +2456,66 @@ Keep the first enduring example flow deliberately narrow:
 The MVP bar remains the same in spirit:
 once the runtime catches up to these two phases, someone should be able to open one run directory and understand exactly what was asked, what home was prepared, what each agent saw, what changed, what proof ran, what the critic decided, and why the run ended, without any hidden control plane.
 
-### Phase 3: Build The First Runnable Codex Vertical Slice
+### Phase 3: Pivot Issue Communication To A Rally-Owned Skill
 
-Phase 3 is the first runtime phase.
+Proposal doc:
+[RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md](RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md)
+
+Phase 3 is the issue-communication pivot.
+Its job is to stop hardening the wrong interface before the first runnable runtime phase lands, while also landing the minimal Rally-owned note path that makes the issue skill real.
+
+The core rule for this phase is:
+there is no such thing as a human handoff.
+There is no separate authored handoff object either.
+There are only:
+
+- in-order serialized notes written through a Rally-owned issue capability
+- one structured end-of-turn result that tells Rally whether to route, stop, block, or sleep
+
+What Phase 3 owns:
+
+- define the mandatory Rally issue skill under `skills/`
+- make that skill part of the standard-library contract that every Rally agent gets
+- make the skill thin and CLI-backed rather than direct-file-backed
+- inject `RALLY_RUN_ID` into every Rally-managed agent launch
+- add the minimal `rally issue note` CLI path that resolves the run, confirms `home/issue.md`, and appends markdown as a Rally-owned ledger write
+- narrow the canonical stdlib so `rally.turn_results` survives but `issue_ledger.prompt`, `notes.prompt`, and `handoffs.prompt` stop being the favored design
+- update `_stdlib_smoke` and `single_repo_repair` so they no longer depend on authored note or handoff output targets
+- keep currentness typed without relying on a separate handoff artifact
+- make the doc, the authored prompt surfaces, and the intended runtime shape agree on this pivot before the broader runtime wiring begins
+
+This phase should stay intentionally narrow:
+
+- no runnable runtime yet
+- no full owner-routing runtime yet
+- no broad adapter integration beyond `RALLY_RUN_ID` injection
+- no broad CLI vertical slice beyond `rally issue note`
+- no second control plane
+- no broad redesign of artifact bodies or flow shapes beyond what the pivot requires
+
+Phase 3 is complete only when all of the following are true:
+
+1. The design doc says plainly that Rally has no human handoff primitive and no separate authored handoff object.
+2. The canonical Rally communication model is reduced to serialized notes plus the structured final turn result.
+3. The mandatory Rally issue capability is the only intended agent-facing write surface for durable issue communication outside the final turn result, and it teaches agents to use the Rally CLI rather than editing `issue.md` directly.
+4. Every Rally-managed agent launch receives `RALLY_RUN_ID`.
+5. The minimal `rally issue note` path exists as the canonical durable-note write surface for the current run.
+6. The shared `rally.turn_results` contract remains the only machine routing surface.
+7. `_stdlib_smoke` and `single_repo_repair` no longer require authored note or handoff output targets to express the design.
+8. The broader runnable runtime still remains deferred to the next phase instead of being mixed into this focused issue-communication pivot.
+
+### Phase 4: Build The First Runnable Codex Vertical Slice
+
+Phase 4 is the first runtime phase.
 Its job is to prove that Rally can actually execute the authored assets from Phase 1 and Phase 2 without changing those authored assets to fit a weaker runtime.
+It should also consume the authored-surface pivot from Phase 3 rather than reviving the earlier doctrine-output note model.
 
 The core rule for this phase is:
 Phase 1 and Phase 2 are inputs.
-Phase 3 is the first real runner.
+Phase 3 locks the communication pivot.
+Phase 4 is the first real runner.
 
-What Phase 3 owns:
+What Phase 4 owns:
 
 - one real CLI entrypoint for Rally
 - one real runtime package under `src/rally/`
@@ -2428,9 +2539,9 @@ This phase should stay intentionally narrow:
 - no Doctrine compile orchestration
 - no claim of stronger built-in tool isolation than Codex can actually prove
 
-#### Checked-In Repo Structure For Phase 3
+#### Checked-In Repo Structure For Phase 4
 
-Phase 3 should create the following checked-in structure:
+Phase 4 should create the following checked-in structure:
 
 ```text
 <rally-repo-root>/
@@ -2442,7 +2553,7 @@ Phase 3 should create the following checked-in structure:
       cli.py
       flow_loader.py
       run_store.py
-      issue_ledger.py
+      issue_log.py
       home_materializer.py
       event_log.py
       runner.py
@@ -2457,7 +2568,7 @@ Phase 3 should create the following checked-in structure:
     unit/
       test_flow_loader.py
       test_run_store.py
-      test_issue_ledger.py
+      test_issue_log.py
       test_home_materializer.py
       test_codex_result_contract.py
     e2e/
@@ -2522,14 +2633,14 @@ Phase 3 should create the following checked-in structure:
 Notes for this structure:
 
 - `src/rally/` is the first real Rally runtime package and should stay small.
-- `pyproject.toml` should expose a real CLI entrypoint so Phase 3 can run as `rally ...`.
+- `pyproject.toml` should expose a real CLI entrypoint so Phase 4 can run as `rally ...`.
 - `flows/single_repo_repair/fixtures/tiny_issue_service/` is a phase-local sample target repo used to exercise the runtime. It is not a framework primitive.
 - `flows/single_repo_repair/` is the authored flow from Phase 2 and remains the only required runnable flow in this phase.
 - `flows/single_repo_repair/build/` is an input to the runner in this phase, not something Rally generates.
 - `skills/repo-search/`, `skills/pytest-local/`, and `mcps/fixture-repo/` exist only to exercise allowlist materialization and adapter wiring with a tiny local surface.
 - `runs/` is runtime-created state. Only placeholder directories such as `active/` and `archive/` need to exist in git.
 
-#### Runtime-Created Run Structure For Phase 3
+#### Runtime-Created Run Structure For Phase 4
 
 For one concrete run of `flows/single_repo_repair/`, Rally should create the following runtime structure:
 
@@ -2604,8 +2715,8 @@ Notes for this runtime structure:
 - `state.yaml` is the small machine-readable current-status surface.
 - `logs/events.jsonl` is the merged structured event stream for the run.
 - `logs/agents/*.jsonl` are filtered per-agent slices.
-- `logs/adapter_launch/*.json` is the explicit proof surface for the Codex launch contract used on each turn.
-- `home/issue.md` remains the live human-readable ledger for setup notes, agent notes, handoffs, and runner-generated status records.
+- `logs/adapter_launch/*.json` is the explicit proof surface for the Codex launch contract used on each turn, including the required harness-injected `RALLY_RUN_ID`.
+- `home/issue.md` remains the live human-readable ledger for setup notes, agent notes, normalized final-turn response records, and runner-generated status records.
 - `issue_history/` stores full-file snapshots after each Rally-owned ledger append.
 - `home/artifacts/repair_plan.md` and `home/artifacts/verification.md` are the first concrete current-artifact examples for this flow.
 - `home/repos/tiny_issue_service/` is the writable working copy of the sample repo prepared by `setup/prepare_home.sh`.
@@ -2613,46 +2724,49 @@ Notes for this runtime structure:
 - `home/skills/` and `home/mcps/` are the only runtime capability surfaces Rally intentionally presents to agents.
 - adapter-owned Codex residue may also appear somewhere under `home/` because `CODEX_HOME` points there, but Rally must not depend on opaque adapter-private file names to explain the run.
 
-#### Required Behavior In Phase 3
+#### Required Behavior In Phase 4
 
-Phase 3 should prove the following behavior end to end:
+Phase 4 should prove the following behavior end to end:
 
 - `rally run single_repo_repair --brief-file flows/single_repo_repair/fixtures/briefs/single_repo_repair.md` creates a new run directory, acquires the active-flow lock, writes the operator brief to `home/issue.md`, and runs the single-repo repair flow.
 - Rally reads `flows/single_repo_repair/flow.yaml` and consumes `flows/single_repo_repair/build/agents/...` as already-compiled input.
 - `setup/prepare_home.sh` runs once, prepares `home/repos/tiny_issue_service/`, and may append setup notes below the original operator brief.
 - Rally copies the compiled agent build output into `home/agents/` and materializes only the allowlisted skills and MCP definitions into `home/skills/` and `home/mcps/`.
-- Rally launches Codex with an explicit contract on every turn: chosen `cwd`, `CODEX_HOME=<run-home>`, ambient project-doc discovery disabled, compiled doctrine injected explicitly, and the shared final-turn JSON schema attached explicitly.
+- Rally launches Codex with an explicit contract on every turn: chosen `cwd`, `CODEX_HOME=<run-home>`, harness-injected `RALLY_RUN_ID=<run-id>`, ambient project-doc discovery disabled, compiled doctrine injected explicitly, and the shared final-turn JSON schema attached explicitly.
 - Rally validates the final turn result against the shared `rally.turn_results` contract before using it for runtime behavior.
-- If a turn emits `rally.notes.RallyIssueNote`, Rally appends that note to `home/issue.md` without changing owner selection, currentness, or final-turn control behavior.
-- On `handoff`, Rally reads `next_owner` from the validated final turn result, treats it as the structural Doctrine agent key emitted from `route.next_owner.key`, resolves that key against the compiled flow roster, appends the authored handoff block to `home/issue.md`, snapshots the full ledger into `issue_history/`, updates `state.yaml`, and wakes that next owner in the same home.
-- If a turn emits both a note and a handoff, Rally appends the note first and the handoff second.
+- Rally records every forward communication from a turn into `home/issue.md`: serialized notes and normalized final-turn response records.
+- If a turn uses the Rally issue capability, Rally appends that note to `home/issue.md` without changing owner selection, currentness, or final-turn control behavior.
+- On `handoff`, Rally reads `next_owner` from the validated final turn result, treats it as the structural Doctrine agent key emitted from `route.next_owner.key`, resolves that key against the compiled flow roster, appends the normalized final-response record to `home/issue.md`, snapshots the full ledger into `issue_history/`, updates `state.yaml`, and wakes that next owner in the same home.
+- If a turn emits both a note and a route-to-next-owner final result, Rally appends the note first and the normalized final-response record second.
 - On `done` or `blocker`, Rally records the final state, preserves the run directory, and clears the active-flow lock.
 - On interruption, Rally preserves the run directory and session sidecars, and `rally resume <run-id>` continues the same run rather than creating a replacement run.
 - `sleep` support may exist in runner logic and unit coverage, but the seeded-bug end-to-end flow does not need to exercise `sleep` in this phase.
 
-#### Acceptance Criteria For Phase 3
+#### Acceptance Criteria For Phase 4
 
-Phase 3 is complete only when all of the following are true:
+Phase 4 is complete only when all of the following are true:
 
 1. `rally run single_repo_repair --brief-file flows/single_repo_repair/fixtures/briefs/single_repo_repair.md` succeeds from a clean repo state when `flows/single_repo_repair/build/` is present.
 2. During execution, Rally creates exactly one active-flow lock at `runs/active/single_repo_repair.lock`, and that lock is cleared when the run reaches `done` or `blocker`.
 3. The run directory contains `run.yaml`, `state.yaml`, `logs/events.jsonl`, `home/issue.md`, `issue_history/`, `home/agents/`, `home/skills/`, `home/mcps/`, `home/repos/tiny_issue_service/`, and `home/sessions/`.
-4. The original operator brief remains at the top of `home/issue.md`, and setup notes, agent-authored notes, and handoffs are appended below it rather than prepended above it.
-5. The run produces `home/artifacts/repair_plan.md` and `home/artifacts/verification.md`, and those artifacts are the surfaces referenced by the seeded-bug handoffs.
+4. The original operator brief remains at the top of `home/issue.md`, and setup notes, agent-authored notes, and normalized final-turn response records are appended below it rather than prepended above it.
+5. The run produces `home/artifacts/repair_plan.md` and `home/artifacts/verification.md`, and those artifacts are the surfaces referenced by the serialized issue notes and by the routed turns.
 6. After every Rally-owned ledger append, Rally writes a full-copy snapshot into `issue_history/` with a monotonic timestamped filename.
-7. `logs/adapter_launch/*.json` proves that every Codex turn used Rally-chosen `cwd`, `CODEX_HOME` rooted in the run home, disabled ambient project-doc discovery, explicit compiled-doctrine injection, and an explicit final-output JSON schema.
+7. `logs/adapter_launch/*.json` proves that every Codex turn used Rally-chosen `cwd`, `CODEX_HOME` rooted in the run home, harness-injected `RALLY_RUN_ID=<run-id>`, disabled ambient project-doc discovery, explicit compiled-doctrine injection, and an explicit final-output JSON schema.
 8. Only allowlisted skills and MCP definitions appear in `home/skills/` and `home/mcps/`; repo-root entries not named in `flow.yaml` do not appear there.
 9. A seeded-bug happy path completes through the authored ownership chain `01_scope_lead -> 02_change_engineer -> 03_proof_engineer -> 04_acceptance_critic -> 01_scope_lead` and ends in a terminal `done`.
-10. An interrupted run after at least one handoff can be completed with `rally resume <run-id>` without changing the run id, deleting prior logs, or rewriting prior ledger history.
-11. Agent-authored notes do not change routing, currentness, or final-turn control flow; they only preserve durable context in `home/issue.md`.
-12. A failure path such as invalid final JSON, missing compiled build output, missing current artifact, or attempted home escape fails loudly, preserves the run directory for archaeology, and does not silently continue.
-12. A canary ambient instruction source outside the compiled flow build output does not appear in the injected instruction payload or in the run-home agent surfaces, proving the no-side-door contract for this phase.
-13. Rally creates no Rally-owned state outside the repo root during the run. There is no hidden Rally control plane under `~/.rally`, `~/.config`, or similar global locations.
-14. Unit coverage exists for the runner branch that handles `sleep`, even though the seeded-bug end-to-end flow does not use `sleep`.
+10. An interrupted run after at least one routed turn can be completed with `rally resume <run-id>` without changing the run id, deleting prior logs, or rewriting prior ledger history.
+11. Future agents can understand prior turn-to-turn communication by reading `home/issue.md` plus declared current artifacts; they do not need `state.yaml`, `logs/events.jsonl`, or session sidecars as a second communication layer.
+12. Agent-authored notes do not change routing, currentness, or final-turn control flow; they only preserve durable context in `home/issue.md`.
+13. Normalized final-turn response records appear in `home/issue.md` so route, terminal, and sleep outcomes are visible in the same communication log future agents read.
+14. A failure path such as invalid final JSON, missing compiled build output, missing current artifact, or attempted home escape fails loudly, preserves the run directory for archaeology, and does not silently continue.
+15. A canary ambient instruction source outside the compiled flow build output does not appear in the injected instruction payload or in the run-home agent surfaces, proving the no-side-door contract for this phase.
+16. Rally creates no Rally-owned state outside the repo root during the run. There is no hidden Rally control plane under `~/.rally`, `~/.config`, or similar global locations.
+17. Unit coverage exists for the runner branch that handles `sleep`, even though the seeded-bug end-to-end flow does not use `sleep`.
 
-#### Explicit Non-Goals For Phase 3
+#### Explicit Non-Goals For Phase 4
 
-Phase 3 should not widen into any of the following:
+Phase 4 should not widen into any of the following:
 
 - a second runtime adapter
 - a second fully supported flow family
@@ -2662,3 +2776,113 @@ Phase 3 should not widen into any of the following:
 - archive/cleanup ergonomics beyond what is needed to preserve the finished run honestly
 - GUI, board, company, registry, or plugin-platform surface area
 - broad built-in tool isolation claims beyond what the Codex adapter can truly prove
+
+### Phase 5: Make Rally Operator-Native And Prove The Shape Repeats
+
+Phase 5 begins only after Phase 4 proves that Rally can run one authored flow honestly from `run` to terminal outcome.
+Its job is not to widen the product.
+Its job is to turn the Phase 4 runtime proof into a believable narrow v1 and to prove that the same runtime kernel can carry more than one authored flow without weakening the design.
+
+The outcome of Phase 5 should be:
+
+- an operator can run, resume, watch, inspect, and explicitly archive runs without manual filesystem surgery
+- Rally has one explicit compatibility boundary for the machine-readable Doctrine data it consumes, with no Markdown scraping and no silent fallback
+- Rally proves the runtime shape is reusable by running one second deliberately narrow flow that exercises at least one semantic path the seeded-bug flow does not cover
+- Rally still remains Codex-first, filesystem-first, one-active-run-per-flow, and repo-root-local
+
+What Phase 5 owns:
+
+- `rally archive` as a real operator command rather than a deferred follow-on
+- dirty-state refusal and stale-run diagnosis in `rally run`
+- the history-backed terminal renderer already promised by the v1 design
+- a checked-in Rally-to-Doctrine compatibility contract for the machine-readable surfaces the runner consumes
+- repair of any remaining drift between the shared `rally.turn_results` contract and the runner's routed-owner policy
+- one second deliberately small authored flow that stresses a different semantic path without dragging in domain cargo or external product surface
+- only the minimum runtime refactors needed to keep two narrow flows on the same runner, ledger, session, and home-materialization kernel
+
+This phase should stay intentionally narrow:
+
+- still one adapter: Codex
+- still no GUI
+- still no database
+- still no background scheduler or auto-resume daemon
+- still no parallel-agent execution
+- no second hidden control plane
+- no broad memory subsystem productization yet
+- no domain-heavy or externally authenticated flows unless the design later proves they are the next minimal pressure test
+
+#### Required Behavior In Phase 5
+
+Phase 5 should prove the following behavior:
+
+- `rally archive <run-id>` archives a stopped or completed run under `runs/archive/`, preserves its archaeology, and clears any active-flow state that should not survive archival.
+- `rally run` refuses to start when the repo is in a clearly dirty or ambiguous flow state, including an existing active lock, an obviously partial run directory, or a prior run that still needs explicit archival.
+- `rally run` and `rally resume` both open the same history-backed terminal renderer, and that renderer loads prior `logs/events.jsonl` history before following live events.
+- The renderer supports the visibility toggles already described in this design and applies them to both loaded history and future events, not only to newly arriving output.
+- Rally keeps one explicit compatibility preflight for the Doctrine-emitted machine-readable structures it depends on, and that preflight fails with an exact blocker instead of reconstructing semantic truth from generated Markdown.
+- The shared `rally.turn_results` contract, the emitted Doctrine `final_output`, and the runner dispatch path all agree on the routed-owner final-result branch, including structural `next_owner` on the route outcome.
+- Rally supports one second deliberately narrow flow on the same runtime kernel, and that second flow exercises at least one semantic path the seeded-bug flow does not prove today, preferably a route-only or `current none` path rather than broader domain complexity.
+- Both supported flows continue to honor the same invariants: repo-root-local state only, home-local capability materialization only, no side-door instruction surfaces, and routing from validated final JSON only.
+
+#### Acceptance Criteria For Phase 5
+
+Phase 5 is complete only when all of the following are true:
+
+1. `rally archive <run-id>` works as a real command, preserves the full run directory under `runs/archive/`, and leaves the repo ready for a new run of that flow without manual cleanup.
+2. `rally run` refuses clearly dirty or ambiguous states with exact blocker text rather than silently repairing them, including active-lock conflicts, obvious run-directory mismatch, and stale unarchived stopped runs.
+3. `rally run` and `rally resume` both render the same event history model from `logs/events.jsonl`, and the renderer supports toggling tool-call and reasoning visibility across already-loaded history as well as live events.
+4. The event logs plus renderer are sufficient to understand a run without depending on adapter-private files outside the documented Rally run surfaces.
+5. The Rally-to-Doctrine compatibility contract is explicit and loader-enforced; stale or missing machine-readable compiler outputs fail loudly at preflight.
+6. The checked-in shared `rally.turn_results` contract, emitted `final_output` surfaces, and runner dispatch all agree that the route outcome carries structural `next_owner` truth for machine routing.
+7. Rally supports two deliberately narrow authored flows on the same runtime kernel, and the second flow exercises at least one semantic path not covered by `single_repo_repair`.
+8. Both supported flows still materialize only allowlisted skills and MCP definitions into the run home and keep all Rally-owned state under the repo root.
+9. No Markdown-scraping fallback, handwritten compatibility manifest, or ambient instruction side door is introduced to make the second flow work.
+10. Rally remains within the narrow v1 frame after this phase: one adapter, one active run per flow, no GUI, no DB source of truth, and no company or registry product carryover.
+
+#### Explicit Non-Goals For Phase 5
+
+Phase 5 should not widen into any of the following:
+
+- a second runtime adapter
+- a general scheduler or background service
+- cross-repo orchestration or multiple target repos per run as a new framework primitive
+- external-auth product integrations as the default next pressure test
+- a database-backed control plane
+- a GUI or dashboard surface
+- parallel-agent execution
+- a broad memory platform beyond reserving clean architecture room for it
+
+## Suggested Post-Phase-5 Architecture
+
+Once Phase 5 lands, the next architecture move should not be more adapters or more product surface.
+It should be built-in turn memory and learning as a Rally runtime concern, using the same filesystem-first and no-side-door discipline as the rest of the system.
+
+The suggested architecture after Phase 5 is:
+
+- keep `src/rally/` as a small kernel where CLI, flow loading, run storage, ledger behavior, event logging, rendering, adapter launch, and runner dispatch stay explicit and inspectable
+- keep the Rally-to-Doctrine compatibility boundary concentrated in loader-side preflight rather than scattering semantic recovery logic across the runner
+- keep one shared end-of-turn contract and one shared ledger model across flows rather than letting each flow grow custom runtime conventions
+- prove new semantics through additional narrow authored flows before adding a second adapter or broader orchestration concepts
+- add built-in turn-start memory lookup and turn-end learning writeback as Rally runtime behavior, not as a flow-local skill and not as a hidden side channel
+- keep any memory storage repo-local and run-explainable, with no hidden global Rally state and no database as source of truth
+- make memory auditable in the same run archaeology surfaces instead of introducing a second opaque control plane
+
+This should remain the shape:
+
+- one small runner kernel
+- one explicit compiler-compatibility boundary
+- multiple narrow authored flows as pressure tests
+- memory and learning as the next runtime capability
+- still no GUI, DB-first runtime, company model, or plugin marketplace carryover
+
+## Suggested Post-Phase-5 Acceptance Criteria
+
+The next architecture move after Phase 5 should not be considered real until all of the following are true:
+
+1. Rally can perform a turn-start memory check and present relevant prior learnings to an agent without introducing any new ambient instruction source outside the declared Rally runtime contract.
+2. Rally can persist a turn-end learning write in a durable, inspectable, repo-local surface that is visible in normal run archaeology.
+3. Memory retrieval and writeback are auditable through Rally-owned logs and files rather than through hidden adapter-private state alone.
+4. The memory feature works on at least two authored flows without flow-specific runtime glue or per-flow storage hacks.
+5. The addition of memory does not change the ownership boundary: Doctrine still owns authored semantics, Rally still owns runtime behavior, and generated Markdown is still readback rather than semantic source.
+6. Rally still creates no hidden global control plane state and still relies on no DB as source of truth.
+7. The operator can explain where a memory came from, why it was surfaced, and where the learned output was written by reading Rally-owned artifacts in the repo.

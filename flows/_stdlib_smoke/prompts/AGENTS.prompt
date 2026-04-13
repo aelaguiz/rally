@@ -33,6 +33,7 @@ output PlanAuthorTurnResult: "Plan Author Turn Result"
 
     purpose: "Purpose"
         "End the plan-author turn with one structured Rally turn result."
+        "Use `handoff` with structural `next_owner` when the smoke continues to RouteRepair."
 
 
 output RouteRepairTurnResult: "Route Repair Turn Result"
@@ -42,6 +43,7 @@ output RouteRepairTurnResult: "Route Repair Turn Result"
 
     purpose: "Purpose"
         "End the route-repair turn with one structured Rally turn result."
+        "Use `handoff` with structural `next_owner` when the no-current handoff keeps the issue local."
 
 
 output CloseoutTurnResult: "Closeout Turn Result"
@@ -51,6 +53,7 @@ output CloseoutTurnResult: "Closeout Turn Result"
 
     purpose: "Purpose"
         "End the closeout turn with one structured Rally turn result."
+        "Use `done` with `summary` to close the smoke."
 
 
 workflow PlanAuthorWorkflow[rally.currentness.RallyCarryCurrentArtifactConvention]: "Plan Author Workflow"
@@ -76,6 +79,9 @@ agent PlanAuthor:
         PlanAuthorTurnResult
         rally.notes.RallyIssueNote
         rally.handoffs.RallyCurrentArtifactHandoff
+    handoff_routing: "Handoff Routing"
+        if_the_smoke_should_continue_into_route_repair: "If The Smoke Should Continue Into Route Repair"
+            route "Send the smoke issue to RouteRepair." -> RouteRepair
     final_output: PlanAuthorTurnResult
 
 
@@ -85,7 +91,7 @@ workflow RouteRepairWorkflow[rally.currentness.RallyNoCurrentArtifactConvention]
     inherit pickup_rule
 
     smoke_note: "Smoke Note"
-        "This smoke proves the no-current handoff path while ownership stays local."
+        "This smoke proves the no-current handoff path while structural routing keeps the issue local."
 
     law:
         active when RoutingFacts.needs_route_repair
@@ -102,6 +108,9 @@ agent RouteRepair:
         RouteRepairTurnResult
         rally.notes.RallyIssueNote
         rally.handoffs.RallyNoCurrentArtifactHandoff
+    handoff_routing: "Handoff Routing"
+        if_local_route_repair_must_continue: "If Local Route Repair Must Continue"
+            route "Keep the smoke issue with RouteRepair until repair completes." -> RouteRepair
     final_output: RouteRepairTurnResult
 
 

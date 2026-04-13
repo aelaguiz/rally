@@ -1,1 +1,25 @@
 flows/*/build/
+
+# Repo-local generated build mirrors
+/$TMPDIR/
+
+# Local Python environments and test caches
+/.venv/
+.venv/
+/.pytest_cache/
+.pytest_cache/
+
+# Python bytecode and packaging output
+__pycache__/
+*.py[cod]
+*.egg-info/
+/build/
+/dist/
+
+# Common local coverage output
+.coverage
+.coverage.*
+htmlcov/
+
+# macOS finder noise
+.DS_Store

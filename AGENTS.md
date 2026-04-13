@@ -14,7 +14,8 @@
 
 - Author agent and flow doctrine in `.prompt` files. Compiled `AGENTS.md` and other output under `flows/*/build/**` are generated readback, not hand-authored source.
 - Rally owns the runtime, CLI, run structure, logs, sessions, adapter contract, and the standard library contents under `stdlib/rally/`.
-- Doctrine owns generic language and compiler support. If a change would alter generic authored semantics, it belongs in Doctrine, not in Rally.
+- Doctrine owns generic language, compiler, and emitted-build support. Treat Doctrine as a generic framework, not as a Rally extension point.
+- Do not edit the paired Doctrine repo during ordinary Rally work. If Rally is blocked on missing Doctrine support, stop in Rally and describe the missing framework capability first.
 - Treat the prepared run home as the agent's whole world. Skills, MCPs, repos, artifacts, sessions, and adapter-local state belong there, not in machine-global Rally state or arbitrary filesystem escapes.
 - Keep Rally-owned state inside this repo, especially under `runs/`. Do not create hidden Rally control planes under `~/.rally`, `~/.config`, or similar global locations.
 - For Codex adapter work, preserve the explicit launch contract: Rally chooses `cwd`, points `CODEX_HOME` at the run home, disables ambient project-doc discovery, and injects compiled doctrine explicitly.
@@ -33,6 +34,8 @@
 
 - Do not work around Doctrine bugs, parser gaps, compiler gaps, or missing generic authored-semantics support in Rally.
 - If Rally needs Doctrine support to stay clean, stop, name the exact missing Doctrine capability, and tell the user. Co-evolve Doctrine instead of encoding a Rally-side hack.
+- Describe Doctrine gaps in framework terms: language semantics, compile-time metadata, emitted build structure, generic route semantics, or similar reusable capability classes.
+- Do not encode Rally flow names, role names, run-home layout, adapter assumptions, or other Rally-specific runtime needs directly into Doctrine.
 - Do not let `paperclip_agents`, fixture repos, sample flows, or current role names turn into Rally framework primitives. They are pressure tests and examples, not framework law.
 - Do not move authored instruction prose into runtime files. `flow.yaml`, `run.yaml`, logs, session sidecars, and setup scripts may control orchestration, but they do not author doctrine.
 - Keep one active run per flow unless the design changes intentionally. Do not smuggle in concurrent-active-run behavior as a convenience shortcut.
@@ -49,6 +52,7 @@
 - Lead with the concrete answer in plain English.
 - Say exactly what changed, what you verified, and what remains blocked.
 - If the correct move is "this belongs in Doctrine first," say that directly instead of presenting a workaround.
+- When Rally is blocked on Doctrine, say whether the gap is authored semantics, compiler behavior, or emitted-build structure, and describe the request as a generic Doctrine feature rather than as a Rally-specific patch.
 
 ## Docs Map
 

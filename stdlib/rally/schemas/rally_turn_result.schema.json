@@ -3,9 +3,13 @@
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind"],
+      "required": ["kind", "next_owner"],
       "properties": {
-        "kind": { "const": "handoff" }
+        "kind": { "const": "handoff" },
+        "next_owner": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     {
