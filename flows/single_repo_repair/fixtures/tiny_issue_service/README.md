@@ -13,5 +13,5 @@ the first issue instead of returning the first window.
 Run the deterministic local check from the repo root:
 
 ```bash
-python -m pytest
+uv run pytest
 ```

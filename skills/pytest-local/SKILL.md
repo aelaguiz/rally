@@ -5,7 +5,7 @@ prepared repo.
 
 ## What It Does
 
-- Run `python -m pytest` from the prepared repo root.
+- Run `uv run pytest` from the prepared repo root.
 - Capture the exact command and result for test notes or repro steps.
 - Keep the check local and repeatable.
 

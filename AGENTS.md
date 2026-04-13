@@ -10,6 +10,13 @@
   - generated readback: `flows/*/build/**`
   - capability definitions: `skills/*/SKILL.md` and `mcps/*/server.toml`
 
+## Setup And Tests
+
+- Sync the Rally repo Python env with `uv sync --dev`.
+- Run Rally unit tests with `uv run pytest tests/unit -q`.
+- When you change a prepared fixture repo that has its own `pyproject.toml` and `uv.lock`, run that repo's tests from that repo root with `uv run pytest`.
+- Do not use bare `python -m pytest` or install `pytest` into the global Python.
+
 ## Source Of Truth
 
 - Write agent and flow instructions in `.prompt` files. Files under `flows/*/build/**` are generated readback, not hand-written source.
@@ -30,7 +37,7 @@
 - Prove the smallest proof path that matches the change:
   - prompt or standard-library change: recompile the affected flow build output with the paired Doctrine compiler, then inspect the generated readback
   - runtime change: prove it through the owning `rally` CLI or run-home path
-  - fixture change: run the fixture-local proof command from that fixture repo root
+  - fixture change: run the fixture-local proof command from that fixture repo root with `uv run pytest`, unless that fixture says otherwise
 - Do not hand-edit `flows/*/build/**` to fake a compile result or cover up missing compiler behavior.
 - If the needed proof path or tool support is missing, say that plainly and stop at the real blocker.
 

@@ -18,6 +18,7 @@ cat >> "${RALLY_ISSUE_PATH}" <<'EOF'
 
 - Prepared `home/repos/tiny_issue_service` from the flow fixture repo.
 - This fixture carries a deterministic pagination bug where page 1 skips the first item.
+- Run the local check from that repo root with `uv run pytest`.
 - Write the repair plan to `home/artifacts/repair_plan.md`.
 - Write the verification record to `home/artifacts/verification.md`.
 EOF
