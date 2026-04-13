@@ -762,6 +762,13 @@ It is a small portable issue-ledger, currentness, and handoff convention:
 - that currentness is carried through a trusted handoff field
 - downstream turns read declared `input` artifacts instead of reconstructing truth from prose alone
 
+Routing control should not live in handoff prose forever.
+The desired end state is:
+
+- the control-plane next owner lives in the validated final turn result
+- the durable handoff block stays focused on pickup truth and human readability
+- if the issue ledger shows the next owner for humans, Rally should stamp or derive it from the final turn result rather than trusting a second independently authored routing field
+
 That means the standard library should start with light-touch conventions for:
 
 - a shared issue-ledger append target
@@ -769,7 +776,7 @@ That means the standard library should start with light-touch conventions for:
 - shared handoff output shape for turns that leave one current artifact
 - shared handoff output shape for route-only or blocked turns that leave no current artifact
 - a trusted `current_artifact` carrier field and the currentness law that uses it
-- the minimal companion fields that make the handoff readable on its own, such as what changed, what to use now, and next owner
+- the minimal companion fields that make the handoff readable on its own, such as what changed and what to use now, plus optional rendered next-owner text derived from the final turn result when helpful for humans
 
 The standard library should not standardize every artifact body.
 It should not bless one framework-level plan, report, or similar universal file shape.
@@ -804,6 +811,27 @@ What that means:
 - Rally now has one tiny shared authored final-turn result contract surface
 - the smoke flow proves the authored shape compiles with shared notes, handoffs, and `final_output:` on concrete agents
 - that authored shape was compile-checked against the local Doctrine branch carrying `final_output` support
+
+Doctrine route-output support has now landed locally as well:
+
+- any emitted output, including `final_output`, may read `route.exists`,
+  `route.next_owner`, `route.next_owner.key`, `route.next_owner.title`,
+  `route.label`, and `route.summary`
+- review-driven agents may keep `comment_output:` and `final_output:` separate
+  while the separate `final_output:` still reads route semantics
+- unguarded `route.*` reads fail loudly when some active branches do not route
+- routed `next_owner` claims still fail loudly when the output does not
+  structurally bind the real routed owner
+
+That changes the Rally routing plan from "wanted future direction" to "ready
+to implement when the runtime work begins":
+
+- the authored handoff surface should stop being the control-plane routing source
+- `rally.turn_results` should carry routing truth through the final JSON
+  contract
+- the durable handoff ledger block should become a separate human pickup record
+  that may render next-owner text derived from the routed final result when
+  useful for readers
 
 What is not done yet:
 
@@ -846,7 +874,8 @@ What those modules should roughly own:
 - `handoffs.prompt`
   - one shared output shape for turns that leave one current artifact
   - one shared output shape for route-only, blocked, or review turns that leave no current artifact
-  - the minimal shared fields: what changed, current artifact when one exists, what to use now, and next owner
+  - the minimal shared fields: what changed, current artifact when one exists, and what to use now
+  - if the issue ledger renders next-owner text for humans, that text should eventually be derived from the final turn result rather than trusted as an independently authored routing field
   - the trusted carrier fields that downstream turns may rely on
 
 - `notes.prompt`
@@ -862,6 +891,7 @@ What those modules should roughly own:
 - `turn_results.prompt`
   - the shared JSON-schema-backed final turn result shape for Rally-managed turns
   - the minimal tagged runtime outcome union Rally expects from the adapter
+  - the control-plane routing field for handoff outcomes
   - no durable handoff prose, no ledger target, and no scheduler keywords
 
 The intended usage pattern is:
@@ -901,7 +931,7 @@ They live in the Doctrine-authored Rally standard library and should answer:
 - what changed
 - what artifact is current now when one exists
 - what to use now
-- who owns next
+- any optional rendered next-owner text for human readability
 
 Notes are optional durable issue-ledger context.
 They also live in the Doctrine-authored Rally standard library and should answer:
@@ -910,11 +940,26 @@ They also live in the Doctrine-authored Rally standard library and should answer
 - why that context matters
 
 They are not trusted routing or currentness carriers.
+Currentness belongs in the handoff/currentness surfaces, not in notes.
+Routing belongs in the final turn result, not in notes.
 They must not replace a handoff, and Rally must not interpret them as control-flow or pickup truth.
 
 End-of-turn results are the turn-ending assistant response contract.
 They are not issue-ledger prose and they are not part of the handoff/currentness contracts.
 They tell Rally what runtime action to take after the agent turn ends.
+For handoff outcomes, they should also tell Rally exactly who owns next.
+
+Doctrine now gives Rally the generic route-reading substrate it needs for this:
+
+- the designated `final_output:` may be separate from a review
+  `comment_output:`
+- that designated output may read `route.*`
+- route reads must be guarded with `when route.exists:` when some active
+  branches do not route
+- for machine routing, Rally should bind from `route.next_owner.key`, not
+  `route.next_owner` or `route.next_owner.title`
+- `route.next_owner.title` and `route.summary` remain useful for human-readable
+  ledger prose or rendered readback
 
 Rally should still keep one tiny shared authored module for this contract so
 flows do not drift.
@@ -933,6 +978,9 @@ Rally's policy layer is stricter:
 - that final output must be backed by a JSON schema
 - Rally passes that schema to the adapter as the required final turn contract
 - Rally interprets the returned JSON into runtime behavior
+- when `kind` is `handoff`, that JSON must carry the exact `next_owner` Rally will route to
+- that `next_owner` value should be the structural Doctrine agent key emitted
+  from `route.next_owner.key`
 
 For Codex, this means Rally should use the adapter's existing strict JSON
 final-output path rather than inventing Doctrine lifecycle keywords.
@@ -944,8 +992,9 @@ The minimum tagged outcome family should be:
 
 - `handoff`
   - the turn produced a normal same-issue handoff result
-  - the final JSON only says that Rally should take the handoff path
-  - Rally appends the separate authored handoff block to `home/issue.md` and routes from that trusted handoff content
+  - the final JSON says that Rally should take the handoff path and names the exact `next_owner`
+  - Rally routes from that schema-validated field
+  - Rally appends the separate authored handoff block to `home/issue.md` as the durable pickup record rather than as the control-plane route source
 - `done`
   - the flow is complete
   - Rally appends a Rally-generated final closeout block and marks the run done
@@ -972,9 +1021,10 @@ Initial required end-of-turn JSON shape:
     {
       "type": "object",
       "properties": {
-        "kind": { "const": "handoff" }
+        "kind": { "const": "handoff" },
+        "next_owner": { "type": "string" }
       },
-      "required": ["kind"],
+      "required": ["kind", "next_owner"],
       "additionalProperties": false
     },
     {
@@ -1008,6 +1058,48 @@ Initial required end-of-turn JSON shape:
   ]
 }
 ```
+
+Authored routing pattern for Rally:
+
+```prompt
+output RallyTurnResult: "Rally Turn Result"
+    target: TurnResponse
+    shape: RallyTurnResultJson
+    requirement: Required
+
+    handoff_control: "Handoff Control" when kind == RallyTurnResultKind.handoff and route.exists:
+        next_owner: route.next_owner.key
+
+    handoff_readback: "Handoff Readback" when kind == RallyTurnResultKind.handoff and route.exists:
+        "{{route.summary}}"
+```
+
+Important authored rules:
+
+- use `route.next_owner.key` for machine routing in final JSON
+- use `route.next_owner.title` only for human-facing readback
+- use `route.summary` only for human-facing readback
+- guard route-specific fields with `when route.exists:` whenever some active
+  branches may not route
+- keep current artifact truth on the handoff/currentness surface rather than
+  trying to reconstruct it from route semantics
+- keep human pickup prose on the issue-ledger handoff output rather than
+  forcing the JSON control result to do both jobs
+
+Desired Doctrine support for this contract:
+
+- `final_output:` must be able to designate the schema-backed `TurnResponse`
+- that designated final output must be able to read `route.exists`,
+  `route.next_owner`, `route.next_owner.key`, `route.next_owner.title`,
+  `route.label`, and `route.summary`
+- route-aware structural binding must work for fields inside that final-output
+  contract
+- that same support must work for workflow turns and review turns
+- review-driven agents must be allowed to keep `comment_output:` separate from
+  `final_output:` while the split final output still reads route semantics
+- this support belongs in Doctrine rather than in Rally-side glue or
+  handoff-prose correlation
+- Rally should not have to discover or trust routing from separate handoff prose once this exists
 
 This should stay flow-driven.
 Rally does not need extra config fields for end agents or terminal conditions,
@@ -1478,16 +1570,20 @@ Rally can impose the stricter policy on top:
 - Codex enforces conformance at generation time
 - Rally consumes the validated JSON result and maps it to `handoff`, `done`,
   `blocker`, or `sleep`
+- for `handoff`, Rally routes from `final_output.next_owner`
 
 For Codex specifically, the rule should be:
 
 - every Rally-managed turn that needs an end-of-turn result must supply
   `final_output_json_schema`
-- that schema must describe the full tagged end-of-turn result union
+- that schema must describe the full tagged end-of-turn result union, including
+  `next_owner` on handoff outcomes
 - Rally should reject adapter output that does not satisfy the schema instead of
   trying to recover from free-form prose
 - if an adapter cannot enforce an equivalent strict structured return, Rally
   should treat that adapter as missing required capability for this contract
+- Rally should treat the `next_owner` field as a structural agent key, not a
+  human title
 
 What this means in practice:
 
@@ -1540,8 +1636,10 @@ In v1, Rally can derive that from handoff entries or `issue_history/` snapshots 
 This section should be treated as a required design surface, not a maybe-later note.
 We expect Rally to need supporting changes in Doctrine, and we want to make those changes instead of building permanent workarounds in Rally.
 This section exists so future Rally design and implementation work has an explicit home for Doctrine-side requirements.
-It is intentionally still a placeholder with direction rather than a fully authored requirement list.
-Do not work around core Doctrine gaps just because this section is still incomplete.
+It is no longer just a placeholder.
+The final-output and route-semantics contract relevant to Rally routing is now
+specified here in concrete terms.
+Do not work around core Doctrine gaps just because some remaining items stay incomplete.
 
 What belongs here:
 
@@ -1550,10 +1648,9 @@ What belongs here:
 - generic final-output designation and emitted-contract support that should live in Doctrine rather than in ad hoc Rally glue
 - any change needed so Rally's mandatory Doctrine-native standard library is clean, explicit, and maintainable
 
-We are not fully specifying those changes yet.
-We are explicitly reserving space for them because we expect they will be necessary.
-
-Doctrine is close, but not all the way there.
+Some of those changes have now landed locally, especially around
+`final_output:` and generic readable `route.*` semantics.
+Other items may still remain.
 Per the ownership boundary above, the key rule is that Doctrine changes here must stay generic compiler and language support, not Rally runtime ownership.
 
 What does not belong here:
@@ -1590,15 +1687,34 @@ The cleaner design is:
 - the adapter returns strict JSON when Rally requires machine-readable turn
   completion
 - Rally interprets the returned JSON into runtime behavior
+- for Rally's handoff contract, the machine-readable `next_owner` should live in
+  the final output rather than in a separate authored handoff field
 
 Likely needs:
 
 - a generic `final_output:`-style authored surface or equivalent
 - support for JSON-schema-backed `TurnResponse` final outputs
+- generic output-readable route semantics through `route.exists`,
+  `route.next_owner`, `route.next_owner.key`, `route.next_owner.title`,
+  `route.label`, and `route.summary`
+- route-aware structural binding for fields that read routed owner truth inside
+  split or reused final-output contracts
 - standard-library-friendly composition so Rally can reuse one shared
   end-of-turn contract across flows
 - emitted machine-readable structure that lets Rally recover the authored final
   output contract and schema without scraping readback Markdown
+
+This Doctrine support has now landed in the local paired checkout and passed
+targeted proof:
+
+- route-aware ordinary outputs compile and render
+- split prose `final_output` on review-driven agents can read `route.*`
+- split JSON `final_output` on review-driven agents can read `route.*`
+- unguarded route reads fail loudly with a `route.exists` guard hint
+- dishonest routed `next_owner` claims still fail loudly
+
+So Rally should now plan against this concrete Doctrine feature set rather than
+against a hypothetical future route-binding design.
 
 ### 3. Machine-readable emitted structures Rally can consume
 
@@ -1874,13 +1990,16 @@ Keep the ownership boundary explicit:
 - Rally keeps the runner, the runtime contract, and the Rally standard library contents
 - `paperclip_agents` remains pressure and examples, not universal framework law
 
-The likely Doctrine work is generic enabling support such as:
+Doctrine support Rally either already has locally or still needs should stay
+generic enabling support such as:
 
 - package and import-root support for `stdlib/rally/`
 - machine-readable emitted structures Rally can consume without scraping Markdown
 - a generic `final_output:`-style authored designation or equivalent that lets
   Rally resolve one turn-ending `TurnResponse` contract and, when needed, its
   JSON schema
+- generic route semantics readable from any emitted output, including
+  `final_output`, with one shared routed-owner alignment validator
 - currentness, review, or capability-declaration extensions if the standard library exposes real generic gaps
 
 What should not move into Doctrine:
@@ -1909,7 +2028,21 @@ Suggested solution:
 Keep the numbered-directory convention.
 Treat the number as canonical authored identity only.
 Never let Rally infer real execution order from numbering, file order, or roster order.
-Execution should always come from explicit routes and actual handoffs.
+Execution should always come from explicit routes and the validated final turn result, not from numbering, file order, roster order, or handoff prose.
+
+The precise Rally routing algorithm should be:
+
+1. Doctrine compiles the active turn and its designated `final_output`.
+2. The adapter returns JSON that satisfies the final-output schema.
+3. If `kind != handoff`, Rally follows the corresponding terminal or sleep path.
+4. If `kind == handoff`, Rally reads `next_owner` from the validated JSON.
+5. Rally treats that value as the structural Doctrine agent key, not a title.
+6. Rally resolves that key against the compiled flow roster for the same run.
+7. Rally appends the separate authored handoff ledger block for pickup context.
+8. Rally updates run state and wakes the resolved next owner in the same home.
+
+If the final JSON names an unknown owner key, Rally should fail loud instead of
+guessing from titles or handoff prose.
 
 ### 8. Handoffs Must Be Structured And Readable On Their Own
 
@@ -1920,7 +2053,8 @@ Suggested solution:
 Put the default handoff block shape in the Rally standard library.
 Require Rally flows and agents to inherit that default shape, while still allowing narrow flow-specific extension where needed.
 Every handoff should be self-contained enough that the next agent can continue from the issue alone.
-At minimum, it should carry current artifact, what changed, what to use now, and next owner.
+At minimum, it should carry current artifact, what changed, and what to use now.
+If the issue ledger shows next-owner text for humans, Rally should stamp or derive that from the validated final turn result rather than trusting it as a second control-plane field.
 The handoff should carry the current artifact truth and pickup contract, not replace the artifact itself.
 Downstream agents should still read declared artifact inputs rather than treating handoff prose as the full source of truth.
 
@@ -2490,7 +2624,7 @@ Phase 3 should prove the following behavior end to end:
 - Rally launches Codex with an explicit contract on every turn: chosen `cwd`, `CODEX_HOME=<run-home>`, ambient project-doc discovery disabled, compiled doctrine injected explicitly, and the shared final-turn JSON schema attached explicitly.
 - Rally validates the final turn result against the shared `rally.turn_results` contract before using it for runtime behavior.
 - If a turn emits `rally.notes.RallyIssueNote`, Rally appends that note to `home/issue.md` without changing owner selection, currentness, or final-turn control behavior.
-- On `handoff`, Rally appends the authored handoff block to `home/issue.md`, snapshots the full ledger into `issue_history/`, updates `state.yaml`, and wakes the next owner in the same home.
+- On `handoff`, Rally reads `next_owner` from the validated final turn result, treats it as the structural Doctrine agent key emitted from `route.next_owner.key`, resolves that key against the compiled flow roster, appends the authored handoff block to `home/issue.md`, snapshots the full ledger into `issue_history/`, updates `state.yaml`, and wakes that next owner in the same home.
 - If a turn emits both a note and a handoff, Rally appends the note first and the handoff second.
 - On `done` or `blocker`, Rally records the final state, preserves the run directory, and clears the active-flow lock.
 - On interruption, Rally preserves the run directory and session sidecars, and `rally resume <run-id>` continues the same run rather than creating a replacement run.
