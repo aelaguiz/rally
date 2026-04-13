@@ -11,6 +11,7 @@ from rally.domain.run import ResumeRequest, RunRecord, RunRequest
 from rally.errors import RallyError, RallyUsageError
 from rally.services.issue_ledger import append_issue_note
 from rally.services.runner import resume_run, run_flow
+from rally.services.workspace import resolve_workspace
 from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display
 
 
@@ -68,9 +69,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run_command(args: argparse.Namespace) -> int:
-    repo_root = _repo_root()
+    workspace = resolve_workspace()
     result = run_flow(
-        repo_root=repo_root,
+        workspace=workspace,
         request=RunRequest(flow_name=args.flow_name, start_new=args.new),
         display_factory=_build_display_factory(sys.stdout),
     )
@@ -79,8 +80,9 @@ def _run_command(args: argparse.Namespace) -> int:
 
 
 def _resume_command(args: argparse.Namespace) -> int:
+    workspace = resolve_workspace()
     result = resume_run(
-        repo_root=_repo_root(),
+        workspace=workspace,
         request=ResumeRequest(
             run_id=args.run_id,
             edit_issue=args.edit,
@@ -93,10 +95,10 @@ def _resume_command(args: argparse.Namespace) -> int:
 
 
 def _issue_note_command(args: argparse.Namespace) -> int:
-    repo_root = _repo_root()
+    workspace = resolve_workspace()
     note_text = _read_note_text(args)
     result = append_issue_note(
-        repo_root=repo_root,
+        repo_root=workspace.workspace_root,
         run_id=args.run_id,
         note_markdown=note_text,
         turn_index=_turn_index_from_env(),
@@ -106,10 +108,6 @@ def _issue_note_command(args: argparse.Namespace) -> int:
         f"Saved snapshot `{result.snapshot_file}`."
     )
     return 0
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
 
 
 def _resolve_user_file(path: Path) -> Path:

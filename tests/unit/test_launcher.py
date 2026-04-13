@@ -17,7 +17,8 @@ class LauncherTests(unittest.TestCase):
             run_home.mkdir(parents=True)
 
             env = build_codex_launch_env(
-                repo_root=repo_root,
+                workspace_dir=repo_root,
+                cli_bin=repo_root / "bin" / "rally",
                 run_home=run_home,
                 run_id="FLW-1",
                 flow_code="FLW",
@@ -26,11 +27,12 @@ class LauncherTests(unittest.TestCase):
             )
 
             self.assertEqual(env["CODEX_HOME"], str(run_home.resolve()))
-            self.assertEqual(env["RALLY_BASE_DIR"], str(repo_root.resolve()))
+            self.assertEqual(env["RALLY_CLI_BIN"], str((repo_root / "bin" / "rally").resolve()))
             self.assertEqual(env["RALLY_RUN_ID"], "FLW-1")
             self.assertEqual(env["RALLY_FLOW_CODE"], "FLW")
             self.assertEqual(env["RALLY_AGENT_SLUG"], "scope_lead")
             self.assertEqual(env["RALLY_TURN_NUMBER"], "2")
+            self.assertEqual(env["RALLY_WORKSPACE_DIR"], str(repo_root.resolve()))
 
     def test_build_codex_launch_env_rejects_blank_run_id(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -40,7 +42,8 @@ class LauncherTests(unittest.TestCase):
 
             with self.assertRaisesRegex(RallyStateError, "Run id must not be empty"):
                 build_codex_launch_env(
-                    repo_root=repo_root,
+                    workspace_dir=repo_root,
+                    cli_bin=repo_root / "bin" / "rally",
                     run_home=run_home,
                     run_id="",
                     flow_code="FLW",
@@ -56,7 +59,8 @@ class LauncherTests(unittest.TestCase):
 
             with self.assertRaisesRegex(RallyStateError, "Flow code must not be empty"):
                 build_codex_launch_env(
-                    repo_root=repo_root,
+                    workspace_dir=repo_root,
+                    cli_bin=repo_root / "bin" / "rally",
                     run_home=run_home,
                     run_id="FLW-1",
                     flow_code="",
@@ -72,7 +76,8 @@ class LauncherTests(unittest.TestCase):
 
             with self.assertRaisesRegex(RallyStateError, "Turn index must be 1 or greater"):
                 build_codex_launch_env(
-                    repo_root=repo_root,
+                    workspace_dir=repo_root,
+                    cli_bin=repo_root / "bin" / "rally",
                     run_home=run_home,
                     run_id="FLW-1",
                     flow_code="FLW",

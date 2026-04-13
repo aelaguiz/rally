@@ -1,6 +1,6 @@
 ---
 name: rally-kernel
-description: "Shared Rally turn skill for leaving issue notes when needed and ending a turn with the declared final JSON. Use it when a Rally-managed agent needs to leave a note, write that note with `$RALLY_BASE_DIR/rally issue note`, or shape final JSON without inventing another way to end the turn. Do not use it for flow-local planning, runtime code changes, or direct `issue.md` edits."
+description: "Shared Rally turn skill for leaving issue notes when needed and ending a turn with the declared final JSON. Use it when a Rally-managed agent needs to leave a note, write that note with `$RALLY_CLI_BIN issue note`, or shape final JSON without inventing another way to end the turn. Do not use it for flow-local planning, runtime code changes, or direct `issue.md` edits."
 ---
 
 # Rally Kernel
@@ -36,9 +36,9 @@ Canonical user asks:
 - Notes are context only. They never decide who works next or whether the run
   is done, blocked, or sleeping.
 - Do not edit `home/issue.md` directly.
-- Write notes with `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"`.
-- Fail loud if `RALLY_BASE_DIR` or `RALLY_RUN_ID` is missing instead of
-  guessing the active run or CLI path.
+- Write notes with `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`.
+- Fail loud if `RALLY_CLI_BIN`, `RALLY_WORKSPACE_DIR`, or `RALLY_RUN_ID` is
+  missing instead of guessing the active run or CLI path.
 - Rally provides this skill on Rally-managed turns. Flows do not need to
   allowlist it by hand.
 - End the turn through the adapter's final JSON path, not through a second CLI
@@ -50,8 +50,9 @@ Canonical user asks:
 
 ## First move
 
-1. Confirm this is a Rally-managed turn, that `RALLY_BASE_DIR` points at the
-   Rally repo root, and that `RALLY_RUN_ID` is present.
+1. Confirm this is a Rally-managed turn, that `RALLY_WORKSPACE_DIR` points at
+   the active workspace root, that `RALLY_CLI_BIN` points at Rally CLI, and
+   that `RALLY_RUN_ID` is present.
 2. Decide whether a later reader needs a short note.
 3. If yes, write one short markdown note through the Rally CLI.
 4. Shape the final turn result to match the declared JSON schema for this turn.
@@ -66,7 +67,7 @@ Canonical user asks:
    Prefer the stdin form:
 
    ```bash
-   "$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID" <<'EOF'
+   "$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID" <<'EOF'
    ### Note
    - Explain the context worth preserving for the next owner or later turn.
    EOF

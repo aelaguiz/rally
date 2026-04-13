@@ -11,6 +11,7 @@ related:
   - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
   - docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
   - docs/LESSONS_RALLY_PORT_GAP_READ_2026-04-13.md
+  - docs/RALLY_EXTERNAL_PROJECT_INTEGRATION_MODEL_2026-04-13_WORKLOG.md
   - src/rally/cli.py
   - src/rally/services/flow_build.py
   - src/rally/services/flow_loader.py
@@ -64,6 +65,12 @@ one flow.
 4. Prove the contract in both this Rally repo and one external repo, starting
    with `../paperclip_agents` after a Rally-native flow port lands there.
 
+## Implementation status
+
+Phases 1 through 4 were implemented on 2026-04-13.
+Fresh `audit-implementation` on 2026-04-13 found the full approved Section 7
+frontier code-complete.
+
 ## Non-negotiables
 
 - No command may depend on the Rally source checkout being the workspace.
@@ -74,6 +81,25 @@ one flow.
 - If Doctrine cannot consume Rally's built-in shared assets cleanly through the
   chosen boundary, we stop and name that Doctrine gap instead of patching
   around it in Rally.
+
+<!-- arch_skill:block:implementation_audit:start -->
+# Implementation Audit (authoritative)
+Date: 2026-04-13
+Verdict (code): COMPLETE
+Manual QA: n/a (non-blocking)
+
+## Code blockers (why code is not done)
+- none
+
+## Reopened phases (false-complete fixes)
+- none
+
+## Missing items (code gaps; evidence-anchored; no tables)
+- none
+
+## Non-blocking follow-ups (manual QA / screenshots / human verification)
+- none
+<!-- arch_skill:block:implementation_audit:end -->
 
 <!-- arch_skill:block:planning_passes:start -->
 <!--
@@ -670,6 +696,8 @@ Behavior-preservation evidence:
 
 ## Phase 1 - Lock workspace discovery and built-in asset boundaries
 
+Status: done 2026-04-13
+
 * Goal: Make workspace identity explicit and give Rally one honest owner for
   built-in assets before the wider runtime changes.
 * Work:
@@ -702,6 +730,8 @@ Behavior-preservation evidence:
     on the new contract
 
 ## Phase 2 - Cut the runtime over to `WorkspaceContext`
+
+Status: done 2026-04-13
 
 * Goal: Move build, load, run storage, issue-ledger, home setup, and adapter
   envs onto one workspace contract with no sibling `../doctrine` dependency.
@@ -742,6 +772,8 @@ Behavior-preservation evidence:
 
 ## Phase 3 - Sync prompt, readback, and docs truth
 
+Status: done 2026-04-13
+
 * Goal: Make shared prompts, generated build output, and live Rally docs all
   say the same thing as the new runtime.
 * Work:
@@ -769,6 +801,8 @@ Behavior-preservation evidence:
     with old prompt wording or stale design docs
 
 ## Phase 4 - Prove one real external workspace in `../paperclip_agents`
+
+Status: done 2026-04-13 (fresh audit confirmed the full external proof)
 
 * Goal: Show that a non-Rally repo can own its own Rally workspace, built
   output, and `runs/**` under the same contract as this repo.
@@ -906,3 +940,25 @@ external-workspace proof over new ceremony.
   pass because the remaining design choices were already settled from Rally,
   Doctrine, and `paperclip_agents` repo evidence in Section 3. A real external
   proof is still required in implementation.
+- 2026-04-13: The external proof used a root `../paperclip_agents/pyproject.toml`
+  plus a Rally-native `flows/poem_loop/**` port, while leaving
+  `../paperclip_agents/doctrine/pyproject.toml` as the legacy Paperclip path.
+- 2026-04-13: The smallest honest external proof path was `uv run rally run
+  poem_loop` to the issue wait state, followed by `uv run rally issue note`
+  after creating `home/issue.md`, because that proved build, built-in sync,
+  run-home materialization, and workspace-local note routing without a second
+  harness.
+- 2026-04-13: `audit-implementation` reopened Phase 4 because the external
+  proof still stopped at `WAITING` and did not prove the external resume path.
+- 2026-04-13: The follow-up implementation pass resumed
+  `../paperclip_agents/runs/active/POM-1`, recorded `READY`, a launched writer
+  turn, `Rally Run Started`, `Rally Turn Result`, and external adapter launch
+  records under `../paperclip_agents/runs/**`, then stopped the proof run and
+  marked it blocked so the run state stayed honest.
+- 2026-04-13: `audit-implementation` reopened Phase 4. The recorded external
+  proof stopped at `WAITING` with `turn_index: 0`, so it did not yet prove
+  external home setup or a resumed turn under `../paperclip_agents`.
+- 2026-04-13: Fresh `audit-implementation` closed Phase 4 after
+  `../paperclip_agents` showed synced built-ins, compiled readback, `READY`,
+  launched turns, workspace-local issue-log entries, adapter launch records,
+  and blocked run state under `runs/**`.

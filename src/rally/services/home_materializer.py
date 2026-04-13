@@ -12,10 +12,12 @@ from typing import Sequence
 from rally.domain.flow import FlowDefinition
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError, RallyStateError, RallyUsageError
+from rally.services.framework_assets import ensure_framework_builtins
 from rally.services.issue_editor import edit_issue_file_in_editor, resolve_interactive_issue_editor
 from rally.services.issue_ledger import snapshot_issue_log
 from rally.services.run_events import RunEventRecorder
 from rally.services.run_store import find_run_dir
+from rally.services.workspace import WorkspaceContext, workspace_context_from_root
 
 _MANDATORY_SKILLS = ("rally-kernel",)
 _HOME_READY_MARKER = ".rally_home_ready"
@@ -23,11 +25,13 @@ _HOME_READY_MARKER = ".rally_home_ready"
 
 def prepare_run_home_shell(
     *,
-    repo_root: Path,
+    workspace: WorkspaceContext | None = None,
+    repo_root: Path | None = None,
     run_record: RunRecord,
     event_recorder: RunEventRecorder | None = None,
 ) -> Path:
-    run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
+    workspace_context = _coerce_workspace(workspace=workspace, repo_root=repo_root)
+    run_dir = find_run_dir(repo_root=workspace_context.workspace_root, run_id=run_record.id)
     run_home = run_dir / "home"
 
     _ensure_run_layout(run_dir=run_dir, run_home=run_home)
@@ -43,24 +47,27 @@ def prepare_run_home_shell(
 
 def materialize_run_home(
     *,
-    repo_root: Path,
+    workspace: WorkspaceContext | None = None,
+    repo_root: Path | None = None,
     flow: FlowDefinition,
     run_record: RunRecord,
     event_recorder: RunEventRecorder | None = None,
 ) -> Path:
-    run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
+    workspace_context = _coerce_workspace(workspace=workspace, repo_root=repo_root)
+    run_dir = find_run_dir(repo_root=workspace_context.workspace_root, run_id=run_record.id)
     run_home = run_dir / "home"
     issue_path = run_home / "issue.md"
 
     _ensure_run_layout(run_dir=run_dir, run_home=run_home)
+    ensure_framework_builtins(workspace_context)
     _require_issue_ready(
         issue_path=issue_path,
         run_id=run_record.id,
         event_recorder=event_recorder,
     )
     _sync_compiled_agents(run_home=run_home, flow=flow)
-    _copy_allowed_skills_and_mcps(repo_root=repo_root, run_home=run_home, flow=flow)
-    _write_codex_config(repo_root=repo_root, run_home=run_home, flow=flow)
+    _copy_allowed_skills_and_mcps(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
+    _write_codex_config(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
     _seed_codex_auth(run_home=run_home)
     if _home_ready_marker(run_home).is_file():
         return run_home
@@ -73,14 +80,14 @@ def materialize_run_home(
             message="Preparing run home.",
         )
     _run_setup_script(
-        repo_root=repo_root,
+        workspace=workspace_context,
         flow=flow,
         run_record=run_record,
         run_home=run_home,
         issue_path=issue_path,
         event_recorder=event_recorder,
     )
-    snapshot_issue_log(repo_root=repo_root, run_id=run_record.id)
+    snapshot_issue_log(repo_root=workspace_context.workspace_root, run_id=run_record.id)
     _home_ready_marker(run_home).write_text("prepared\n", encoding="utf-8")
     if event_recorder is not None:
         event_recorder.emit(
@@ -360,7 +367,7 @@ def _allowed_mcp_names(flow: FlowDefinition) -> tuple[str, ...]:
 
 def _run_setup_script(
     *,
-    repo_root: Path,
+    workspace: WorkspaceContext,
     flow: FlowDefinition,
     run_record: RunRecord,
     run_home: Path,
@@ -379,12 +386,13 @@ def _run_setup_script(
         )
 
     env = {
-        "RALLY_BASE_DIR": str(repo_root.resolve()),
+        "RALLY_CLI_BIN": str(workspace.cli_bin.resolve()),
         "RALLY_FLOW_CODE": run_record.flow_code,
         "RALLY_FLOW_HOME": str(run_home.resolve()),
         "RALLY_ISSUE_PATH": str(issue_path.resolve()),
         "RALLY_RUN_HOME": str(run_home.resolve()),
         "RALLY_RUN_ID": run_record.id,
+        "RALLY_WORKSPACE_DIR": str(workspace.workspace_root.resolve()),
     }
     completed = subprocess.run(
         ["bash", str(flow.setup_home_script)],
@@ -443,3 +451,17 @@ def _render_toml_value(value: object) -> str:
     if isinstance(value, list):
         return "[" + ", ".join(_render_toml_value(item) for item in value) + "]"
     raise RallyConfigError(f"Unsupported TOML value in MCP server definition: `{value!r}`.")
+
+
+def _coerce_workspace(
+    *,
+    workspace: WorkspaceContext | None,
+    repo_root: Path | None,
+) -> WorkspaceContext:
+    if workspace is not None and repo_root is not None:
+        raise RallyConfigError("Pass either `workspace` or `repo_root`, not both.")
+    if workspace is not None:
+        return workspace
+    if repo_root is None:
+        raise RallyConfigError("Run-home materialization needs a workspace root.")
+    return workspace_context_from_root(repo_root)

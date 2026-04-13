@@ -9,7 +9,8 @@ from rally.errors import RallyStateError
 
 def build_codex_launch_env(
     *,
-    repo_root: Path,
+    workspace_dir: Path,
+    cli_bin: Path,
     run_home: Path,
     run_id: str,
     flow_code: str,
@@ -27,11 +28,12 @@ def build_codex_launch_env(
 
     return {
         "CODEX_HOME": str(run_home.resolve()),
-        "RALLY_BASE_DIR": str(repo_root.resolve()),
+        "RALLY_CLI_BIN": str(cli_bin.resolve()),
         "RALLY_RUN_ID": run_id,
         "RALLY_FLOW_CODE": flow_code,
         "RALLY_AGENT_SLUG": agent_slug,
         "RALLY_TURN_NUMBER": str(turn_index),
+        "RALLY_WORKSPACE_DIR": str(workspace_dir.resolve()),
     }
 
 

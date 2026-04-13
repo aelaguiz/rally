@@ -52,6 +52,7 @@ from rally.services.run_store import (
     load_run_state,
     write_run_state,
 )
+from rally.services.workspace import WorkspaceContext, workspace_context_from_root
 
 SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
 DisplayFactory = Callable[[RunRecord, FlowDefinition], EventConsumer]
@@ -80,15 +81,18 @@ class _TurnExecutionOutcome:
 
 def run_flow(
     *,
-    repo_root: Path,
+    workspace: WorkspaceContext | None = None,
+    repo_root: Path | None = None,
     request: RunRequest,
     subprocess_run: SubprocessRunner = subprocess.run,
     display_factory: DisplayFactory | None = None,
 ) -> RunCommandResult:
+    workspace_context = _coerce_workspace(workspace=workspace, repo_root=repo_root)
+    repo_root = workspace_context.workspace_root
     flow_code = load_flow_code(repo_root=repo_root, flow_name=request.flow_name)
 
     with flow_lock(repo_root=repo_root, flow_code=flow_code):
-        ensure_flow_agents_built(repo_root=repo_root, flow_name=request.flow_name)
+        ensure_flow_agents_built(workspace=workspace_context, flow_name=request.flow_name)
         flow = load_flow_definition(repo_root=repo_root, flow_name=request.flow_name)
         _maybe_archive_replaced_run(
             repo_root=repo_root,
@@ -100,6 +104,7 @@ def run_flow(
             flow=flow,
         )
         return _execute_new_run(
+            workspace=workspace_context,
             repo_root=repo_root,
             flow=flow,
             run_record=run_record,
@@ -117,11 +122,14 @@ def run_flow(
 
 def resume_run(
     *,
-    repo_root: Path,
+    workspace: WorkspaceContext | None = None,
+    repo_root: Path | None = None,
     request: ResumeRequest,
     subprocess_run: SubprocessRunner = subprocess.run,
     display_factory: DisplayFactory | None = None,
 ) -> RunCommandResult:
+    workspace_context = _coerce_workspace(workspace=workspace, repo_root=repo_root)
+    repo_root = workspace_context.workspace_root
     if request.edit_issue and request.restart:
         raise RallyUsageError("`rally resume` accepts either `--edit` or `--restart`, not both.")
 
@@ -131,10 +139,11 @@ def resume_run(
     run_record = load_run_record(run_dir=run_dir)
 
     with flow_lock(repo_root=repo_root, flow_code=run_record.flow_code):
-        ensure_flow_agents_built(repo_root=repo_root, flow_name=run_record.flow_name)
+        ensure_flow_agents_built(workspace=workspace_context, flow_name=run_record.flow_name)
         flow = load_flow_definition(repo_root=repo_root, flow_name=run_record.flow_name)
         if request.restart:
             return _restart_run(
+                workspace=workspace_context,
                 repo_root=repo_root,
                 flow=flow,
                 run_record=run_record,
@@ -164,6 +173,7 @@ def resume_run(
                 message=f"Resuming run `{run_record.id}`.",
             )
             return _execute_until_stop(
+                workspace=workspace_context,
                 repo_root=repo_root,
                 flow=flow,
                 run_record=run_record,
@@ -177,6 +187,7 @@ def resume_run(
 
 def _execute_new_run(
     *,
+    workspace: WorkspaceContext,
     repo_root: Path,
     flow: FlowDefinition,
     run_record: RunRecord,
@@ -205,13 +216,14 @@ def _execute_new_run(
             data=lifecycle_data,
         )
         prepare_run_home_shell(
-            repo_root=repo_root,
+            workspace=workspace,
             run_record=run_record,
             event_recorder=recorder,
         )
         if issue_text is not None:
             (run_dir / "home" / "issue.md").write_text(issue_text, encoding="utf-8")
         return _execute_until_stop(
+            workspace=workspace,
             repo_root=repo_root,
             flow=flow,
             run_record=run_record,
@@ -226,6 +238,7 @@ def _execute_new_run(
 
 def _restart_run(
     *,
+    workspace: WorkspaceContext,
     repo_root: Path,
     flow: FlowDefinition,
     run_record: RunRecord,
@@ -259,6 +272,7 @@ def _restart_run(
 
     new_run = create_run(repo_root=repo_root, flow=flow)
     restarted_result = _execute_new_run(
+        workspace=workspace,
         repo_root=repo_root,
         flow=flow,
         run_record=new_run,
@@ -562,6 +576,7 @@ def _render_resume_issue_editor_cancel_message(issue_path: Path, reason: str | N
 
 def _execute_until_stop(
     *,
+    workspace: WorkspaceContext,
     repo_root: Path,
     flow: FlowDefinition,
     run_record: RunRecord,
@@ -575,7 +590,7 @@ def _execute_until_stop(
     initial_state = load_run_state(run_dir=run_dir)
     _assert_resumable(state=initial_state, run_id=run_record.id)
     run_home = materialize_run_home(
-        repo_root=repo_root,
+        workspace=workspace,
         flow=flow,
         run_record=run_record,
         event_recorder=recorder,
@@ -615,6 +630,7 @@ def _execute_until_stop(
             repo_root=repo_root,
             run_dir=run_dir,
             run_home=run_home,
+            workspace=workspace,
             flow=flow,
             run_record=run_record,
             recorder=recorder,
@@ -630,6 +646,7 @@ def _execute_single_turn(
     repo_root: Path,
     run_dir: Path,
     run_home: Path,
+    workspace: WorkspaceContext,
     flow: FlowDefinition,
     run_record: RunRecord,
     recorder: RunEventRecorder,
@@ -661,6 +678,7 @@ def _execute_single_turn(
     )
 
     prompt = _build_agent_prompt(
+        workspace=workspace,
         run_home=run_home,
         flow=flow,
         run_record=run_record,
@@ -676,6 +694,7 @@ def _execute_single_turn(
 
     invocation = _invoke_codex(
         repo_root=repo_root,
+        workspace=workspace,
         run_dir=run_dir,
         run_home=run_home,
         flow=flow,
@@ -908,6 +927,7 @@ def _block_for_command_turn_cap(
 
 def _build_agent_prompt(
     *,
+    workspace: WorkspaceContext,
     run_home: Path,
     flow: FlowDefinition,
     run_record: RunRecord,
@@ -917,6 +937,7 @@ def _build_agent_prompt(
 ) -> str:
     compiled_markdown = (run_home / "agents" / agent.slug / "AGENTS.md").read_text(encoding="utf-8").rstrip()
     prompt_inputs = _load_prompt_inputs(
+        workspace=workspace,
         flow=flow,
         run_record=run_record,
         run_home=run_home,
@@ -932,6 +953,7 @@ def _build_agent_prompt(
 
 def _load_prompt_inputs(
     *,
+    workspace: WorkspaceContext,
     flow: FlowDefinition,
     run_record: RunRecord,
     run_home: Path,
@@ -959,10 +981,12 @@ def _load_prompt_inputs(
             **os.environ,
             "RALLY_AGENT_KEY": agent.key,
             "RALLY_AGENT_SLUG": agent.slug,
+            "RALLY_CLI_BIN": str(workspace.cli_bin.resolve()),
             "RALLY_FLOW_CODE": run_record.flow_code,
             "RALLY_ISSUE_PATH": str((run_home / "issue.md").resolve()),
             "RALLY_RUN_HOME": str(run_home.resolve()),
             "RALLY_RUN_ID": run_record.id,
+            "RALLY_WORKSPACE_DIR": str(workspace.workspace_root.resolve()),
         },
         capture_output=True,
         text=True,
@@ -1038,6 +1062,7 @@ def _render_prompt_inputs(payload: dict[str, object]) -> str:
 def _invoke_codex(
     *,
     repo_root: Path,
+    workspace: WorkspaceContext,
     run_dir: Path,
     run_home: Path,
     flow: FlowDefinition,
@@ -1079,7 +1104,8 @@ def _invoke_codex(
     env = {
         **os.environ,
         **build_codex_launch_env(
-            repo_root=repo_root,
+            workspace_dir=workspace.workspace_root,
+            cli_bin=workspace.cli_bin,
             run_home=run_home,
             run_id=run_record.id,
             flow_code=run_record.flow_code,
@@ -1662,6 +1688,20 @@ def _coerce_stream_text(raw_value: str | bytes | None) -> str:
     if isinstance(raw_value, bytes):
         return raw_value.decode("utf-8", errors="replace")
     return raw_value
+
+
+def _coerce_workspace(
+    *,
+    workspace: WorkspaceContext | None,
+    repo_root: Path | None,
+) -> WorkspaceContext:
+    if workspace is not None and repo_root is not None:
+        raise RallyUsageError("Pass either `workspace` or `repo_root`, not both.")
+    if workspace is not None:
+        return workspace
+    if repo_root is None:
+        raise RallyUsageError("Rally runtime needs a workspace root.")
+    return workspace_context_from_root(repo_root)
 
 
 @dataclass(frozen=True)

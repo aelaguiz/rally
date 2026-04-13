@@ -281,8 +281,8 @@ It is not a claim about the current repo state.
 
 - Existing grounding / tool / file exposure:
   - `home/issue.md` already exists as the shared run ledger in the runtime.
-  - `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_AGENT_SLUG` already exist or can exist as env inputs.
-  - `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"` already exists as the shared note front door.
+  - `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_AGENT_SLUG` already exist or can exist as env inputs.
+  - `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"` already exists as the shared note front door.
 
 - Duplicate or drifting paths relevant to this change:
   - `flows/poem_loop/prompts/shared/inputs.prompt` still defines a local `issue.md` input instead of inheriting the shared issue ledger.
@@ -342,7 +342,8 @@ It is not a claim about the current repo state.
 
 - Rally startup already requires a non-empty `home/issue.md`.
 - Rally-managed agents already get:
-  - `RALLY_BASE_DIR`
+  - `RALLY_WORKSPACE_DIR`
+  - `RALLY_CLI_BIN`
   - `RALLY_RUN_ID`
   - `RALLY_FLOW_CODE`
   - `RALLY_AGENT_SLUG`

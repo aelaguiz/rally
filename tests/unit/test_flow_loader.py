@@ -96,7 +96,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertNotIn("\n### Writer Issue Note\n", writer_readback)
         self.assertIn("Artistic Rationale", writer_readback)
         self.assertIn("### Rally Turn Result", writer_readback)
-        self.assertIn('Append With: `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"`', writer_readback)
+        self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', writer_readback)
         self.assertNotIn("### Issue Note", critic_readback)
         self.assertIn("## Poem Review", critic_readback)
         self.assertIn("### Poem Review Response", critic_readback)
@@ -144,7 +144,7 @@ class FlowLoaderTests(unittest.TestCase):
             with self.assertRaisesRegex(RallyConfigError, "max_command_turns"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
-    def test_load_flow_definition_rejects_support_files_outside_repo_root(self) -> None:
+    def test_load_flow_definition_rejects_support_files_outside_workspace_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_fixture_repo(
@@ -157,7 +157,7 @@ class FlowLoaderTests(unittest.TestCase):
             (shared / "schema.json").write_text(self._schema_text(include_next_owner=True), encoding="utf-8")
             (shared / "example.json").write_text('{"kind":"done","summary":"ok"}\n', encoding="utf-8")
 
-            with self.assertRaisesRegex(RallyConfigError, "escapes the Rally repo root"):
+            with self.assertRaisesRegex(RallyConfigError, "escapes the Rally workspace root"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
     def test_load_flow_definition_accepts_control_ready_review_final_output(self) -> None:

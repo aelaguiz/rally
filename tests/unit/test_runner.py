@@ -224,7 +224,7 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("### Issue Note", prompt_text)
             self.assertNotIn("\n### Writer Issue Note\n", prompt_text)
             self.assertIn("Use the shared `rally-kernel` skill for that note.", prompt_text)
-            self.assertIn('Append With: `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"`', prompt_text)
+            self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', prompt_text)
             self.assertIn("Artistic Rationale", prompt_text)
             self.assertIn("### Rally Turn Result", prompt_text)
             self.assertNotIn("\n### Writer Turn Result\n", prompt_text)
@@ -247,7 +247,12 @@ class RunnerTests(unittest.TestCase):
                 )
 
             self.assertFalse((repo_root / "runs" / "active" / "DMO-1").exists())
-            self.ensure_flow_agents_built.assert_called_once_with(repo_root=repo_root, flow_name="demo")
+            self.ensure_flow_agents_built.assert_called_once()
+            self.assertEqual(self.ensure_flow_agents_built.call_args.kwargs["flow_name"], "demo")
+            self.assertEqual(
+                self.ensure_flow_agents_built.call_args.kwargs["workspace"].workspace_root,
+                repo_root,
+            )
 
     def test_resume_run_renders_trace_details_on_tty_and_keeps_plain_log_compact(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1704,6 +1709,7 @@ class RunnerTests(unittest.TestCase):
         with_setup_script: bool = False,
         max_command_turns: int = 8,
     ) -> None:
+        source_root = Path(__file__).resolve().parents[2]
         (repo_root / "skills" / "repo-search").mkdir(parents=True)
         (repo_root / "skills" / "repo-search" / "SKILL.md").write_text(
             textwrap.dedent(
@@ -1718,44 +1724,8 @@ class RunnerTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        (repo_root / "skills" / "rally-kernel").mkdir(parents=True)
-        (repo_root / "skills" / "rally-kernel" / "SKILL.md").write_text(
-            textwrap.dedent(
-                """\
-                ---
-                name: rally-kernel
-                description: "Leave Rally notes and end the turn with valid final JSON."
-                ---
-
-                # Rally Kernel
-                """
-            ),
-            encoding="utf-8",
-        )
-        (repo_root / "stdlib" / "rally" / "schemas").mkdir(parents=True)
-        (repo_root / "stdlib" / "rally" / "examples").mkdir(parents=True)
-        (repo_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").write_text(
-            textwrap.dedent(
-                """\
-                {
-                  "type": "object",
-                  "required": ["kind", "next_owner", "summary", "reason", "sleep_duration_seconds"],
-                  "properties": {
-                    "kind": { "type": "string", "enum": ["handoff", "done", "blocker", "sleep"] },
-                    "next_owner": { "type": ["string", "null"] },
-                    "summary": { "type": ["string", "null"] },
-                    "reason": { "type": ["string", "null"] },
-                    "sleep_duration_seconds": { "type": ["integer", "null"] }
-                  }
-                }
-                """
-            ),
-            encoding="utf-8",
-        )
-        (repo_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json").write_text(
-            '{"kind":"done","next_owner":null,"summary":"ok","reason":null,"sleep_duration_seconds":null}\n',
-            encoding="utf-8",
-        )
+        shutil.copytree(source_root / "skills" / "rally-kernel", repo_root / "skills" / "rally-kernel")
+        shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
 
         flow_root = repo_root / "flows" / "demo"
         (flow_root / "prompts").mkdir(parents=True)

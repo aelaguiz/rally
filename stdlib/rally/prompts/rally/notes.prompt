@@ -3,7 +3,7 @@ import rally.issue_ledger
 
 output RallyIssueNote: "Issue Note"
     target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: "\"$RALLY_BASE_DIR/rally\" issue note --run-id \"$RALLY_RUN_ID\""
+        append_with: "\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\""
     shape: MarkdownDocument
     requirement: Advisory
 

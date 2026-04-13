@@ -447,7 +447,7 @@ def _resolve_repo_relative_file(*, repo_root: Path, relative_path: str, context:
         candidate.relative_to(repo_root.resolve())
     except ValueError as exc:
         raise RallyConfigError(
-            f"{context} escapes the Rally repo root: `{relative_path}`."
+            f"{context} escapes the Rally workspace root: `{relative_path}`."
         ) from exc
     if not candidate.is_file():
         raise RallyConfigError(f"{context} does not exist: `{candidate}`.")

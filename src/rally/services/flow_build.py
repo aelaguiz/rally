@@ -1,37 +1,32 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 from typing import Callable
 
 from rally.errors import RallyConfigError
+from rally.services.framework_assets import ensure_framework_builtins
+from rally.services.workspace import WorkspaceContext, workspace_context_from_root
 
 BuildSubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
 
 
 def ensure_flow_agents_built(
     *,
-    repo_root: Path,
+    workspace: WorkspaceContext | None = None,
+    repo_root: Path | None = None,
     flow_name: str,
     subprocess_run: BuildSubprocessRunner = subprocess.run,
 ) -> None:
-    config_path = repo_root / "pyproject.toml"
+    workspace_context = _coerce_workspace(workspace=workspace, repo_root=repo_root)
+    config_path = workspace_context.pyproject_path
     if not config_path.is_file():
-        raise RallyConfigError(f"Rally pyproject is missing: `{config_path}`.")
-
-    doctrine_root = (repo_root.parent / "doctrine").resolve()
-    if not doctrine_root.is_dir():
-        raise RallyConfigError(f"Paired Doctrine repo is missing: `{doctrine_root}`.")
-    if not (doctrine_root / "pyproject.toml").is_file():
-        raise RallyConfigError(f"Doctrine pyproject is missing: `{doctrine_root / 'pyproject.toml'}`.")
+        raise RallyConfigError(f"Rally workspace pyproject is missing: `{config_path}`.")
+    ensure_framework_builtins(workspace_context)
 
     command = [
-        "uv",
-        "run",
-        "--project",
-        str(doctrine_root),
-        "--locked",
-        "python",
+        sys.executable,
         "-m",
         "doctrine.emit_docs",
         "--pyproject",
@@ -42,7 +37,7 @@ def ensure_flow_agents_built(
     try:
         completed = subprocess_run(
             command,
-            cwd=repo_root,
+            cwd=workspace_context.workspace_root,
             capture_output=True,
             text=True,
             check=False,
@@ -55,3 +50,13 @@ def ensure_flow_agents_built(
 
     detail = completed.stderr.strip() or completed.stdout.strip() or "Doctrine emit_docs failed."
     raise RallyConfigError(f"Failed to rebuild flow `{flow_name}` with Doctrine emit_docs: {detail}")
+
+
+def _coerce_workspace(*, workspace: WorkspaceContext | None, repo_root: Path | None) -> WorkspaceContext:
+    if workspace is not None and repo_root is not None:
+        raise RallyConfigError("Pass either `workspace` or `repo_root`, not both.")
+    if workspace is not None:
+        return workspace
+    if repo_root is None:
+        raise RallyConfigError("`ensure_flow_agents_built` needs a workspace root.")
+    return workspace_context_from_root(repo_root)

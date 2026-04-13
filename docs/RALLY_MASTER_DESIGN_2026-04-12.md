@@ -36,8 +36,8 @@ These are the rules Rally should keep returning to:
 1. Filesystem truth comes first.
    Rally should keep its semantic source of truth on disk in normal files the operator can inspect and edit.
 
-2. Repo root is Rally home.
-   Rally assumes fixed repo-root `flows/`, `stdlib/`, `skills/`, `mcps/`, and `runs/` directories.
+2. Workspace root is Rally home.
+   Rally assumes fixed workspace-root `flows/`, `stdlib/`, `skills/`, `mcps/`, and `runs/` directories.
 
 3. Doctrine-native `.prompt` authoring is the only instruction source.
    Compiled Markdown is generated readback, not authored truth.
@@ -64,7 +64,7 @@ These are the rules Rally should keep returning to:
    If Rally needs generic authored-semantics or compiler support to stay clean, that support belongs in Doctrine rather than in Rally-side hacks.
 
 11. No hidden global Rally state.
-   Rally-owned state lives under the repo root, not under `~/.rally`, `~/.config`, or similar hidden control planes.
+   Rally-owned state lives under the active workspace root, not under `~/.rally`, `~/.config`, or similar hidden control planes.
 
 12. No GUI, board, company, or registry carryover.
    Rally keeps Paperclip's runtime rigor, not its surrounding product shell.

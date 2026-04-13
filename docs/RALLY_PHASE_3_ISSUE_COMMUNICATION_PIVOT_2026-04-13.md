@@ -35,8 +35,8 @@ Review-native turns may use control-ready Doctrine review JSON instead.
 
 - Every Rally-managed agent inherits the shared base agent in `stdlib/rally/prompts/rally/base_agent.prompt`.
 - Every Rally-managed agent gets the shared `rally-kernel` skill.
-- The shared note path is `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"`.
-- Rally injects `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`.
+- The shared note path is `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`.
+- Rally injects `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`.
 - `rally.turn_results` is the classic shared five-key control JSON.
 - Review-native turns may declare a different final JSON when Doctrine emits control-ready review metadata.
 - Notes keep context only. Notes never carry `next_owner`, `done`, `blocker`, or `sleep` truth.

@@ -216,7 +216,8 @@ The current Codex launch helper is small and real.
 `src/rally/adapters/codex/launcher.py` builds only these env vars today:
 
 - `CODEX_HOME`
-- `RALLY_BASE_DIR`
+- `RALLY_WORKSPACE_DIR`
+- `RALLY_CLI_BIN`
 - `RALLY_RUN_ID`
 - `RALLY_FLOW_CODE`
 - `RALLY_AGENT_SLUG`
