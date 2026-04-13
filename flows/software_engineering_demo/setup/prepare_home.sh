@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-archive_root="$RALLY_BASE_DIR/runs/archive"
+archive_root="$RALLY_WORKSPACE_DIR/runs/archive"
 repo_dir="$RALLY_RUN_HOME/repos/demo_repo"
 flow_code="$RALLY_FLOW_CODE"
 issue_branch="issue/$(printf '%s' "$RALLY_RUN_ID" | tr '[:upper:]' '[:lower:]')"

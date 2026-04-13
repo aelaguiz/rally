@@ -11,13 +11,15 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from rally.cli import main
+from rally.services.workspace import workspace_context_from_root
 
 
 class CliTests(unittest.TestCase):
     def test_run_command_calls_runner_without_external_brief_flag(self) -> None:
         stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
 
-        with patch("rally.cli._repo_root", return_value=Path("/tmp/repo")), patch(
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
             "rally.cli.run_flow",
             return_value=SimpleNamespace(message="Run `DMO-1` created."),
         ) as run_flow_mock:
@@ -31,8 +33,9 @@ class CliTests(unittest.TestCase):
 
     def test_run_command_passes_new_flag_to_runner(self) -> None:
         stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
 
-        with patch("rally.cli._repo_root", return_value=Path("/tmp/repo")), patch(
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
             "rally.cli.run_flow",
             return_value=SimpleNamespace(message="Run `DMO-2` created."),
         ) as run_flow_mock:
@@ -64,8 +67,9 @@ class CliTests(unittest.TestCase):
 
     def test_resume_command_passes_edit_flag_to_runner(self) -> None:
         stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
 
-        with patch("rally.cli._repo_root", return_value=Path("/tmp/repo")), patch(
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
             "rally.cli.resume_run",
             return_value=SimpleNamespace(message="Run `DMO-1` resumed."),
         ) as resume_run_mock:
@@ -80,8 +84,9 @@ class CliTests(unittest.TestCase):
 
     def test_resume_command_passes_restart_flag_to_runner(self) -> None:
         stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
 
-        with patch("rally.cli._repo_root", return_value=Path("/tmp/repo")), patch(
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
             "rally.cli.resume_run",
             return_value=SimpleNamespace(message="Run `DMO-2` restarted."),
         ) as resume_run_mock:
@@ -109,7 +114,7 @@ class CliTests(unittest.TestCase):
             issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
             stdout = io.StringIO()
 
-            with patch("rally.cli._repo_root", return_value=repo_root), patch(
+            with patch("rally.cli.resolve_workspace", return_value=self._workspace(repo_root)), patch(
                 "sys.stdin", io.StringIO("### Note\n- stdin path\n")
             ):
                 with redirect_stdout(stdout):
@@ -124,7 +129,7 @@ class CliTests(unittest.TestCase):
             repo_root = Path(temp_dir).resolve()
             issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
 
-            with patch("rally.cli._repo_root", return_value=repo_root):
+            with patch("rally.cli.resolve_workspace", return_value=self._workspace(repo_root)):
                 exit_code = main(["issue", "note", "--run-id", "FLW-1", "--text", "Short note"])
 
             self.assertEqual(exit_code, 0)
@@ -135,7 +140,7 @@ class CliTests(unittest.TestCase):
             repo_root = Path(temp_dir).resolve()
             issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
 
-            with patch("rally.cli._repo_root", return_value=repo_root):
+            with patch("rally.cli.resolve_workspace", return_value=self._workspace(repo_root)):
                 exit_code = main(
                     [
                         "issue",
@@ -161,7 +166,7 @@ class CliTests(unittest.TestCase):
             repo_root = Path(temp_dir).resolve()
             issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
 
-            with patch("rally.cli._repo_root", return_value=repo_root), patch.dict(
+            with patch("rally.cli.resolve_workspace", return_value=self._workspace(repo_root)), patch.dict(
                 os.environ,
                 {"RALLY_TURN_NUMBER": "4"},
                 clear=False,
@@ -176,7 +181,7 @@ class CliTests(unittest.TestCase):
             repo_root = Path(temp_dir).resolve()
             issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
 
-            with patch("rally.cli._repo_root", return_value=repo_root), patch.dict(
+            with patch("rally.cli.resolve_workspace", return_value=self._workspace(repo_root)), patch.dict(
                 os.environ,
                 {},
                 clear=True,
@@ -192,7 +197,7 @@ class CliTests(unittest.TestCase):
             self._write_run(repo_root=repo_root, run_id="FLW-1")
             stderr = io.StringIO()
 
-            with patch("rally.cli._repo_root", return_value=repo_root), patch.dict(
+            with patch("rally.cli.resolve_workspace", return_value=self._workspace(repo_root)), patch.dict(
                 os.environ,
                 {"RALLY_TURN_NUMBER": "not-a-number"},
                 clear=False,
@@ -208,7 +213,7 @@ class CliTests(unittest.TestCase):
             self._write_run(repo_root=repo_root, run_id="FLW-1")
             stderr = io.StringIO()
 
-            with patch("rally.cli._repo_root", return_value=repo_root), redirect_stderr(stderr):
+            with patch("rally.cli.resolve_workspace", return_value=self._workspace(repo_root)), redirect_stderr(stderr):
                 exit_code = main(
                     [
                         "issue",
@@ -232,7 +237,7 @@ class CliTests(unittest.TestCase):
             note_file = repo_root / "note.md"
             note_file.write_text("### Note\n- file path\n", encoding="utf-8")
 
-            with patch("rally.cli._repo_root", return_value=repo_root):
+            with patch("rally.cli.resolve_workspace", return_value=self._workspace(repo_root)):
                 exit_code = main(
                     ["issue", "note", "--run-id", "FLW-1", "--file", str(note_file)]
                 )
@@ -246,7 +251,7 @@ class CliTests(unittest.TestCase):
             self._write_run(repo_root=repo_root, run_id="FLW-1")
             stderr = io.StringIO()
 
-            with patch("rally.cli._repo_root", return_value=repo_root), redirect_stderr(stderr):
+            with patch("rally.cli.resolve_workspace", return_value=self._workspace(repo_root)), redirect_stderr(stderr):
                 exit_code = main(["issue", "note", "--run-id", "FLW-9", "--text", "Short note"])
 
             self.assertEqual(exit_code, 2)
@@ -258,7 +263,7 @@ class CliTests(unittest.TestCase):
             self._write_run(repo_root=repo_root, run_id="FLW-1")
             stderr = io.StringIO()
 
-            with patch("rally.cli._repo_root", return_value=repo_root), redirect_stderr(stderr):
+            with patch("rally.cli.resolve_workspace", return_value=self._workspace(repo_root)), redirect_stderr(stderr):
                 exit_code = main(["issue", "note", "--run-id", "FLW-1", "--text", "   "])
 
             self.assertEqual(exit_code, 2)
@@ -283,6 +288,13 @@ class CliTests(unittest.TestCase):
             encoding="utf-8",
         )
         return issue_path
+
+    def _workspace(self, repo_root: Path):
+        return workspace_context_from_root(
+            repo_root,
+            cli_bin=repo_root / "bin" / "rally",
+            framework_root=Path(__file__).resolve().parents[2],
+        )
 
 
 if __name__ == "__main__":

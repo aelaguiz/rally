@@ -128,7 +128,7 @@ The current checked-in runtime surface is:
   - shows a richer startup summary with run, flow, model, thinking level, adapter, and agent facts
   - falls back to plain text when needed
 - `src/rally/adapters/codex/launcher.py`
-  - builds `CODEX_HOME`, `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`
+  - builds `CODEX_HOME`, `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`
   - writes one adapter launch proof file per turn
 - `src/rally/adapters/codex/event_stream.py`
   - normalizes Codex JSONL into Rally event records

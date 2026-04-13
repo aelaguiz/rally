@@ -24,7 +24,8 @@ This plan led to the current Rally shape:
 - one shared Rally base agent
 - one shared note path through `rally-kernel` and `rally issue note`
 - one final JSON result for control
-- one launch env contract with `RALLY_BASE_DIR`, `RALLY_RUN_ID`, and `RALLY_FLOW_CODE`
+- one launch env contract with `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`,
+  `RALLY_RUN_ID`, and `RALLY_FLOW_CODE`
 
 The older shared file-state idea from early drafts did not ship as a Rally-owned surface.
 

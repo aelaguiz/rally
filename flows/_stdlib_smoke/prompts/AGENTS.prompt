@@ -76,7 +76,7 @@ agent PlanAuthor[rally.base_agent.RallyManagedBaseAgent]:
         "Otherwise finish the smoke test here."
     inherit rally_contract
     inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
-        inherit rally_base_dir
+        inherit rally_workspace_dir
         inherit rally_run_id
         inherit rally_flow_code
 

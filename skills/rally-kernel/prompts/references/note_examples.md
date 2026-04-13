@@ -5,7 +5,7 @@ Use these examples when you need the exact Rally note command forms.
 ## Stdin Note
 
 ```bash
-"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID" <<'EOF'
+"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID" <<'EOF'
 ### Note
 - Explain the context worth preserving for the next owner or later turn.
 EOF
@@ -14,7 +14,7 @@ EOF
 ## Structured Note Fields
 
 ```bash
-"$RALLY_BASE_DIR/rally" issue note \
+"$RALLY_CLI_BIN" issue note \
   --run-id "$RALLY_RUN_ID" \
   --field kind=producer_handoff \
   --field lane=producer \

@@ -439,8 +439,8 @@ Behavior-preservation evidence:
   - `src/rally/services/home_materializer.py` — prepares `home/repos/`,
     `home/skills/`, `home/mcps/`, and `home/sessions/`.
   - `src/rally/services/home_materializer.py` — passes `RALLY_RUN_HOME`,
-    `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_ISSUE_PATH`
-    into `setup_home_script`.
+    `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`,
+    `RALLY_FLOW_CODE`, and `RALLY_ISSUE_PATH` into `setup_home_script`.
   - `src/rally/services/flow_loader.py` — loads flow-owned `allowed_skills` and
     `setup_home_script`.
   - `src/rally/services/runner.py:_load_prompt_inputs` — appends flow-owned

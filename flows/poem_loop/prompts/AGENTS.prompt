@@ -9,7 +9,7 @@ import roles.poem_critic
 
 
 inputs PoemLoopInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
-    inherit rally_base_dir
+    inherit rally_workspace_dir
 
     inherit rally_run_id
     inherit rally_flow_code

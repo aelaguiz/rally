@@ -45,7 +45,7 @@ document QaIssueNoteDocument: "QA Note"
 
 output ArchitectIssueNote: "Architect Issue Note"
     target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: "\"$RALLY_BASE_DIR/rally\" issue note --run-id \"$RALLY_RUN_ID\""
+        append_with: "\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\""
     shape: MarkdownDocument
     structure: ArchitectIssueNoteDocument
     requirement: Required
@@ -56,7 +56,7 @@ output ArchitectIssueNote: "Architect Issue Note"
 
 output DeveloperIssueNote: "Developer Issue Note"
     target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: "\"$RALLY_BASE_DIR/rally\" issue note --run-id \"$RALLY_RUN_ID\""
+        append_with: "\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\""
     shape: MarkdownDocument
     structure: DeveloperIssueNoteDocument
     requirement: Required
@@ -67,7 +67,7 @@ output DeveloperIssueNote: "Developer Issue Note"
 
 output QaIssueNote: "QA Issue Note"
     target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: "\"$RALLY_BASE_DIR/rally\" issue note --run-id \"$RALLY_RUN_ID\""
+        append_with: "\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\""
     shape: MarkdownDocument
     structure: QaIssueNoteDocument
     requirement: Required

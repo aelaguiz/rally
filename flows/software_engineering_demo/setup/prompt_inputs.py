@@ -22,7 +22,7 @@ def main() -> int:
         "Demo Repo Facts": repo_status(demo_repo),
         "Carry Forward": carry_forward_source(
             repo=demo_repo,
-            archive_root=Path(os.environ["RALLY_BASE_DIR"]).resolve() / "runs" / "archive",
+            archive_root=Path(os.environ["RALLY_WORKSPACE_DIR"]).resolve() / "runs" / "archive",
             flow_code=flow_code,
         ),
         "Review Facts": review_facts(

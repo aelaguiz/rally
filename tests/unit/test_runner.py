@@ -225,7 +225,7 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("### Issue Note", prompt_text)
             self.assertNotIn("\n### Writer Issue Note\n", prompt_text)
             self.assertIn("Use the shared `rally-kernel` skill for that note.", prompt_text)
-            self.assertIn('Append With: `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"`', prompt_text)
+            self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', prompt_text)
             self.assertIn("Artistic Rationale", prompt_text)
             self.assertIn("### Rally Turn Result", prompt_text)
             self.assertNotIn("\n### Writer Turn Result\n", prompt_text)
@@ -234,7 +234,7 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("### Findings First", issue_text)
             self.assertIn("The poem is ready to keep as written.", issue_text)
 
-    def test_resume_run_passes_base_dir_to_prompt_input_command(self) -> None:
+    def test_resume_run_passes_workspace_dir_to_prompt_input_command(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_demo_repo(repo_root=repo_root)
@@ -254,12 +254,13 @@ class RunnerTests(unittest.TestCase):
 
             def prompt_input_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
                 self.assertEqual(command[0], sys.executable)
-                self.assertIn("RALLY_BASE_DIR", kwargs["env"])
+                self.assertIn("RALLY_WORKSPACE_DIR", kwargs["env"])
+                self.assertIn("RALLY_CLI_BIN", kwargs["env"])
                 captured_env.update(kwargs["env"])
                 return subprocess.CompletedProcess(
                     args=command,
                     returncode=0,
-                    stdout=json.dumps({"Env": {"base_dir": kwargs["env"]["RALLY_BASE_DIR"]}}),
+                    stdout=json.dumps({"Env": {"workspace_dir": kwargs["env"]["RALLY_WORKSPACE_DIR"]}}),
                     stderr="",
                 )
 
@@ -289,7 +290,7 @@ class RunnerTests(unittest.TestCase):
 
             prompt_text = fake_run.calls[0]["kwargs"]["input"]
             self.assertEqual(result.status, RunStatus.DONE)
-            self.assertEqual(captured_env["RALLY_BASE_DIR"], str(repo_root))
+            self.assertEqual(captured_env["RALLY_WORKSPACE_DIR"], str(repo_root))
             self.assertIn(str(repo_root), prompt_text)
 
     def test_run_flow_rebuild_failure_stops_before_creating_run(self) -> None:
@@ -306,7 +307,12 @@ class RunnerTests(unittest.TestCase):
                 )
 
             self.assertFalse((repo_root / "runs" / "active" / "DMO-1").exists())
-            self.ensure_flow_assets_built.assert_called_once_with(repo_root=repo_root, flow_name="demo")
+            self.ensure_flow_assets_built.assert_called_once()
+            self.assertEqual(self.ensure_flow_assets_built.call_args.kwargs["flow_name"], "demo")
+            self.assertEqual(
+                self.ensure_flow_assets_built.call_args.kwargs["workspace"].workspace_root,
+                repo_root,
+            )
 
     def test_resume_run_renders_trace_details_on_tty_and_keeps_plain_log_compact(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -668,7 +674,24 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_demo_repo(repo_root=repo_root)
-            shutil.rmtree(repo_root / "skills" / "rally-kernel" / "build")
+            self._write_doctrine_skill(
+                repo_root=repo_root,
+                skill_name="demo-git",
+                prompt_title="Demo Git",
+                emitted_heading="Demo Git",
+                description="Use git commands in the demo repo.",
+                include_reference=False,
+            )
+            shutil.rmtree(repo_root / "skills" / "demo-git" / "build")
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_path.write_text(
+                flow_path.read_text(encoding="utf-8").replace(
+                    "    allowed_skills: [repo-search]\n",
+                    "    allowed_skills: [repo-search, demo-git]\n",
+                    1,
+                ),
+                encoding="utf-8",
+            )
 
             def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
                 self.assertEqual(editor_command, ("vim",))
@@ -1866,44 +1889,23 @@ class RunnerTests(unittest.TestCase):
         with_guarded_repo: bool = False,
         max_command_turns: int = 8,
     ) -> None:
-        self._write_markdown_skill(
-            repo_root=repo_root,
-            skill_name="repo-search",
-            heading="Repo Search",
-            description="Use `rg` to find the exact files and tests for the current task.",
-        )
-        self._write_doctrine_skill(
-            repo_root=repo_root,
-            skill_name="rally-kernel",
-            prompt_title="Rally Kernel",
-            emitted_heading="Rally Kernel",
-            description="Leave Rally notes and end the turn with valid final JSON.",
-            include_reference=True,
-        )
-        (repo_root / "stdlib" / "rally" / "schemas").mkdir(parents=True)
-        (repo_root / "stdlib" / "rally" / "examples").mkdir(parents=True)
-        (repo_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").write_text(
+        source_root = Path(__file__).resolve().parents[2]
+        (repo_root / "skills" / "repo-search").mkdir(parents=True)
+        (repo_root / "skills" / "repo-search" / "SKILL.md").write_text(
             textwrap.dedent(
                 """\
-                {
-                  "type": "object",
-                  "required": ["kind", "next_owner", "summary", "reason", "sleep_duration_seconds"],
-                  "properties": {
-                    "kind": { "type": "string", "enum": ["handoff", "done", "blocker", "sleep"] },
-                    "next_owner": { "type": ["string", "null"] },
-                    "summary": { "type": ["string", "null"] },
-                    "reason": { "type": ["string", "null"] },
-                    "sleep_duration_seconds": { "type": ["integer", "null"] }
-                  }
-                }
+                ---
+                name: repo-search
+                description: "Use `rg` to find the exact files and tests for the current task."
+                ---
+
+                # Repo Search
                 """
             ),
             encoding="utf-8",
         )
-        (repo_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json").write_text(
-            '{"kind":"done","next_owner":null,"summary":"ok","reason":null,"sleep_duration_seconds":null}\n',
-            encoding="utf-8",
-        )
+        shutil.copytree(source_root / "skills" / "rally-kernel", repo_root / "skills" / "rally-kernel")
+        shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
 
         flow_root = repo_root / "flows" / "demo"
         (flow_root / "prompts").mkdir(parents=True)
