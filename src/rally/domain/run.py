@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
 
 
 class RunStatus(StrEnum):
@@ -16,7 +15,6 @@ class RunStatus(StrEnum):
 @dataclass(frozen=True)
 class RunRequest:
     flow_name: str
-    brief_file: Path
 
 
 @dataclass(frozen=True)
@@ -31,7 +29,6 @@ class RunRecord:
     flow_code: str
     adapter_name: str
     start_agent_key: str
-    brief_file: str
     created_at: str
     issue_file: str = "home/issue.md"
 

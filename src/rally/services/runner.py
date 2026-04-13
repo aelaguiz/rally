@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import json
 import os
+import selectors
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-from rally.adapters.codex.launcher import build_codex_launch_env
+from rally.adapters.codex.event_stream import CodexEventStreamParser
+from rally.adapters.codex.launcher import build_codex_launch_env, write_codex_launch_record
 from rally.adapters.codex.result_contract import load_turn_result
 from rally.adapters.codex.session_store import (
     CodexSessionRecord,
@@ -28,10 +31,10 @@ from rally.domain.turn_result import (
     TurnResult,
 )
 from rally.errors import RallyConfigError, RallyStateError, RallyUsageError
-from rally.services.event_log import append_event
 from rally.services.flow_loader import load_flow_definition
-from rally.services.home_materializer import materialize_run_home
+from rally.services.home_materializer import materialize_run_home, prepare_run_home_shell
 from rally.services.issue_ledger import append_issue_event
+from rally.services.run_events import EventConsumer, RunEventRecorder
 from rally.services.run_store import (
     create_run,
     find_run_dir,
@@ -42,6 +45,7 @@ from rally.services.run_store import (
 )
 
 SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
+DisplayFactory = Callable[[RunRecord, FlowDefinition], EventConsumer]
 
 
 @dataclass(frozen=True)
@@ -57,49 +61,48 @@ def run_flow(
     repo_root: Path,
     request: RunRequest,
     subprocess_run: SubprocessRunner = subprocess.run,
+    display_factory: DisplayFactory | None = None,
 ) -> RunCommandResult:
     flow = load_flow_definition(repo_root=repo_root, flow_name=request.flow_name)
-    brief_markdown = request.brief_file.read_text(encoding="utf-8")
 
     with flow_lock(repo_root=repo_root, flow_code=flow.code):
         run_record = create_run(
             repo_root=repo_root,
             flow=flow,
-            brief_file=request.brief_file,
         )
         run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
-        materialize_run_home(
-            repo_root=repo_root,
-            flow=flow,
-            run_record=run_record,
-            brief_markdown=brief_markdown,
-        )
-        append_event(
+        recorder = _build_recorder(
             run_dir=run_dir,
-            event_type="run.created",
-            payload={
-                "flow_name": flow.name,
-                "flow_code": flow.code,
-                "start_agent_key": flow.start_agent_key,
-            },
-        )
-        append_issue_event(
-            repo_root=repo_root,
-            run_id=run_record.id,
-            title="Rally Run Started",
-            source="rally run",
-            detail_lines=(
-                f"Flow: `{flow.name}`",
-                f"Flow Code: `{flow.code}`",
-                f"Start Agent: `{flow.start_agent_key}`",
-            ),
-        )
-        return _execute_current_turn(
-            repo_root=repo_root,
-            flow=flow,
             run_record=run_record,
-            subprocess_run=subprocess_run,
+            flow=flow,
+            display_factory=display_factory,
         )
+        try:
+            recorder.emit(
+                source="rally",
+                kind="lifecycle",
+                code="RUN",
+                message=f"Created run `{run_record.id}` for flow `{flow.name}`.",
+                data={
+                    "flow_name": flow.name,
+                    "flow_code": flow.code,
+                    "start_agent_key": flow.start_agent_key,
+                },
+            )
+            prepare_run_home_shell(
+                repo_root=repo_root,
+                run_record=run_record,
+                event_recorder=recorder,
+            )
+            return _execute_current_turn(
+                repo_root=repo_root,
+                flow=flow,
+                run_record=run_record,
+                recorder=recorder,
+                subprocess_run=subprocess_run,
+            )
+        finally:
+            recorder.close()
 
 
 def resume_run(
@@ -107,18 +110,51 @@ def resume_run(
     repo_root: Path,
     request: ResumeRequest,
     subprocess_run: SubprocessRunner = subprocess.run,
+    display_factory: DisplayFactory | None = None,
 ) -> RunCommandResult:
     run_dir = find_run_dir(repo_root=repo_root, run_id=request.run_id)
     run_record = load_run_record(run_dir=run_dir)
     flow = load_flow_definition(repo_root=repo_root, flow_name=run_record.flow_name)
 
     with flow_lock(repo_root=repo_root, flow_code=run_record.flow_code):
-        return _execute_current_turn(
-            repo_root=repo_root,
-            flow=flow,
+        recorder = _build_recorder(
+            run_dir=run_dir,
             run_record=run_record,
-            subprocess_run=subprocess_run,
+            flow=flow,
+            display_factory=display_factory,
         )
+        try:
+            recorder.emit(
+                source="rally",
+                kind="lifecycle",
+                code="RESUME",
+                message=f"Resuming run `{run_record.id}`.",
+            )
+            return _execute_current_turn(
+                repo_root=repo_root,
+                flow=flow,
+                run_record=run_record,
+                recorder=recorder,
+                subprocess_run=subprocess_run,
+            )
+        finally:
+            recorder.close()
+
+
+def _build_recorder(
+    *,
+    run_dir: Path,
+    run_record: RunRecord,
+    flow: FlowDefinition,
+    display_factory: DisplayFactory | None,
+) -> RunEventRecorder:
+    consumer = display_factory(run_record, flow) if display_factory is not None else None
+    return RunEventRecorder(
+        run_dir=run_dir,
+        run_id=run_record.id,
+        flow_code=run_record.flow_code,
+        consumer=consumer,
+    )
 
 
 def _execute_current_turn(
@@ -126,16 +162,26 @@ def _execute_current_turn(
     repo_root: Path,
     flow: FlowDefinition,
     run_record: RunRecord,
+    recorder: RunEventRecorder,
     subprocess_run: SubprocessRunner,
 ) -> RunCommandResult:
     run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
-    run_home = run_dir / "home"
-    if not run_home.is_dir():
-        raise RallyStateError(f"Run home does not exist for `{run_record.id}`.")
-
     state = load_run_state(run_dir=run_dir)
-    agent = _resolve_current_agent(flow=flow, state=state)
     _assert_resumable(state=state, run_id=run_record.id)
+    agent = _resolve_current_agent(flow=flow, state=state)
+    run_home = materialize_run_home(
+        repo_root=repo_root,
+        flow=flow,
+        run_record=run_record,
+        event_recorder=recorder,
+    )
+    _append_run_started_event_if_needed(
+        repo_root=repo_root,
+        run_dir=run_dir,
+        run_record=run_record,
+        flow=flow,
+        state=state,
+    )
 
     turn_index = state.turn_index + 1
     artifacts = prepare_turn_artifacts(run_home=run_home, agent_slug=agent.slug, turn_index=turn_index)
@@ -149,11 +195,14 @@ def _execute_current_turn(
         last_turn_kind=state.last_turn_kind,
     )
     write_run_state(run_dir=run_dir, state=running_state)
-
-    append_event(
-        run_dir=run_dir,
-        event_type="turn.started",
-        payload={"agent_key": agent.key, "agent_slug": agent.slug, "turn_index": turn_index},
+    recorder.emit(
+        source="rally",
+        kind="lifecycle",
+        code="TURN",
+        message=f"Starting turn {turn_index} on `{agent.key}`.",
+        turn_index=turn_index,
+        agent_key=agent.key,
+        agent_slug=agent.slug,
     )
 
     prompt = _build_agent_prompt(
@@ -161,6 +210,8 @@ def _execute_current_turn(
         flow=flow,
         run_record=run_record,
         agent=agent,
+        recorder=recorder,
+        turn_index=turn_index,
     )
     previous_session = load_session(run_home=run_home, agent_slug=agent.slug)
     if state.status == RunStatus.SLEEPING and previous_session is None:
@@ -170,6 +221,7 @@ def _execute_current_turn(
 
     invocation = _invoke_codex(
         repo_root=repo_root,
+        run_dir=run_dir,
         run_home=run_home,
         flow=flow,
         run_record=run_record,
@@ -177,6 +229,8 @@ def _execute_current_turn(
         prompt=prompt,
         previous_session=previous_session,
         artifacts=artifacts,
+        recorder=recorder,
+        turn_index=turn_index,
         subprocess_run=subprocess_run,
     )
 
@@ -203,14 +257,15 @@ def _execute_current_turn(
             blocker_reason=_format_exec_failure(invocation),
         )
         write_run_state(run_dir=run_dir, state=blocked_state)
-        append_event(
-            run_dir=run_dir,
-            event_type="turn.failed",
-            payload={
-                "agent_key": agent.key,
-                "turn_index": turn_index,
-                "reason": blocked_state.blocker_reason,
-            },
+        recorder.emit(
+            source="rally",
+            kind="warning",
+            code="BLOCKED",
+            message=f"Codex run failed: {blocked_state.blocker_reason}",
+            level="error",
+            turn_index=turn_index,
+            agent_key=agent.key,
+            agent_slug=agent.slug,
         )
         append_issue_event(
             repo_root=repo_root,
@@ -238,17 +293,13 @@ def _execute_current_turn(
         turn_result=turn_result,
     )
     write_run_state(run_dir=run_dir, state=next_state)
-
-    append_event(
-        run_dir=run_dir,
-        event_type="turn.completed",
-        payload={
-            "agent_key": agent.key,
-            "agent_slug": agent.slug,
-            "turn_index": turn_index,
-            "result_kind": next_state.last_turn_kind,
-            "next_agent_key": next_state.current_agent_key,
-        },
+    _emit_turn_result_event(
+        recorder=recorder,
+        run_record=run_record,
+        agent=agent,
+        turn_index=turn_index,
+        state=next_state,
+        turn_result=turn_result,
     )
     _append_issue_records_for_turn_result(
         repo_root=repo_root,
@@ -271,6 +322,8 @@ def _build_agent_prompt(
     flow: FlowDefinition,
     run_record: RunRecord,
     agent: FlowAgent,
+    recorder: RunEventRecorder,
+    turn_index: int,
 ) -> str:
     compiled_markdown = (run_home / "agents" / agent.slug / "AGENTS.md").read_text(encoding="utf-8").rstrip()
     prompt_inputs = _load_prompt_inputs(
@@ -278,6 +331,8 @@ def _build_agent_prompt(
         run_record=run_record,
         run_home=run_home,
         agent=agent,
+        recorder=recorder,
+        turn_index=turn_index,
     )
     parts = [compiled_markdown]
     if prompt_inputs:
@@ -291,11 +346,22 @@ def _load_prompt_inputs(
     run_record: RunRecord,
     run_home: Path,
     agent: FlowAgent,
+    recorder: RunEventRecorder,
+    turn_index: int,
 ) -> dict[str, object]:
     command_path = flow.adapter.prompt_input_command
     if command_path is None:
         return {}
 
+    recorder.emit(
+        source="rally",
+        kind="lifecycle",
+        code="INPUTS",
+        message=f"Loading runtime prompt inputs for `{agent.key}`.",
+        turn_index=turn_index,
+        agent_key=agent.key,
+        agent_slug=agent.slug,
+    )
     completed = subprocess.run(
         [sys.executable, str(command_path)],
         cwd=flow.root_dir,
@@ -314,17 +380,55 @@ def _load_prompt_inputs(
     )
     if completed.returncode != 0:
         stderr = completed.stderr.strip() or completed.stdout.strip() or "prompt input command failed"
+        recorder.emit(
+            source="rally",
+            kind="warning",
+            code="ERROR",
+            message=f"Prompt input command failed: {stderr}",
+            level="error",
+            turn_index=turn_index,
+            agent_key=agent.key,
+            agent_slug=agent.slug,
+        )
         raise RallyStateError(f"Prompt input command failed for `{agent.key}`: {stderr}")
 
     raw_output = completed.stdout.strip()
     if not raw_output:
+        recorder.emit(
+            source="rally",
+            kind="lifecycle",
+            code="INPUTS",
+            message=f"No runtime prompt inputs for `{agent.key}`.",
+            turn_index=turn_index,
+            agent_key=agent.key,
+            agent_slug=agent.slug,
+        )
         return {}
     try:
         payload = json.loads(raw_output)
     except json.JSONDecodeError as exc:
+        recorder.emit(
+            source="rally",
+            kind="warning",
+            code="ERROR",
+            message="Prompt input command returned invalid JSON.",
+            level="error",
+            turn_index=turn_index,
+            agent_key=agent.key,
+            agent_slug=agent.slug,
+        )
         raise RallyStateError("Prompt input command did not return valid JSON.") from exc
     if not isinstance(payload, dict):
         raise RallyStateError("Prompt input command must return one JSON object.")
+    recorder.emit(
+        source="rally",
+        kind="lifecycle",
+        code="INPUTS OK",
+        message=f"Loaded {len(payload)} runtime prompt input section(s).",
+        turn_index=turn_index,
+        agent_key=agent.key,
+        agent_slug=agent.slug,
+    )
     return payload
 
 
@@ -344,6 +448,7 @@ def _render_prompt_inputs(payload: dict[str, object]) -> str:
 def _invoke_codex(
     *,
     repo_root: Path,
+    run_dir: Path,
     run_home: Path,
     flow: FlowDefinition,
     run_record: RunRecord,
@@ -351,6 +456,8 @@ def _invoke_codex(
     prompt: str,
     previous_session: CodexSessionRecord | None,
     artifacts: TurnArtifactPaths,
+    recorder: RunEventRecorder,
+    turn_index: int,
     subprocess_run: SubprocessRunner,
 ) -> "_CodexInvocation":
     command = [
@@ -389,35 +496,288 @@ def _invoke_codex(
             agent_slug=agent.slug,
         ),
     }
+    write_codex_launch_record(
+        run_dir=run_dir,
+        turn_index=turn_index,
+        agent_slug=agent.slug,
+        command=command,
+        cwd=run_home,
+        env=env,
+        timeout_sec=agent.timeout_sec,
+    )
+    recorder.emit(
+        source="rally",
+        kind="lifecycle",
+        code="LAUNCH",
+        message=(
+            f"Resuming Codex session `{previous_session.session_id}`."
+            if previous_session is not None
+            else "Launching Codex."
+        ),
+        turn_index=turn_index,
+        agent_key=agent.key,
+        agent_slug=agent.slug,
+        data={"command": command},
+    )
+    if subprocess_run is subprocess.run:
+        return _stream_codex_invocation(
+            command=command,
+            prompt=prompt,
+            cwd=run_home,
+            env=env,
+            timeout_sec=agent.timeout_sec,
+            artifacts=artifacts,
+            recorder=recorder,
+            turn_index=turn_index,
+            agent=agent,
+        )
+    return _capture_completed_invocation(
+        command=command,
+        prompt=prompt,
+        cwd=run_home,
+        env=env,
+        timeout_sec=agent.timeout_sec,
+        artifacts=artifacts,
+        recorder=recorder,
+        turn_index=turn_index,
+        agent=agent,
+        subprocess_run=subprocess_run,
+    )
+
+
+def _capture_completed_invocation(
+    *,
+    command: list[str],
+    prompt: str,
+    cwd: Path,
+    env: dict[str, str],
+    timeout_sec: int,
+    artifacts: TurnArtifactPaths,
+    recorder: RunEventRecorder,
+    turn_index: int,
+    agent: FlowAgent,
+    subprocess_run: SubprocessRunner,
+) -> "_CodexInvocation":
+    parser = CodexEventStreamParser(
+        turn_index=turn_index,
+        agent_key=agent.key,
+        agent_slug=agent.slug,
+    )
     try:
         completed = subprocess_run(
             command,
             input=prompt,
             capture_output=True,
             text=True,
-            cwd=run_home,
+            cwd=cwd,
             env=env,
-            timeout=agent.timeout_sec,
+            timeout=timeout_sec,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
         stdout_text = _coerce_stream_text(exc.stdout)
         stderr_tail = _coerce_stream_text(exc.stderr).strip()
-        stderr_text = f"codex exec timed out after {agent.timeout_sec} seconds"
+        _replay_stdout_lines(stdout_text=stdout_text, artifacts=artifacts, parser=parser, recorder=recorder)
+        stderr_text = f"codex exec timed out after {timeout_sec} seconds"
         if stderr_tail:
             stderr_text = f"{stderr_text}\n{stderr_tail}"
+        _emit_stderr_events(
+            recorder=recorder,
+            turn_index=turn_index,
+            agent=agent,
+            stderr_text=stderr_text,
+            level="error",
+        )
         return _CodexInvocation(
             returncode=124,
             stdout_text=stdout_text,
             stderr_text=stderr_text,
-            session_id=_extract_session_id(stdout_text),
+            session_id=parser.session_id or _extract_session_id(stdout_text),
         )
+
+    stdout_text = completed.stdout or ""
+    stderr_text = completed.stderr or ""
+    _replay_stdout_lines(stdout_text=stdout_text, artifacts=artifacts, parser=parser, recorder=recorder)
+    _emit_stderr_events(
+        recorder=recorder,
+        turn_index=turn_index,
+        agent=agent,
+        stderr_text=stderr_text,
+        level="error" if completed.returncode != 0 else "warning",
+    )
     return _CodexInvocation(
         returncode=completed.returncode,
-        stdout_text=completed.stdout,
-        stderr_text=completed.stderr,
-        session_id=_extract_session_id(completed.stdout),
+        stdout_text=stdout_text,
+        stderr_text=stderr_text,
+        session_id=parser.session_id or _extract_session_id(stdout_text),
     )
+
+
+def _stream_codex_invocation(
+    *,
+    command: list[str],
+    prompt: str,
+    cwd: Path,
+    env: dict[str, str],
+    timeout_sec: int,
+    artifacts: TurnArtifactPaths,
+    recorder: RunEventRecorder,
+    turn_index: int,
+    agent: FlowAgent,
+) -> "_CodexInvocation":
+    parser = CodexEventStreamParser(
+        turn_index=turn_index,
+        agent_key=agent.key,
+        agent_slug=agent.slug,
+    )
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=cwd,
+        env=env,
+        text=True,
+        bufsize=1,
+    )
+    assert process.stdin is not None
+    assert process.stdout is not None
+    assert process.stderr is not None
+    process.stdin.write(prompt)
+    process.stdin.close()
+
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+    selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+    deadline = time.monotonic() + timeout_sec
+    timed_out = False
+
+    try:
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                process.kill()
+                break
+
+            ready = selector.select(timeout=min(0.25, remaining))
+            if not ready:
+                continue
+
+            for key, _ in ready:
+                line = key.fileobj.readline()
+                if line == "":
+                    selector.unregister(key.fileobj)
+                    continue
+                if key.data == "stdout":
+                    _append_text(artifacts.exec_jsonl_file, line)
+                    stdout_chunks.append(line)
+                    for draft in parser.consume_stdout_line(line):
+                        recorder.emit_draft(draft)
+                    continue
+                stderr_chunks.append(line)
+    finally:
+        selector.close()
+
+    remaining_stdout, remaining_stderr = process.communicate()
+    if remaining_stdout:
+        _append_text(artifacts.exec_jsonl_file, remaining_stdout)
+        stdout_chunks.append(remaining_stdout)
+        _replay_stdout_lines(
+            stdout_text=remaining_stdout,
+            artifacts=artifacts,
+            parser=parser,
+            recorder=recorder,
+            append_to_file=False,
+        )
+    if remaining_stderr:
+        stderr_chunks.append(remaining_stderr)
+
+    for draft in parser.flush():
+        recorder.emit_draft(draft)
+
+    stdout_text = "".join(stdout_chunks)
+    stderr_text = "".join(stderr_chunks)
+    if timed_out:
+        timeout_text = f"codex exec timed out after {timeout_sec} seconds"
+        stderr_text = f"{timeout_text}\n{stderr_text}".strip()
+        _emit_stderr_events(
+            recorder=recorder,
+            turn_index=turn_index,
+            agent=agent,
+            stderr_text=stderr_text,
+            level="error",
+        )
+        return _CodexInvocation(
+            returncode=124,
+            stdout_text=stdout_text,
+            stderr_text=stderr_text,
+            session_id=parser.session_id or _extract_session_id(stdout_text),
+        )
+
+    _emit_stderr_events(
+        recorder=recorder,
+        turn_index=turn_index,
+        agent=agent,
+        stderr_text=stderr_text,
+        level="error" if process.returncode else "warning",
+    )
+    return _CodexInvocation(
+        returncode=process.returncode or 0,
+        stdout_text=stdout_text,
+        stderr_text=stderr_text,
+        session_id=parser.session_id or _extract_session_id(stdout_text),
+    )
+
+
+def _replay_stdout_lines(
+    *,
+    stdout_text: str,
+    artifacts: TurnArtifactPaths,
+    parser: CodexEventStreamParser,
+    recorder: RunEventRecorder,
+    append_to_file: bool = True,
+) -> None:
+    if append_to_file and stdout_text:
+        artifacts.exec_jsonl_file.write_text(stdout_text, encoding="utf-8")
+    for line in stdout_text.splitlines(keepends=True):
+        for draft in parser.consume_stdout_line(line):
+            recorder.emit_draft(draft)
+    for draft in parser.flush():
+        recorder.emit_draft(draft)
+
+
+def _emit_stderr_events(
+    *,
+    recorder: RunEventRecorder,
+    turn_index: int,
+    agent: FlowAgent,
+    stderr_text: str,
+    level: str,
+) -> None:
+    if not stderr_text.strip():
+        return
+    for raw_line in stderr_text.splitlines():
+        if not raw_line.strip():
+            continue
+        recorder.emit(
+            source="codex",
+            kind="warning",
+            code="STDERR",
+            message=raw_line.strip(),
+            level=level,
+            turn_index=turn_index,
+            agent_key=agent.key,
+            agent_slug=agent.slug,
+        )
+
+
+def _append_text(path: Path, text: str) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(text)
 
 
 def _state_from_turn_result(
@@ -474,6 +834,44 @@ def _state_from_turn_result(
     raise RallyConfigError(f"Unsupported turn result type: `{type(turn_result).__name__}`.")
 
 
+def _emit_turn_result_event(
+    *,
+    recorder: RunEventRecorder,
+    run_record: RunRecord,
+    agent: FlowAgent,
+    turn_index: int,
+    state: RunState,
+    turn_result: TurnResult,
+) -> None:
+    if isinstance(turn_result, HandoffTurnResult):
+        message = f"Handed off to `{state.current_agent_key}`."
+        code = "HANDOFF"
+    elif isinstance(turn_result, DoneTurnResult):
+        message = f"Run `{run_record.id}` is done: {turn_result.summary}"
+        code = "DONE"
+    elif isinstance(turn_result, BlockerTurnResult):
+        message = f"Run `{run_record.id}` is blocked: {turn_result.reason}"
+        code = "BLOCKED"
+    else:
+        message = (
+            f"Run `{run_record.id}` is sleeping on `{state.current_agent_key}` "
+            f"until `{state.sleep_until}`."
+        )
+        code = "SLEEP"
+
+    recorder.emit(
+        source="rally",
+        kind="status",
+        code=code,
+        message=message,
+        level="error" if isinstance(turn_result, BlockerTurnResult) else "info",
+        turn_index=turn_index,
+        agent_key=agent.key,
+        agent_slug=agent.slug,
+        data={"result_kind": turn_result.kind.value},
+    )
+
+
 def _append_issue_records_for_turn_result(
     *,
     repo_root: Path,
@@ -527,6 +925,33 @@ def _append_issue_records_for_turn_result(
             source="rally runtime",
             detail_lines=(f"Agent: `{agent.key}`", f"Summary: {turn_result.summary}"),
         )
+
+
+def _append_run_started_event_if_needed(
+    *,
+    repo_root: Path,
+    run_dir: Path,
+    run_record: RunRecord,
+    flow: FlowDefinition,
+    state: RunState,
+) -> None:
+    if state.turn_index != 0:
+        return
+    marker = run_dir / ".run_started_logged"
+    if marker.is_file():
+        return
+    append_issue_event(
+        repo_root=repo_root,
+        run_id=run_record.id,
+        title="Rally Run Started",
+        source="rally run",
+        detail_lines=(
+            f"Flow: `{flow.name}`",
+            f"Flow Code: `{flow.code}`",
+            f"Start Agent: `{flow.start_agent_key}`",
+        ),
+    )
+    marker.write_text("logged\n", encoding="utf-8")
 
 
 def _resolve_current_agent(*, flow: FlowDefinition, state: RunState) -> FlowAgent:
@@ -602,6 +1027,8 @@ def _extract_session_id(stdout_text: str) -> str | None:
         except json.JSONDecodeError:
             continue
         if payload.get("type") == "thread.started" and isinstance(payload.get("thread_id"), str):
+            return str(payload["thread_id"])
+        if payload.get("type") == "thread.resumed" and isinstance(payload.get("thread_id"), str):
             return str(payload["thread_id"])
     return None
 

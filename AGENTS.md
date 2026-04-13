@@ -23,6 +23,7 @@
 - Rally owns the runtime, CLI, run layout, logs, sessions, adapter rules, and the shared library under `stdlib/rally/`.
 - Rally ends each turn with notes plus one final JSON result. Do not add a second handoff path or another turn-ending return path.
 - Keep lasting notes on Rally-owned tools such as the Rally kernel skill and `rally issue note`. Keep route, done, blocker, and sleep truth only in `rally.turn_results`.
+- `home/issue.md` is the only shared run input and note file Rally sanctions by default. Do not add an external brief flag, stdin brief path, or a second shared brief, handoff, or note sidecar unless a flow clearly owns that extra file.
 - Doctrine owns the general language, compiler, and emitted build output. Treat it as a general framework, not a Rally extension point.
 - Every time you write or edit a `.prompt` file, stop and check whether Doctrine already has a built-in way to express the change.
 - Prefer Doctrine features such as imports, inheritance, abstract agents, shared inputs or outputs, reviews, workflow laws, and typed outputs over copied prose or Rally-only prompt patterns.

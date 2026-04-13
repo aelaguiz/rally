@@ -6,7 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "rally"
 version = "0.0.0"
 requires-python = ">=3.12"
-dependencies = ["PyYAML>=6,<7"]
+dependencies = [
+    "PyYAML>=6,<7",
+    "rich>=14,<15",
+]
 
 [project.scripts]
 rally = "rally.cli:main"

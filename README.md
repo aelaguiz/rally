@@ -251,6 +251,7 @@ Rally gives them one world and names it clearly.
 `home/issue.md` is the live semantic ledger for the run.
 
 It starts with the operator brief.
+Rally does not create a second shared brief file.
 After that, Rally appends trusted runtime records in order.
 
 The issue ledger is where later readers should look first.
@@ -345,7 +346,7 @@ Rally has drifted away from its purpose.
 Rally's target operator surface is intentionally small:
 
 ```bash
-rally run <flow> --brief-file <brief.md>
+rally run <flow>
 rally resume <FLOW_CODE>-<n>
 rally archive <FLOW_CODE>-<n>
 rally issue note --run-id <FLOW_CODE>-<n>
@@ -354,6 +355,9 @@ rally issue note --run-id <FLOW_CODE>-<n>
 That small surface is a feature.
 Rally is trying to make complex flows operable without building a giant control
 plane around them.
+`rally run` creates the run shell under `runs/active/<run-id>/`.
+If `home/issue.md` is missing or blank, Rally stops there, tells the operator
+to fill in that file, and then continues through `rally resume <run-id>`.
 
 ## The Adapter Contract
 
@@ -411,7 +415,7 @@ The first enduring Rally flow is `single_repo_repair`.
 
 It captures the shape Rally cares about:
 
-1. A scope lead reads the operator brief and writes a repair plan.
+1. A scope lead reads the opening brief from `home/issue.md` and writes a repair plan.
 2. A change engineer makes the code change in a prepared repo.
 3. A proof engineer runs the local check and writes a verification report.
 4. An acceptance critic reviews the report and either routes back or closes the

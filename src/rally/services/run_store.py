@@ -41,7 +41,6 @@ def create_run(
     *,
     repo_root: Path,
     flow: FlowDefinition,
-    brief_file: Path,
     now: datetime | None = None,
 ) -> RunRecord:
     timestamp = _render_time(now)
@@ -61,7 +60,6 @@ def create_run(
         flow_code=flow.code,
         adapter_name=flow.adapter.name,
         start_agent_key=flow.start_agent_key,
-        brief_file=str(brief_file.resolve()),
         created_at=timestamp,
     )
     state = RunState(
@@ -107,7 +105,6 @@ def load_run_record(*, run_dir: Path) -> RunRecord:
         flow_code=_require_string(payload, "flow_code", context=str(run_dir / "run.yaml")),
         adapter_name=_require_string(payload, "adapter_name", context=str(run_dir / "run.yaml")),
         start_agent_key=_require_string(payload, "start_agent_key", context=str(run_dir / "run.yaml")),
-        brief_file=_require_string(payload, "brief_file", context=str(run_dir / "run.yaml")),
         created_at=_require_string(payload, "created_at", context=str(run_dir / "run.yaml")),
         issue_file=_require_string(payload, "issue_file", context=str(run_dir / "run.yaml")),
     )

@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+
+from rally.domain.flow import (
+    AdapterConfig,
+    CompiledAgentContract,
+    FinalOutputContract,
+    FlowAgent,
+    FlowDefinition,
+)
+from rally.services.run_store import create_run, load_run_record
+
+
+class RunStoreTests(unittest.TestCase):
+    def test_create_run_omits_legacy_brief_field(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+
+            record = create_run(repo_root=repo_root, flow=flow)
+
+            run_yaml = (repo_root / "runs" / "active" / record.id / "run.yaml").read_text(encoding="utf-8")
+            self.assertNotIn("brief_file", run_yaml)
+            self.assertIn("issue_file: home/issue.md", run_yaml)
+
+    def test_load_run_record_tolerates_legacy_brief_field(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir).resolve() / "runs" / "active" / "DMO-7"
+            run_dir.mkdir(parents=True)
+            (run_dir / "run.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    id: DMO-7
+                    flow_name: demo
+                    flow_code: DMO
+                    adapter_name: codex
+                    start_agent_key: 01_scope_lead
+                    brief_file: /tmp/legacy-brief.md
+                    created_at: "2026-04-13T00:00:00Z"
+                    issue_file: home/issue.md
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            record = load_run_record(run_dir=run_dir)
+
+            self.assertEqual(record.id, "DMO-7")
+            self.assertEqual(record.flow_name, "demo")
+            self.assertEqual(record.issue_file, "home/issue.md")
+
+
+def _demo_flow(*, repo_root: Path) -> FlowDefinition:
+    flow_root = repo_root / "flows" / "demo"
+    prompt_path = flow_root / "prompts" / "AGENTS.prompt"
+    markdown_path = flow_root / "build" / "agents" / "scope_lead" / "AGENTS.md"
+    contract_path = flow_root / "build" / "agents" / "scope_lead" / "AGENTS.contract.json"
+    final_output = FinalOutputContract(
+        exists=True,
+        declaration_key="DemoTurnResult",
+        declaration_name="DemoTurnResult",
+        format_mode="json_schema",
+        schema_profile="OpenAIStructuredOutput",
+        schema_file=repo_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
+        example_file=repo_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json",
+    )
+    agent = FlowAgent(
+        key="01_scope_lead",
+        slug="scope_lead",
+        timeout_sec=60,
+        allowed_skills=(),
+        allowed_mcps=(),
+        compiled=CompiledAgentContract(
+            name="ScopeLead",
+            slug="scope_lead",
+            entrypoint=prompt_path,
+            markdown_path=markdown_path,
+            contract_path=contract_path,
+            contract_version=1,
+            final_output=final_output,
+        ),
+    )
+    return FlowDefinition(
+        name="demo",
+        code="DMO",
+        root_dir=flow_root,
+        flow_file=flow_root / "flow.yaml",
+        prompt_entrypoint=prompt_path,
+        build_agents_dir=flow_root / "build" / "agents",
+        setup_home_script=None,
+        start_agent_key=agent.key,
+        agents={agent.key: agent},
+        adapter=AdapterConfig(name="codex", prompt_input_command=None, args={}),
+    )
+
+
+if __name__ == "__main__":
+    unittest.main()

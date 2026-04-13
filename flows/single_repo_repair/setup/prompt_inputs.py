@@ -12,11 +12,22 @@ def main() -> None:
 
     payload: dict[str, object] = {}
     if agent_slug == "scope_lead":
-        payload["WorkBrief"] = (run_home / "operator_brief.md").read_text(encoding="utf-8").rstrip()
+        payload["WorkBrief"] = _opening_brief_from_issue(
+            (run_home / "issue.md").read_text(encoding="utf-8")
+        )
     if agent_slug == "acceptance_critic":
         payload["AcceptanceFacts"] = _acceptance_facts(run_home=run_home)
 
     print(json.dumps(payload))
+
+
+def _opening_brief_from_issue(issue_text: str) -> str:
+    brief_lines: list[str] = []
+    for line in issue_text.splitlines():
+        if line.startswith("## Rally "):
+            break
+        brief_lines.append(line)
+    return "\n".join(brief_lines).rstrip()
 
 
 def _acceptance_facts(*, run_home: Path) -> dict[str, bool]:

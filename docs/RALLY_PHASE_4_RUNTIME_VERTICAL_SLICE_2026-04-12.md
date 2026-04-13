@@ -39,10 +39,15 @@ What is real today:
 - home materialization for agents, skills, MCPs, repos, config, auth links, and setup
 - `rally run`
 - `rally resume`
+- live operator stream on a TTY with plain fallback off TTY
 - strict final-turn JSON parsing
 - Codex session save and sleep resume
 - `home/issue.md` plus `issue_history/`
+- the opening brief lives in `home/issue.md`, not a shared sidecar brief file
 - `logs/events.jsonl`
+- `logs/agents/<agent>.jsonl`
+- `logs/rendered.log`
+- `logs/adapter_launch/`
 - run state in `state.yaml`
 - Codex launch with dangerous bypass, explicit `cwd`, explicit `CODEX_HOME`, and explicit Rally env vars
 
@@ -50,7 +55,6 @@ What is outside Phase 4:
 
 - `rally archive`
 - stale-run cleanup and diagnosis beyond the current lock and state checks
-- rendered log output
 - a second flow that proves the shape repeats
 
 # Stable Rules
@@ -95,10 +99,17 @@ The current checked-in runtime surface is:
 - `src/rally/services/issue_ledger.py`
   - appends Rally-stamped notes and runtime event blocks
   - snapshots the full issue log after each append
-- `src/rally/services/event_log.py`
-  - appends structured JSONL events
+- `src/rally/services/run_events.py`
+  - writes canonical run events
+  - fans them out to whole-run logs, agent logs, and the rendered transcript
+- `src/rally/terminal/display.py`
+  - renders the live color stream on a TTY
+  - falls back to plain text when needed
 - `src/rally/adapters/codex/launcher.py`
   - builds `CODEX_HOME`, `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_AGENT_SLUG`
+  - writes one adapter launch proof file per turn
+- `src/rally/adapters/codex/event_stream.py`
+  - normalizes Codex JSONL into Rally event records
 - `src/rally/adapters/codex/result_contract.py`
   - reads the last assistant message
   - accepts plain JSON or fenced JSON
@@ -122,7 +133,7 @@ Use the smallest honest proof for each layer:
 - runtime change
   - run the owning unit tests
 - run-loop change
-  - prove it through `rally run` and `rally resume`
+  - prove it through the `rally run` shell-create path and the `rally resume` launch path
 
 The current core proof set is:
 
@@ -134,6 +145,8 @@ The current core proof set is:
 - `tests/unit/test_result_contract.py`
 - `tests/unit/test_issue_ledger.py`
 - `tests/unit/test_launcher.py`
+- `tests/unit/test_run_events.py`
+- `tests/unit/test_codex_event_stream.py`
 - `tests/unit/test_runner.py`
 - one live end-to-end `single_repo_repair` run on Codex that reached `done`
 
@@ -143,7 +156,7 @@ The next honest work is Phase 5 work:
 
 1. add `rally archive`
 2. add better stale-run diagnosis
-3. add the rendered operator log
+3. add a replay or viewer command for old runs
 4. prove the runtime shape on a second narrow flow
 
 # Live Truth

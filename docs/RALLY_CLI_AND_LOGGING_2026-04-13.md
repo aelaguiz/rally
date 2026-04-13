@@ -8,11 +8,15 @@ related:
   - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
   - src/rally/cli.py
   - src/rally/services/issue_ledger.py
-  - src/rally/services/event_log.py
+  - src/rally/services/run_events.py
+  - src/rally/terminal/display.py
+  - src/rally/adapters/codex/event_stream.py
   - src/rally/adapters/codex/launcher.py
   - tests/unit/test_cli.py
   - tests/unit/test_issue_ledger.py
   - tests/unit/test_launcher.py
+  - tests/unit/test_run_events.py
+  - tests/unit/test_codex_event_stream.py
 ---
 
 # Summary
@@ -32,16 +36,18 @@ The current checked-in CLI is small and explicit.
 Current shape:
 
 ```bash
-rally run <flow_name> --brief-file <path> [--preflight-only]
+rally run <flow_name>
 ```
 
 What it does today:
 
 - loads the flow through `src/rally/services/flow_loader.py`
-- checks that the brief file exists
-- prints a preflight success line only when `--preflight-only` is used
-- otherwise creates a real active run
-- prepares the run home
+- creates a real active run
+- creates the run shell under `runs/active/<run-id>/home/`
+- fails loud unless `home/issue.md` exists and has non-empty text
+- prepares the full run home only after `home/issue.md` is ready
+- opens a live color stream on a TTY
+- falls back to plain text when stdout is not a TTY
 - runs the current agent turn through Codex
 - prints the resulting run status line
 
@@ -49,6 +55,10 @@ Current limits:
 
 - it does not archive old runs
 - it does not try to auto-heal stale run state
+
+If the issue file is missing or blank, `rally run` stops with exit code `2`
+after creating the run shell. The operator writes `home/issue.md` and then
+uses `rally resume <run-id>`.
 
 ### `rally resume`
 
@@ -64,6 +74,7 @@ What it does today:
 - refuses done or blocked runs
 - resumes sleeping runs only after their wake time
 - reuses the saved Codex session id when one exists
+- opens the same live stream rules as `rally run`
 - advances the current agent by one turn
 
 ### `rally issue note`
@@ -103,6 +114,8 @@ Rally writes both the issue ledger and `logs/events.jsonl`.
 - Rally rejects any other `issue_file` path even if `run.yaml` names it
 
 The issue file starts with the operator brief exactly as entered.
+Rally does not also write a shared `operator_brief.md` sidecar or accept a
+separate startup brief path.
 After that, Rally appends:
 
 - note blocks from `rally issue note`
@@ -161,7 +174,7 @@ The runtime also:
 
 ## Logging Today
 
-Current logging is intentionally thin.
+Current logging is richer, but still file-first.
 
 What exists today:
 
@@ -170,6 +183,9 @@ What exists today:
 - `home/issue.md`
 - `issue_history/` full snapshots after Rally-owned issue writes
 - `logs/events.jsonl`
+- `logs/agents/<agent>.jsonl`
+- `logs/rendered.log`
+- `logs/adapter_launch/turn-<n>-<agent>.json`
 - `home/sessions/<agent>/session.yaml`
 - `home/sessions/<agent>/turn-<n>/exec.jsonl`
 - `home/sessions/<agent>/turn-<n>/stderr.log`
@@ -177,220 +193,65 @@ What exists today:
 
 What does not exist yet:
 
-- `logs/rendered.log`
-- filtered per-agent event logs under `logs/agents/`
-- adapter-launch JSON summaries
 - `rally archive`
 
-# Detailed Contract Recovered From History
+## Event Coverage Today
 
-These details came from older master-design revisions.
-Some are still good next steps, but they are not all shipped today.
+The shipped event path now follows one rule:
+if Rally can show it live, Rally should write it to run-local files from the
+same event stream.
 
-## Small CLI, Loud Failure
+That event stream now covers:
 
-The older design was very clear that the main operator surface should stay
-small:
+- Rally lifecycle events such as run create, resume, home prep, setup, prompt-input load, launch, and final turn status
+- Codex session start or resume events
+- assistant output lines when Codex emits text chunks
+- reasoning lines when Codex emits reasoning chunks
+- tool start, success, and failure summaries when Codex exposes tool events
+- token-use summaries
+- stderr lines, warnings, and hard errors
 
-```bash
-rally run <flow> <issue-file-or-brief>
-rally resume <run-id>
-rally archive <run-id>
-```
+Unknown Codex JSON events still stay in the raw per-turn `exec.jsonl` file.
+Rally keeps them out of the live stream unless they look like warnings or
+errors.
 
-The same older design was also clear that `run` should fail loud on dirty or
-confusing state instead of trying to heal it in the background.
+## Renderer Rules
 
-Examples the old design named:
+The live operator view is a polished stream, not a full-screen TUI.
 
-- an existing active-flow lock
-- a half-initialized run directory
-- disagreement between `run.yaml`, `state.yaml`, and the filesystem
-- a previous run that still needs explicit archive or closeout
+Today it does this:
 
-The important rule was simple:
-do not guess, do not auto-heal, and do not hide cleanup behind magic behavior.
+- `rally run` and `rally resume` use the same renderer choice
+- TTY output gets Rich color and spacing
+- non-TTY output falls back to plain text with the same event order
+- `logs/rendered.log` uses the same line format as the plain fallback
 
-## Explicit Archive
-
-Older master-design text treated `archive` as an explicit operator action.
-It was not meant to be background cleanup.
-
-The intended archive rule was:
-
-- preserve the run files
-- report dirty state
-- clear active-flow state only when it is safe
-- refuse destructive cleanup
-
-## Run-Local Log Layout
-
-Older master-design text also had a much more specific logging layout.
-The intended per-run shape was:
+The line format stays compact:
 
 ```text
-runs/<run-id>/
-  logs/
-    events.jsonl
-    rendered.log
-    agents/
-      <agent>.jsonl
-    adapter_launch/
-      <agent>.json
-  issue_history/
-    <timestamp>-issue.md
+14:41:10  01_scope_lead        TOOL      rg -n "page" src
+14:41:11  01_scope_lead        TOOL OK   shell: 12 matches
+14:41:12  01_scope_lead        HANDOFF   Handed off to `02_change_engineer`.
 ```
 
-The intended meaning of those files was:
+The color rules are still simple:
 
-- `logs/events.jsonl`
-  - the merged structured event stream for the whole run
-- `logs/agents/*.jsonl`
-  - filtered per-agent event history
-- `logs/rendered.log`
-  - a flattened human-readable view for grep and quick review
-- `logs/adapter_launch/*.json`
-  - the proof record for the actual launch contract used for each turn
-- `issue_history/`
-  - full issue-ledger snapshots after each Rally-owned append
+- timestamps: dim
+- Rally lifecycle: cyan
+- agent labels: blue
+- reasoning: dim white
+- tools: yellow
+- final success state: green
+- warnings: amber
+- failures: red
 
-The older logging contract was also more specific about completeness.
-`events.jsonl` was meant to capture, at minimum:
+## Remaining Gaps
 
-- Rally lifecycle events
-- setup-script start, finish, and output
-- adapter wake and resume events
-- reasoning trace events
-- tool-call start, arguments, streamed output chunks, completion, and failure
-- any other adapter-visible payload the operator could have watched live
-- handoff events
-- archive events
-- warnings and hard errors
+The main operator-side gaps are now:
 
-That older rule is still useful:
-if the operator could have seen it happen in the runner, Rally should mirror it
-into the run-local event history.
-
-## Renderer Backed By History
-
-Older master-design text did not want a dumb stdout tail.
-It wanted the live renderer to be backed by the structured event history.
-
-That old rule still matters because it explains why Rally wants both:
-
-- structured append-only events for archaeology and filtering
-- a human-readable rendered log for quick review
-
-The renderer detail that was lost in the trim was this:
-history should drive the UI, not the other way around.
-
-## Renderer Behavior And Controls
-
-The older master-design text also described the renderer behavior much more
-concretely.
-The intended rules were:
-
-- `rally run` and `rally resume` should open the same renderer
-- on startup, the renderer should load existing history from `logs/events.jsonl`
-- after loading history, it should follow live events
-- visibility toggles should apply to both past and future events
-
-The intended keyboard controls were:
-
-- `T`
-  - toggle tool-call visibility
-- `R`
-  - toggle reasoning-trace visibility
-- `Q`
-  - quit the renderer without stopping the run
-
-The intended renderer layout was:
-
-- top status bar
-  - run id, flow, current agent, run state, elapsed time
-  - current filters such as `tools:on/off` and `reasoning:on/off`
-- main event pane
-  - chronological event stream with agent badges and timestamps
-- bottom hint bar
-  - compact key hints such as `T tools`, `R reasoning`, `Q quit`
-
-## Renderer Color Rules
-
-The old master design had explicit terminal color guidance.
-Those colors were for the live renderer, not for `rendered.log`.
-
-- timestamps
-  - dim gray
-- flow and lifecycle events
-  - cyan
-- current agent badges
-  - blue
-- reasoning traces
-  - dim white
-- tool calls
-  - yellow
-- successful tool completion
-  - green
-- warnings
-  - amber
-- failures and hard errors
-  - red
-
-## Renderer Line Format
-
-The old master design also had a concrete event-line style.
-Each line was meant to stay compact and easy to scan.
-
-The intended shape was:
-
-```text
-14:41:10  01_core_dev_lead  WAKE      initial wake
-14:41:14  01_core_dev_lead  REASON    tracing root cause in subscription flow
-14:41:18  01_core_dev_lead  TOOL      rg -n "subscription" apps/mobile
-14:41:19  01_core_dev_lead  TOOL OK   12 matches
-14:44:02  01_core_dev_lead  HANDOFF   -> 02_bugfix_engineer  artifact=artifacts/fix-plan.md
-```
-
-The useful detail here is not the sample agent names.
-It is the formatting rule:
-
-- timestamp first
-- stable agent label second
-- short event code third
-- compact human-readable payload last
-
-That line shape belongs in the renderer and the plain-text rendered transcript.
-The structured event file should still keep richer machine-readable payloads.
-
-## Resume As Explicit Recovery
-
-Older master-design text treated `resume` as the named recovery path after:
-
-- a deliberate stop
-- a crash
-- an interrupted run
-
-That older design also expected resume to stay honest about session reuse:
-
-- resume only when the saved session still matches the same run and home
-- keep resume separate from the initial wake path
-- preserve the run directory and prior logs instead of rewriting history
-
-# Current Gap List
-
-This is the short list of the detail that exists in history and design docs but
-is not yet real in code:
-
-- `archive` command
-- real `run` execution
-- real `resume` execution
-- active-run lock handling
-- `run.yaml` and `state.yaml` write paths from the CLI
-- `logs/events.jsonl`
-- per-agent log mirrors
-- `logs/rendered.log`
-- adapter launch proof files
-- renderer replay or whole-history viewing
+- `rally archive`
+- deeper stale-run diagnosis
+- a replay or viewer command that can reload old history from `logs/events.jsonl`
 
 # Canonical Reading Order
 

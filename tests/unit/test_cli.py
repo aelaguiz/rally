@@ -6,12 +6,45 @@ import textwrap
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from rally.cli import main
 
 
 class CliTests(unittest.TestCase):
+    def test_run_command_calls_runner_without_external_brief_flag(self) -> None:
+        stdout = io.StringIO()
+
+        with patch("rally.cli._repo_root", return_value=Path("/tmp/repo")), patch(
+            "rally.cli.run_flow",
+            return_value=SimpleNamespace(message="Run `DMO-1` created."),
+        ) as run_flow_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["run", "demo"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Run `DMO-1` created.", stdout.getvalue())
+        self.assertEqual(run_flow_mock.call_args.kwargs["request"].flow_name, "demo")
+
+    def test_run_command_rejects_removed_brief_flag(self) -> None:
+        stderr = io.StringIO()
+
+        with self.assertRaises(SystemExit) as raised, redirect_stderr(stderr):
+            main(["run", "demo", "--brief-file", "brief.md"])
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--brief-file", stderr.getvalue())
+
+    def test_run_command_rejects_removed_preflight_flag(self) -> None:
+        stderr = io.StringIO()
+
+        with self.assertRaises(SystemExit) as raised, redirect_stderr(stderr):
+            main(["run", "demo", "--preflight-only"])
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--preflight-only", stderr.getvalue())
+
     def test_issue_note_reads_stdin(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+import json
 from pathlib import Path
 
 from rally.errors import RallyStateError
@@ -27,3 +29,31 @@ def build_codex_launch_env(
         "RALLY_FLOW_CODE": flow_code,
         "RALLY_AGENT_SLUG": agent_slug,
     }
+
+
+def write_codex_launch_record(
+    *,
+    run_dir: Path,
+    turn_index: int,
+    agent_slug: str,
+    command: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    timeout_sec: int,
+) -> Path:
+    launch_dir = run_dir / "logs" / "adapter_launch"
+    launch_dir.mkdir(parents=True, exist_ok=True)
+    record_file = launch_dir / f"turn-{turn_index:03d}-{agent_slug}.json"
+    payload = {
+        "ts": datetime.now(UTC).astimezone(UTC).isoformat().replace("+00:00", "Z"),
+        "command": command,
+        "cwd": str(cwd.resolve()),
+        "timeout_sec": timeout_sec,
+        "env": {
+            key: value
+            for key, value in env.items()
+            if key.startswith("RALLY_") or key == "CODEX_HOME"
+        },
+    }
+    record_file.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return record_file

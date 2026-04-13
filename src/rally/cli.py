@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import TextIO
 
+from rally.domain.flow import FlowDefinition
+from rally.domain.run import ResumeRequest, RunRecord, RunRequest
 from rally.errors import RallyError, RallyUsageError
 from rally.services.issue_ledger import append_issue_note
-from rally.services.flow_loader import load_flow_definition
-from rally.domain.run import ResumeRequest, RunRequest
 from rally.services.runner import resume_run, run_flow
+from rally.terminal.display import DisplayContext, build_terminal_display
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,18 +27,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="rally")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    run_parser = subparsers.add_parser("run", help="Preflight a Rally flow and prepare for execution.")
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Create a Rally run shell and start when `home/issue.md` is ready.",
+    )
     run_parser.add_argument("flow_name", help="Flow directory name under flows/.")
-    run_parser.add_argument(
-        "--brief-file",
-        required=True,
-        help="Path to the authored run brief for this flow.",
-    )
-    run_parser.add_argument(
-        "--preflight-only",
-        action="store_true",
-        help="Stop after validating flow and build inputs.",
-    )
     run_parser.set_defaults(func=_run_command)
 
     resume_parser = subparsers.add_parser("resume", help="Resume an existing Rally run.")
@@ -57,25 +52,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _run_command(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
-    brief_file = _resolve_user_file(Path(args.brief_file))
-    if not brief_file.is_file():
-        raise RallyUsageError(f"Brief file does not exist: `{brief_file}`.")
-
-    flow = load_flow_definition(repo_root=repo_root, flow_name=args.flow_name)
-
-    if args.preflight_only:
-        print(
-            "Preflight passed for flow "
-            f"`{flow.name}` with {len(flow.agents)} agents, "
-            f"start agent `{flow.start_agent_key}`, "
-            f"flow code `{flow.code}`, "
-            f"and adapter `{flow.adapter.name}`."
-        )
-        return 0
-
     result = run_flow(
         repo_root=repo_root,
-        request=RunRequest(flow_name=args.flow_name, brief_file=brief_file),
+        request=RunRequest(flow_name=args.flow_name),
+        display_factory=_build_display_factory(sys.stdout),
     )
     print(result.message)
     return 0
@@ -85,6 +65,7 @@ def _resume_command(args: argparse.Namespace) -> int:
     result = resume_run(
         repo_root=_repo_root(),
         request=ResumeRequest(run_id=args.run_id),
+        display_factory=_build_display_factory(sys.stdout),
     )
     print(result.message)
     return 0
@@ -123,3 +104,17 @@ def _read_note_text(args: argparse.Namespace) -> str:
     if not note_text.strip():
         raise RallyUsageError("Note body is empty.")
     return note_text
+
+
+def _build_display_factory(stream: TextIO):
+    def _factory(run_record: RunRecord, flow: FlowDefinition):
+        return build_terminal_display(
+            stream=stream,
+            context=DisplayContext(
+                run_id=run_record.id,
+                flow_name=flow.name,
+                flow_code=flow.code,
+            ),
+        )
+
+    return _factory

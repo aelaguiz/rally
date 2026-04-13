@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from rally.adapters.codex.launcher import build_codex_launch_env
+from rally.adapters.codex.launcher import build_codex_launch_env, write_codex_launch_record
 from rally.errors import RallyStateError
 
 
@@ -58,6 +59,34 @@ class LauncherTests(unittest.TestCase):
                     flow_code="",
                     agent_slug="scope_lead",
                 )
+
+    def test_write_codex_launch_record_captures_command_and_rally_env(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir).resolve() / "runs" / "FLW-1"
+            run_dir.mkdir(parents=True)
+
+            record_file = write_codex_launch_record(
+                run_dir=run_dir,
+                turn_index=2,
+                agent_slug="scope_lead",
+                command=["codex", "exec", "--json"],
+                cwd=run_dir,
+                env={
+                    "CODEX_HOME": str(run_dir / "home"),
+                    "RALLY_RUN_ID": "FLW-1",
+                    "RALLY_FLOW_CODE": "FLW",
+                    "IGNORED": "value",
+                },
+                timeout_sec=60,
+            )
+
+            payload = json.loads(record_file.read_text(encoding="utf-8"))
+            self.assertEqual(record_file.name, "turn-002-scope_lead.json")
+            self.assertEqual(payload["command"], ["codex", "exec", "--json"])
+            self.assertEqual(payload["timeout_sec"], 60)
+            self.assertIn("CODEX_HOME", payload["env"])
+            self.assertIn("RALLY_RUN_ID", payload["env"])
+            self.assertNotIn("IGNORED", payload["env"])
 
 
 if __name__ == "__main__":

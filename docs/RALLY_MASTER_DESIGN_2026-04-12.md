@@ -202,6 +202,9 @@ It should:
 - remain append-only after that initial brief
 - hold setup notes, serialized notes, normalized final-turn response records, and runner-generated status records
 
+Rally does not create a second shared brief file.
+The opening brief lives at the top of `home/issue.md`.
+
 After every Rally-owned append, Rally should snapshot the full file into `issue_history/`.
 
 The communication model is now explicit:
@@ -303,6 +306,9 @@ These are the stable runtime surfaces the design depends on:
 | `home/issue.md` | live semantic ledger |
 | `issue_history/` | full-file ledger snapshots |
 | `logs/events.jsonl` | structured run telemetry |
+| `logs/agents/` | per-agent event mirrors |
+| `logs/rendered.log` | plain operator transcript |
+| `logs/adapter_launch/` | proof of the launch contract per turn |
 | `home/agents/` | per-run copy of compiled agent outputs |
 | `home/skills/` and `home/mcps/` | materialized allowed capabilities |
 | `home/sessions/` | adapter session sidecars or stable references |
@@ -313,11 +319,17 @@ The operator surface should stay small.
 Conceptually it is:
 
 ```bash
-rally run <flow> <brief>
+rally run <flow>
 rally resume <FLOW_CODE>-<n>
 rally archive <FLOW_CODE>-<n>
 rally issue note --run-id <FLOW_CODE>-<n>
 ```
+
+`rally run` and `rally resume` should give the operator one clean live view on
+a TTY and a plain text fallback when the output is not interactive.
+`rally run` creates the run shell first. If `home/issue.md` is missing or
+blank, Rally stops and tells the operator to fill in that file before
+`rally resume`.
 
 `rally issue note` is the shared durable-note write surface for both agents and operators.
 It should support:
