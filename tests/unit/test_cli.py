@@ -76,6 +76,32 @@ class CliTests(unittest.TestCase):
         self.assertIn("Run `DMO-1` resumed.", stdout.getvalue())
         self.assertEqual(resume_run_mock.call_args.kwargs["request"].run_id, "DMO-1")
         self.assertTrue(resume_run_mock.call_args.kwargs["request"].edit_issue)
+        self.assertFalse(resume_run_mock.call_args.kwargs["request"].restart)
+
+    def test_resume_command_passes_restart_flag_to_runner(self) -> None:
+        stdout = io.StringIO()
+
+        with patch("rally.cli._repo_root", return_value=Path("/tmp/repo")), patch(
+            "rally.cli.resume_run",
+            return_value=SimpleNamespace(message="Run `DMO-2` restarted."),
+        ) as resume_run_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["resume", "DMO-1", "--restart"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Run `DMO-2` restarted.", stdout.getvalue())
+        self.assertEqual(resume_run_mock.call_args.kwargs["request"].run_id, "DMO-1")
+        self.assertFalse(resume_run_mock.call_args.kwargs["request"].edit_issue)
+        self.assertTrue(resume_run_mock.call_args.kwargs["request"].restart)
+
+    def test_resume_command_rejects_edit_and_restart_together(self) -> None:
+        stderr = io.StringIO()
+
+        with self.assertRaises(SystemExit) as raised, redirect_stderr(stderr):
+            main(["resume", "DMO-1", "--edit", "--restart"])
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--restart", stderr.getvalue())
 
     def test_issue_note_reads_stdin(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -7,7 +7,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from rally.errors import RallyStateError
-from rally.services.issue_ledger import append_issue_edit_diff, append_issue_note
+from rally.services.issue_ledger import (
+    ORIGINAL_ISSUE_END_MARKER,
+    append_issue_edit_diff,
+    append_issue_note,
+    extract_original_issue_text,
+    load_original_issue_text,
+)
 
 
 class IssueLedgerTests(unittest.TestCase):
@@ -29,7 +35,10 @@ class IssueLedgerTests(unittest.TestCase):
             self.assertIn("## Rally Note", issue_text)
             self.assertIn("- Run ID: `FLW-1`", issue_text)
             self.assertIn("- Time: `2026-04-13T19:30:00Z`", issue_text)
-            self.assertIn("Original operator brief.\n\n---\n\n## Rally Note", issue_text)
+            self.assertIn(
+                f"Original operator brief.\n\n{ORIGINAL_ISSUE_END_MARKER}\n\n---\n\n## Rally Note",
+                issue_text,
+            )
             self.assertIn("### Note\n- parser fix landed\n", issue_text)
             self.assertEqual(result.snapshot_file.read_text(encoding="utf-8"), issue_text)
 
@@ -168,6 +177,99 @@ class IssueLedgerTests(unittest.TestCase):
                     note_markdown="### Note\n- invalid turn",
                     turn_index=0,
                 )
+
+    def test_append_issue_note_inserts_hidden_original_issue_marker_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            append_issue_note(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                note_markdown="### Note\n- first",
+                now=datetime(2026, 4, 13, 19, 30, tzinfo=UTC),
+            )
+            append_issue_note(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                note_markdown="### Note\n- second",
+                now=datetime(2026, 4, 13, 19, 31, tzinfo=UTC),
+            )
+
+            issue_text = issue_file.read_text(encoding="utf-8")
+            self.assertEqual(issue_text.count(ORIGINAL_ISSUE_END_MARKER), 1)
+
+    def test_extract_original_issue_text_uses_hidden_marker_when_present(self) -> None:
+        issue_text = textwrap.dedent(
+            f"""\
+            # Brief
+
+            Original operator brief.
+
+            {ORIGINAL_ISSUE_END_MARKER}
+
+            ---
+
+            ## Rally Run Started
+            - Run ID: `FLW-1`
+            """
+        )
+
+        self.assertEqual(
+            extract_original_issue_text(issue_text),
+            "# Brief\n\nOriginal operator brief.\n",
+        )
+
+    def test_extract_original_issue_text_falls_back_to_legacy_rally_block_boundary(self) -> None:
+        issue_text = textwrap.dedent(
+            """\
+            # Brief
+
+            Original operator brief.
+
+            ---
+
+            ## Rally Run Started
+            - Run ID: `FLW-1`
+            """
+        )
+
+        self.assertEqual(
+            extract_original_issue_text(issue_text),
+            "# Brief\n\nOriginal operator brief.\n",
+        )
+
+    def test_load_original_issue_text_prefers_earliest_snapshot_over_live_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+            history_dir = issue_file.parent.parent / "issue_history"
+            (history_dir / "20260413T193000000000Z-issue.md").write_text(
+                "# Brief\n\nOriginal operator brief.\n",
+                encoding="utf-8",
+            )
+            issue_file.write_text(
+                textwrap.dedent(
+                    f"""\
+                    # Brief
+
+                    Updated operator brief.
+
+                    {ORIGINAL_ISSUE_END_MARKER}
+
+                    ---
+
+                    ## user edited issue.md
+                    - Run ID: `FLW-1`
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                load_original_issue_text(repo_root=repo_root, run_id="FLW-1"),
+                "# Brief\n\nOriginal operator brief.\n",
+            )
 
     def test_append_issue_edit_diff_appends_formatted_diff_block_and_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

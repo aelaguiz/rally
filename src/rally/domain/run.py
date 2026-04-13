@@ -22,6 +22,7 @@ class RunRequest:
 class ResumeRequest:
     run_id: str
     edit_issue: bool = False
+    restart: bool = False
 
 
 @dataclass(frozen=True)

@@ -5,10 +5,23 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterable
+
 import yaml
 
 from rally.errors import RallyStateError
 from rally.services.run_store import find_run_dir
+
+ORIGINAL_ISSUE_END_MARKER = "<!-- RALLY_ORIGINAL_ISSUE_END -->"
+_RALLY_BLOCK_TITLES = (
+    "Rally Note",
+    "user edited issue.md",
+    "Rally Run Started",
+    "Rally Turn Result",
+    "Rally Blocked",
+    "Rally Done",
+    "Rally Archived",
+    "Rally Sleeping",
+)
 
 
 @dataclass(frozen=True)
@@ -102,6 +115,33 @@ def snapshot_issue_log(*, repo_root: Path, run_id: str, now: datetime | None = N
     if not issue_file.is_file():
         raise RallyStateError(f"Issue log does not exist: `{issue_file}`.")
     return _write_snapshot(issue_file=issue_file, timestamp=now or datetime.now(UTC))
+
+
+def load_original_issue_text(*, repo_root: Path, run_id: str) -> str:
+    issue_file = _resolve_issue_file(repo_root=repo_root, run_id=run_id)
+    snapshot_file = _find_earliest_issue_snapshot(issue_file=issue_file)
+    if snapshot_file is not None:
+        original_text = extract_original_issue_text(snapshot_file.read_text(encoding="utf-8"))
+        if original_text.strip():
+            return original_text
+
+    if not issue_file.is_file():
+        raise RallyStateError(f"Issue log does not exist: `{issue_file}`.")
+    original_text = extract_original_issue_text(issue_file.read_text(encoding="utf-8"))
+    if not original_text.strip():
+        raise RallyStateError(f"Could not recover the original issue from `{issue_file}`.")
+    return original_text
+
+
+def extract_original_issue_text(issue_text: str) -> str:
+    marker_index = issue_text.find(ORIGINAL_ISSUE_END_MARKER)
+    if marker_index >= 0:
+        return _normalize_original_issue_text(issue_text[:marker_index])
+
+    block_start = _find_first_rally_block_start(issue_text)
+    if block_start is None:
+        return _normalize_original_issue_text(issue_text)
+    return _normalize_original_issue_text(issue_text[:block_start])
 
 
 def _resolve_issue_file(*, repo_root: Path, run_id: str) -> Path:
@@ -198,7 +238,10 @@ def _format_issue_block(
 def _append_block(*, current_text: str, block: str) -> str:
     if not current_text.strip():
         return f"{current_text}{block}"
-    return f"{current_text.rstrip('\n')}\n\n---\n\n{block}"
+    prefix = current_text.rstrip("\n")
+    if _should_insert_original_issue_marker(current_text):
+        return f"{prefix}\n\n{ORIGINAL_ISSUE_END_MARKER}\n\n---\n\n{block}"
+    return f"{prefix}\n\n---\n\n{block}"
 
 
 def _write_snapshot(*, issue_file: Path, timestamp: datetime) -> Path:
@@ -211,3 +254,34 @@ def _write_snapshot(*, issue_file: Path, timestamp: datetime) -> Path:
 
 def _snapshot_stamp(timestamp: datetime) -> str:
     return timestamp.astimezone(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def _find_earliest_issue_snapshot(*, issue_file: Path) -> Path | None:
+    history_dir = issue_file.parent.parent / "issue_history"
+    if not history_dir.is_dir():
+        return None
+    snapshots = sorted(history_dir.glob("*-issue.md"))
+    return snapshots[0] if snapshots else None
+
+
+def _find_first_rally_block_start(issue_text: str) -> int | None:
+    candidates: list[int] = []
+    for title in _RALLY_BLOCK_TITLES:
+        divider_match = issue_text.find(f"\n\n---\n\n## {title}\n")
+        if divider_match >= 0:
+            candidates.append(divider_match)
+        if issue_text.startswith(f"## {title}\n"):
+            candidates.append(0)
+    return min(candidates) if candidates else None
+
+
+def _normalize_original_issue_text(issue_text: str) -> str:
+    if not issue_text.strip():
+        return ""
+    return issue_text.rstrip("\n") + "\n"
+
+
+def _should_insert_original_issue_marker(issue_text: str) -> bool:
+    if ORIGINAL_ISSUE_END_MARKER in issue_text:
+        return False
+    return _find_first_rally_block_start(issue_text) is None

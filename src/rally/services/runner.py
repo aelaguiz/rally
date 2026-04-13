@@ -39,7 +39,7 @@ from rally.services.issue_editor import (
     edit_existing_issue_file_in_editor,
     resolve_interactive_issue_editor,
 )
-from rally.services.issue_ledger import append_issue_edit_diff, append_issue_event
+from rally.services.issue_ledger import append_issue_edit_diff, append_issue_event, load_original_issue_text
 from rally.services.run_events import EventConsumer, RunEventRecorder
 from rally.services.run_store import (
     archive_run,
@@ -99,39 +99,20 @@ def run_flow(
             repo_root=repo_root,
             flow=flow,
         )
-        run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
-        recorder = _build_recorder(
-            run_dir=run_dir,
-            run_record=run_record,
+        return _execute_new_run(
+            repo_root=repo_root,
             flow=flow,
+            run_record=run_record,
             display_factory=display_factory,
+            subprocess_run=subprocess_run,
+            lifecycle_code="RUN",
+            lifecycle_message=f"Created run `{run_record.id}` for flow `{flow.name}`.",
+            lifecycle_data={
+                "flow_name": flow.name,
+                "flow_code": flow.code,
+                "start_agent_key": flow.start_agent_key,
+            },
         )
-        try:
-            recorder.emit(
-                source="rally",
-                kind="lifecycle",
-                code="RUN",
-                message=f"Created run `{run_record.id}` for flow `{flow.name}`.",
-                data={
-                    "flow_name": flow.name,
-                    "flow_code": flow.code,
-                    "start_agent_key": flow.start_agent_key,
-                },
-            )
-            prepare_run_home_shell(
-                repo_root=repo_root,
-                run_record=run_record,
-                event_recorder=recorder,
-            )
-            return _execute_until_stop(
-                repo_root=repo_root,
-                flow=flow,
-                run_record=run_record,
-                recorder=recorder,
-                subprocess_run=subprocess_run,
-            )
-        finally:
-            recorder.close()
 
 
 def resume_run(
@@ -141,6 +122,9 @@ def resume_run(
     subprocess_run: SubprocessRunner = subprocess.run,
     display_factory: DisplayFactory | None = None,
 ) -> RunCommandResult:
+    if request.edit_issue and request.restart:
+        raise RallyUsageError("`rally resume` accepts either `--edit` or `--restart`, not both.")
+
     run_dir = find_run_dir(repo_root=repo_root, run_id=request.run_id)
     if run_dir.is_relative_to(archive_runs_dir(repo_root)):
         raise RallyUsageError(f"Run `{request.run_id}` is archived and cannot be resumed.")
@@ -149,6 +133,14 @@ def resume_run(
     with flow_lock(repo_root=repo_root, flow_code=run_record.flow_code):
         ensure_flow_agents_built(repo_root=repo_root, flow_name=run_record.flow_name)
         flow = load_flow_definition(repo_root=repo_root, flow_name=run_record.flow_name)
+        if request.restart:
+            return _restart_run(
+                repo_root=repo_root,
+                flow=flow,
+                run_record=run_record,
+                subprocess_run=subprocess_run,
+                display_factory=display_factory,
+            )
         recorder = _build_recorder(
             run_dir=run_dir,
             run_record=run_record,
@@ -183,6 +175,115 @@ def resume_run(
             recorder.close()
 
 
+def _execute_new_run(
+    *,
+    repo_root: Path,
+    flow: FlowDefinition,
+    run_record: RunRecord,
+    display_factory: DisplayFactory | None,
+    subprocess_run: SubprocessRunner,
+    lifecycle_code: str,
+    lifecycle_message: str,
+    lifecycle_data: dict[str, object] | None,
+    issue_text: str | None = None,
+    run_start_source: str = "rally run",
+    run_started_detail_lines: Sequence[str] = (),
+) -> RunCommandResult:
+    run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
+    recorder = _build_recorder(
+        run_dir=run_dir,
+        run_record=run_record,
+        flow=flow,
+        display_factory=display_factory,
+    )
+    try:
+        recorder.emit(
+            source="rally",
+            kind="lifecycle",
+            code=lifecycle_code,
+            message=lifecycle_message,
+            data=lifecycle_data,
+        )
+        prepare_run_home_shell(
+            repo_root=repo_root,
+            run_record=run_record,
+            event_recorder=recorder,
+        )
+        if issue_text is not None:
+            (run_dir / "home" / "issue.md").write_text(issue_text, encoding="utf-8")
+        return _execute_until_stop(
+            repo_root=repo_root,
+            flow=flow,
+            run_record=run_record,
+            recorder=recorder,
+            subprocess_run=subprocess_run,
+            run_start_source=run_start_source,
+            run_started_detail_lines=run_started_detail_lines,
+        )
+    finally:
+        recorder.close()
+
+
+def _restart_run(
+    *,
+    repo_root: Path,
+    flow: FlowDefinition,
+    run_record: RunRecord,
+    subprocess_run: SubprocessRunner,
+    display_factory: DisplayFactory | None,
+) -> RunCommandResult:
+    run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
+    state = load_run_state(run_dir=run_dir)
+    original_issue = load_original_issue_text(repo_root=repo_root, run_id=run_record.id)
+    if not _confirm_replace_active_run(
+        active_run=run_record,
+        active_state=state,
+        command_text=f"rally resume {run_record.id} --restart",
+        prompt=(
+            f"Archive active run `{run_record.id}` with status `{state.status.value}` "
+            "and restart it from the original issue? [y/N]: "
+        ),
+    ):
+        raise RallyUsageError(f"Cancelled restarting run `{run_record.id}`.")
+
+    _record_archived_run(
+        repo_root=repo_root,
+        active_run=run_record,
+        active_state=state,
+        run_dir=run_dir,
+        event_message=f"Archiving run `{run_record.id}` before restarting it from the original issue.",
+        issue_source="rally resume --restart",
+        issue_reason=f"Restarting from the original issue with `rally resume {run_record.id} --restart`.",
+    )
+    archive_run(repo_root=repo_root, run_id=run_record.id)
+
+    new_run = create_run(repo_root=repo_root, flow=flow)
+    restarted_result = _execute_new_run(
+        repo_root=repo_root,
+        flow=flow,
+        run_record=new_run,
+        display_factory=display_factory,
+        subprocess_run=subprocess_run,
+        lifecycle_code="RESTART",
+        lifecycle_message=f"Restarted run `{run_record.id}` as `{new_run.id}` for flow `{flow.name}`.",
+        lifecycle_data={
+            "flow_name": flow.name,
+            "flow_code": flow.code,
+            "start_agent_key": flow.start_agent_key,
+            "restarted_from_run_id": run_record.id,
+        },
+        issue_text=original_issue,
+        run_start_source="rally resume --restart",
+        run_started_detail_lines=(f"Restarted From: `{run_record.id}`",),
+    )
+    return RunCommandResult(
+        run_id=restarted_result.run_id,
+        status=restarted_result.status,
+        current_agent_key=restarted_result.current_agent_key,
+        message=f"Restarted run `{run_record.id}` as `{new_run.id}`. {restarted_result.message}",
+    )
+
+
 def _maybe_archive_replaced_run(
     *,
     repo_root: Path,
@@ -199,38 +300,41 @@ def _maybe_archive_replaced_run(
     active_run_dir = find_run_dir(repo_root=repo_root, run_id=active_run.id)
     active_state = load_run_state(run_dir=active_run_dir)
     if not _confirm_replace_active_run(
-        flow=flow,
         active_run=active_run,
         active_state=active_state,
+        command_text=f"rally run {flow.name} --new",
+        prompt=(
+            f"Archive active run `{active_run.id}` with status `{active_state.status.value}` "
+            f"and start a new `{flow.name}` run? [y/N]: "
+        ),
     ):
         raise RallyUsageError(f"Cancelled starting a new `{flow.name}` run.")
 
-    _record_archived_run_for_new_request(
+    _record_archived_run(
         repo_root=repo_root,
-        flow=flow,
         active_run=active_run,
         active_state=active_state,
         run_dir=active_run_dir,
+        event_message=f"Archiving run `{active_run.id}` before starting a new `{flow.name}` run.",
+        issue_source="rally run --new",
+        issue_reason=f"Starting a fresh `{flow.name}` run with `rally run {flow.name} --new`.",
     )
     archive_run(repo_root=repo_root, run_id=active_run.id)
 
 
 def _confirm_replace_active_run(
     *,
-    flow: FlowDefinition,
     active_run: RunRecord,
     active_state: RunState,
+    command_text: str,
+    prompt: str,
 ) -> bool:
     if not (_stream_is_tty(sys.stdin) and _stream_is_tty(sys.stdout)):
         raise RallyUsageError(
-            f"`rally run {flow.name} --new` needs an interactive TTY to confirm archiving "
+            f"`{command_text}` needs an interactive TTY to confirm archiving "
             f"active run `{active_run.id}`."
         )
 
-    prompt = (
-        f"Archive active run `{active_run.id}` with status `{active_state.status.value}` "
-        f"and start a new `{flow.name}` run? [y/N]: "
-    )
     sys.stdout.write(prompt)
     sys.stdout.flush()
     response = sys.stdin.readline()
@@ -247,13 +351,15 @@ def _stream_is_tty(stream) -> bool:
         return False
 
 
-def _record_archived_run_for_new_request(
+def _record_archived_run(
     *,
     repo_root: Path,
-    flow: FlowDefinition,
     active_run: RunRecord,
     active_state: RunState,
     run_dir: Path,
+    event_message: str,
+    issue_source: str,
+    issue_reason: str,
 ) -> None:
     recorder = RunEventRecorder(
         run_dir=run_dir,
@@ -265,7 +371,7 @@ def _record_archived_run_for_new_request(
             source="rally",
             kind="lifecycle",
             code="ARCHIVE",
-            message=f"Archiving run `{active_run.id}` before starting a new `{flow.name}` run.",
+            message=event_message,
             data={"status": active_state.status.value},
         )
     finally:
@@ -276,10 +382,10 @@ def _record_archived_run_for_new_request(
             repo_root=repo_root,
             run_id=active_run.id,
             title="Rally Archived",
-            source="rally run --new",
+            source=issue_source,
             detail_lines=(
                 f"Status: `{active_state.status.value}`",
-                f"Reason: Starting a fresh `{flow.name}` run with `rally run {flow.name} --new`.",
+                f"Reason: {issue_reason}",
             ),
         )
 
@@ -462,6 +568,8 @@ def _execute_until_stop(
     recorder: RunEventRecorder,
     issue_edit_diff: _IssueEditDiff | None = None,
     subprocess_run: SubprocessRunner,
+    run_start_source: str = "rally run",
+    run_started_detail_lines: Sequence[str] = (),
 ) -> RunCommandResult:
     run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
     initial_state = load_run_state(run_dir=run_dir)
@@ -478,6 +586,8 @@ def _execute_until_stop(
         run_record=run_record,
         flow=flow,
         state=initial_state,
+        source=run_start_source,
+        extra_detail_lines=run_started_detail_lines,
     )
     if issue_edit_diff is not None:
         append_issue_edit_diff(
@@ -1428,6 +1538,8 @@ def _append_run_started_event_if_needed(
     run_record: RunRecord,
     flow: FlowDefinition,
     state: RunState,
+    source: str,
+    extra_detail_lines: Sequence[str] = (),
 ) -> None:
     if state.turn_index != 0:
         return
@@ -1438,11 +1550,12 @@ def _append_run_started_event_if_needed(
         repo_root=repo_root,
         run_id=run_record.id,
         title="Rally Run Started",
-        source="rally run",
+        source=source,
         detail_lines=(
             f"Flow: `{flow.name}`",
             f"Flow Code: `{flow.code}`",
             f"Start Agent: `{flow.start_agent_key}`",
+            *extra_detail_lines,
         ),
     )
     marker.write_text("logged\n", encoding="utf-8")

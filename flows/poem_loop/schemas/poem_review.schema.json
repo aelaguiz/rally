@@ -24,36 +24,58 @@
       "minLength": 1
     },
     "current_artifact": {
-      "type": "string",
+      "type": [
+        "string",
+        "null"
+      ],
       "minLength": 1
     },
     "next_owner": {
-      "type": "string",
+      "type": [
+        "string",
+        "null"
+      ],
       "minLength": 1
     },
     "failure_detail": {
-      "type": "object",
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": false,
       "properties": {
         "blocked_gate": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "minLength": 1
         },
         "failing_gates": {
-          "type": "array",
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "type": "string",
             "minLength": 1
           },
           "minItems": 1
         }
-      }
+      },
+      "required": [
+        "blocked_gate",
+        "failing_gates"
+      ]
     }
   },
   "required": [
     "verdict",
     "reviewed_artifact",
     "analysis_performed",
-    "findings_first"
+    "findings_first",
+    "current_artifact",
+    "next_owner",
+    "failure_detail"
   ]
 }

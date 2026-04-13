@@ -80,7 +80,7 @@ interactive, Rally refuses `--new` because it cannot ask.
 Current shape:
 
 ```bash
-rally resume <run-id> [--edit]
+rally resume <run-id> [--edit|--restart]
 ```
 
 What it does today:
@@ -88,10 +88,12 @@ What it does today:
 - reloads the stored run
 - takes the flow lock and rebuilds that run's flow through Doctrine before loading compiled agents
 - when `--edit` is passed, opens the current `home/issue.md` in place before Rally tries the turn
+- when `--restart` is passed, asks before Rally archives the old run and starts a fresh run from the original issue
 - opens the same issue editor path as `rally run` when `home/issue.md` is missing or blank on a real TTY
 - refuses archived runs
-- refuses done runs
+- refuses done runs for plain resume
 - lets a blocked run try again after `--edit` saves a non-empty issue
+- lets a blocked or done run restart from the original issue when `--restart` is confirmed
 - can still resume a legacy sleeping run after its wake time
 - reuses the saved Codex session id when one exists
 - opens the same live stream rules as `rally run`
@@ -108,6 +110,9 @@ If the shell is not interactive or no editor is available, Rally refuses
 If the operator changed the issue text, Rally appends one
 `## user edited issue.md` block to the end of `home/issue.md` with a fenced
 unified diff before the run resumes.
+If `--restart` is passed, Rally refuses to edit in place. It asks for
+confirmation on a real TTY, archives the old run, restores only the original
+issue into a fresh run with a new run id, and starts that new run from turn 0.
 
 ### `runtime.max_command_turns`
 
@@ -159,6 +164,10 @@ Rally writes both the issue ledger and `logs/events.jsonl`.
 The issue file starts with the operator brief exactly as entered.
 Rally does not also write a shared `operator_brief.md` sidecar or accept a
 separate startup brief path.
+When Rally appends its first own block, it inserts one hidden Markdown comment,
+`<!-- RALLY_ORIGINAL_ISSUE_END -->`, right before that first block. Rally uses
+that marker, or the earliest issue snapshot when one exists, to recover the
+original issue for `resume --restart`.
 After that, Rally appends:
 
 - note blocks from `rally issue note`
@@ -190,8 +199,8 @@ The current Rally note block format is:
 Turn-scoped runtime blocks use the same optional `- Turn:` metadata line.
 That includes `Rally Turn Result`, `Rally Done`, `Rally Blocked`, and
 `Rally Sleeping` when the block belongs to one active turn.
-Non-turn blocks such as `Rally Run Started` and `user edited issue.md` stay
-unnumbered.
+Non-turn blocks such as `Rally Run Started`, `Rally Archived`, and
+`user edited issue.md` stay unnumbered.
 
 Snapshot behavior today:
 

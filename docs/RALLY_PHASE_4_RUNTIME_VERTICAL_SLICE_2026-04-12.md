@@ -44,6 +44,7 @@ What is real today:
 - `rally run --new`
 - `rally resume`
 - `rally resume --edit`
+- `rally resume --restart`
 - one shared interactive issue-ready gate for `run` and `resume`
 - live operator stream on a TTY with plain fallback off TTY
 - strict final-turn JSON parsing
@@ -98,6 +99,7 @@ The current checked-in runtime surface is:
   - ships real `run`
   - ships real `resume`
   - ships `resume --edit`
+  - ships `resume --restart`
   - ships `issue note`
   - stamps `- Turn: \`N\`` on in-turn notes automatically when Rally launched that turn
 - `src/rally/services/run_store.py`
@@ -112,6 +114,8 @@ The current checked-in runtime surface is:
   - runs flow setup only when the run home first becomes ready
 - `src/rally/services/issue_ledger.py`
   - appends Rally-stamped notes and runtime event blocks
+  - inserts one hidden original-issue marker before the first Rally-owned block
+  - can recover the original issue from the earliest issue snapshot
   - snapshots the full issue log after each append
 - `src/rally/services/run_events.py`
   - writes canonical run events
@@ -136,6 +140,7 @@ The current checked-in runtime surface is:
   - rebuilds the current flow under the flow lock before loading compiled agents
   - wires run creation, resume, prompt injection, Codex launch, result handling, state writes, and issue/event logging
   - lets a blocked run retry after `resume --edit` saves a non-empty issue
+  - lets `resume --restart` archive the old run and start a fresh run from the original issue
   - appends a `user edited issue.md` diff block to `home/issue.md` when `resume --edit` changed the issue text
   - appends Rally-owned ledger blocks with Markdown `---` dividers and turn labels on turn-scoped records
   - keeps chaining turns after handoffs until Rally reaches `done`, `blocker`, a runtime failure, a sleep request, or the command turn cap

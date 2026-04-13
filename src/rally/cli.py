@@ -42,10 +42,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
     resume_parser = subparsers.add_parser("resume", help="Resume an existing Rally run.")
     resume_parser.add_argument("run_id", help="Run identifier to resume.")
-    resume_parser.add_argument(
+    resume_action = resume_parser.add_mutually_exclusive_group()
+    resume_action.add_argument(
         "--edit",
         action="store_true",
         help="Open `home/issue.md` in your editor before Rally resumes the run.",
+    )
+    resume_action.add_argument(
+        "--restart",
+        action="store_true",
+        help="Archive this run, restore the original issue, and start a fresh run.",
     )
     resume_parser.set_defaults(func=_resume_command)
 
@@ -75,7 +81,11 @@ def _run_command(args: argparse.Namespace) -> int:
 def _resume_command(args: argparse.Namespace) -> int:
     result = resume_run(
         repo_root=_repo_root(),
-        request=ResumeRequest(run_id=args.run_id, edit_issue=args.edit),
+        request=ResumeRequest(
+            run_id=args.run_id,
+            edit_issue=args.edit,
+            restart=args.restart,
+        ),
         display_factory=_build_display_factory(sys.stdout),
     )
     print(result.message)

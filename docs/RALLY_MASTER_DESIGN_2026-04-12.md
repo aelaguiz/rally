@@ -208,8 +208,9 @@ It should:
 
 - begin with the operator's brief exactly as entered
 - remain append-only after that initial brief
+- add one hidden `<!-- RALLY_ORIGINAL_ISSUE_END -->` marker before the first Rally-owned block
 - hold setup notes, serialized notes, normalized final-turn response records, and runner-generated status records
-- use one Markdown `---` divider between Rally-owned blocks after the brief
+- use one Markdown `---` divider between Rally-owned blocks after that marker
 - add `- Turn: \`N\`` on turn-scoped blocks without asking the agent to manage that line
 
 Rally does not create a second shared brief file.
@@ -370,7 +371,7 @@ Conceptually it is:
 
 ```bash
 rally run <flow> [--new]
-rally resume <FLOW_CODE>-<n> [--edit]
+rally resume <FLOW_CODE>-<n> [--edit|--restart]
 rally archive <FLOW_CODE>-<n>
 rally issue note --run-id <FLOW_CODE>-<n>
 ```
@@ -397,7 +398,13 @@ back to `pending` and let Rally try the turn again. A blank save should stop
 and wait for a real issue. If the operator changed the file text, Rally should
 append one `user edited issue.md` block with a unified diff at the end of the
 same ledger before the turn resumes. Done and archived runs should still
-refuse resume.
+refuse plain resume.
+`rally resume --restart` should ask before it archives the current active run,
+recover the original issue from the earliest issue snapshot when it can, start
+a fresh run with a new run id, and seed that new run's `home/issue.md` with
+only the recovered original issue. The new `Rally Run Started` block should
+use source `rally resume --restart` and include `Restarted From: <old-run-id>`.
+Done runs may restart even though they cannot resume.
 
 `rally issue note` is the shared durable-note write surface for both agents and operators.
 When Rally launched the active turn, the CLI should add the current turn

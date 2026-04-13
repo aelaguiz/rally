@@ -254,6 +254,9 @@ Rally gives them one world and names it clearly.
 
 It starts with the operator brief.
 Rally does not create a second shared brief file.
+When Rally adds its first own block, it inserts one hidden
+`<!-- RALLY_ORIGINAL_ISSUE_END -->` marker first so Rally can recover the
+original issue later.
 After that, Rally appends trusted runtime records in order.
 
 The issue ledger is where later readers should look first.
@@ -348,8 +351,8 @@ Rally has drifted away from its purpose.
 Rally's target operator surface is intentionally small:
 
 ```bash
-rally run <flow>
-rally resume <FLOW_CODE>-<n>
+rally run <flow> [--new]
+rally resume <FLOW_CODE>-<n> [--edit|--restart]
 rally archive <FLOW_CODE>-<n>
 rally issue note --run-id <FLOW_CODE>-<n>
 ```
@@ -360,6 +363,9 @@ plane around them.
 `rally run` creates the run shell under `runs/active/<run-id>/`.
 If `home/issue.md` is missing or blank, Rally stops there, tells the operator
 to fill in that file, and then continues through `rally resume <run-id>`.
+If the operator wants to throw away Rally-added history and start over from the
+first issue, `rally resume <run-id> --restart` archives the old run and starts
+a fresh run with only that original issue.
 
 ## The Adapter Contract
 

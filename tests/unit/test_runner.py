@@ -15,6 +15,7 @@ from unittest.mock import patch
 from rally.domain.run import ResumeRequest, RunRequest, RunStatus
 from rally.errors import RallyConfigError, RallyUsageError
 from rally.services.issue_editor import IssueEditorResult
+from rally.services.issue_ledger import ORIGINAL_ISSUE_END_MARKER
 from rally.services.run_store import archive_run, find_run_dir, load_run_state, write_run_state
 from rally.services.runner import resume_run, run_flow
 from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display
@@ -799,6 +800,174 @@ class RunnerTests(unittest.TestCase):
                     request=ResumeRequest(run_id="DMO-1"),
                     subprocess_run=_FakeCodexRun([]),
                 )
+
+    def test_resume_run_restart_archives_done_run_and_restores_original_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir, body="Original issue text.\n")
+
+            resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=_FakeCodexRun(
+                    [
+                        {
+                            "thread_id": "session-1",
+                            "last_message": {
+                                "kind": "done",
+                                "next_owner": None,
+                                "summary": "first pass done",
+                                "reason": None,
+                                "sleep_duration_seconds": None,
+                            },
+                        }
+                    ]
+                ),
+            )
+            (run_dir / "home" / "issue.md").write_text(
+                textwrap.dedent(
+                    f"""\
+                    Edited issue text.
+
+                    {ORIGINAL_ISSUE_END_MARKER}
+
+                    ---
+
+                    ## user edited issue.md
+                    - Run ID: `DMO-1`
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fresh_run = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-2",
+                        "last_message": {
+                            "kind": "done",
+                            "next_owner": None,
+                            "summary": "fresh run done",
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+
+            with patch(
+                "rally.services.runner._confirm_replace_active_run",
+                return_value=True,
+            ):
+                result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1", restart=True),
+                    subprocess_run=fresh_run,
+                )
+
+            archived_dir = repo_root / "runs" / "archive" / "DMO-1"
+            new_run_dir = repo_root / "runs" / "active" / "DMO-2"
+            archived_issue = (archived_dir / "home" / "issue.md").read_text(encoding="utf-8")
+            new_issue = (new_run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+
+            self.assertEqual(result.run_id, "DMO-2")
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("Restarted run `DMO-1` as `DMO-2`.", result.message)
+            self.assertTrue(archived_dir.is_dir())
+            self.assertTrue(new_run_dir.is_dir())
+            self.assertTrue(archived_issue.startswith("Edited issue text.\n"))
+            self.assertIn("## Rally Archived", archived_issue)
+            self.assertIn("- Source: `rally resume --restart`", archived_issue)
+            self.assertTrue(new_issue.startswith("Original issue text.\n"))
+            self.assertNotIn("Edited issue text.", new_issue)
+            self.assertIn("## Rally Run Started", new_issue)
+            self.assertIn("- Source: `rally resume --restart`", new_issue)
+            self.assertIn("- Restarted From: `DMO-1`", new_issue)
+            self.assertNotIn("resume", fresh_run.calls[0]["command"])
+
+    def test_resume_run_restart_allows_blocked_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir, body="Restart this blocked issue.\n")
+            blocked_state = replace(
+                load_run_state(run_dir=run_dir),
+                status=RunStatus.BLOCKED,
+                blocker_reason="Need more detail.",
+            )
+            write_run_state(run_dir=run_dir, state=blocked_state)
+
+            with patch(
+                "rally.services.runner._confirm_replace_active_run",
+                return_value=True,
+            ):
+                result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1", restart=True),
+                    subprocess_run=_FakeCodexRun(
+                        [
+                            {
+                                "thread_id": "session-1",
+                                "last_message": {
+                                    "kind": "done",
+                                    "next_owner": None,
+                                    "summary": "restarted from blocked",
+                                    "reason": None,
+                                    "sleep_duration_seconds": None,
+                                },
+                            }
+                        ]
+                    ),
+                )
+
+            archived_dir = repo_root / "runs" / "archive" / "DMO-1"
+            new_run_dir = repo_root / "runs" / "active" / "DMO-2"
+            new_issue = (new_run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+
+            self.assertEqual(result.run_id, "DMO-2")
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertTrue(archived_dir.is_dir())
+            self.assertTrue(new_issue.startswith("Restart this blocked issue.\n"))
+            self.assertIn("- Restarted From: `DMO-1`", new_issue)
+
+    def test_resume_run_restart_cancels_when_replacement_not_confirmed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir, body="Keep this run.\n")
+
+            with patch(
+                "rally.services.runner._confirm_replace_active_run",
+                return_value=False,
+            ):
+                with self.assertRaisesRegex(RallyUsageError, "Cancelled restarting run `DMO-1`"):
+                    resume_run(
+                        repo_root=repo_root,
+                        request=ResumeRequest(run_id="DMO-1", restart=True),
+                        subprocess_run=_FakeCodexRun([]),
+                    )
+
+            self.assertTrue((repo_root / "runs" / "active" / "DMO-1").is_dir())
+            self.assertFalse((repo_root / "runs" / "active" / "DMO-2").exists())
+            self.assertFalse((repo_root / "runs" / "archive" / "DMO-1").exists())
+
+    def test_resume_run_restart_requires_interactive_tty_to_confirm_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir, body="TTY only restart.\n")
+
+            with patch("sys.stdin", io.StringIO("y\n")), patch("sys.stdout", io.StringIO()):
+                with self.assertRaisesRegex(RallyUsageError, "needs an interactive TTY to confirm archiving"):
+                    resume_run(
+                        repo_root=repo_root,
+                        request=ResumeRequest(run_id="DMO-1", restart=True),
+                        subprocess_run=_FakeCodexRun([]),
+                    )
 
     def test_resume_run_with_edit_updates_existing_issue_and_continues(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

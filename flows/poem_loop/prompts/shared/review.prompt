@@ -11,7 +11,8 @@ output shape PoemReviewJson: "Poem Review JSON"
     field_notes: "Field Notes"
         "Use owner key `poem_writer` when the poem needs another draft."
         "Use `artifacts/poem.md` for `reviewed_artifact` and `current_artifact` when the poem draft is current."
-        "Skip `current_artifact` and `next_owner` when the review is blocked before a poem draft exists."
+        "Use `null` for `current_artifact`, `next_owner`, and `failure_detail` when they do not apply."
+        "Inside `failure_detail`, use `null` for `blocked_gate` or `failing_gates` when one does not apply."
 
 
 workflow PoemReviewContract: "Poem Review Contract"
