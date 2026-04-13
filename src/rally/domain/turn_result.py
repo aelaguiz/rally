@@ -15,18 +15,27 @@ class TurnResultKind(StrEnum):
 @dataclass(frozen=True)
 class HandoffTurnResult:
     next_owner: str
+    summary: None = None
+    reason: None = None
+    sleep_duration_seconds: None = None
     kind: TurnResultKind = TurnResultKind.HANDOFF
 
 
 @dataclass(frozen=True)
 class DoneTurnResult:
     summary: str
+    next_owner: None = None
+    reason: None = None
+    sleep_duration_seconds: None = None
     kind: TurnResultKind = TurnResultKind.DONE
 
 
 @dataclass(frozen=True)
 class BlockerTurnResult:
     reason: str
+    next_owner: None = None
+    summary: None = None
+    sleep_duration_seconds: None = None
     kind: TurnResultKind = TurnResultKind.BLOCKER
 
 
@@ -34,6 +43,8 @@ class BlockerTurnResult:
 class SleepTurnResult:
     reason: str
     sleep_duration_seconds: int
+    next_owner: None = None
+    summary: None = None
     kind: TurnResultKind = TurnResultKind.SLEEP
 
 

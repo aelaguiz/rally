@@ -1,47 +1,52 @@
 {
-  "oneOf": [
-    {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "next_owner"],
-      "properties": {
-        "kind": { "const": "handoff" },
-        "next_owner": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RallyTurnResult",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "handoff",
+        "done",
+        "blocker",
+        "sleep"
+      ]
     },
-    {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "summary"],
-      "properties": {
-        "kind": { "const": "done" },
-        "summary": { "type": "string" }
-      }
+    "next_owner": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
     },
-    {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "reason"],
-      "properties": {
-        "kind": { "const": "blocker" },
-        "reason": { "type": "string" }
-      }
+    "summary": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
     },
-    {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "reason", "sleep_duration_seconds"],
-      "properties": {
-        "kind": { "const": "sleep" },
-        "reason": { "type": "string" },
-        "sleep_duration_seconds": {
-          "type": "integer",
-          "minimum": 1
-        }
-      }
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "sleep_duration_seconds": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
     }
-  ]
+  },
+  "required": [
+    "kind",
+    "next_owner",
+    "summary",
+    "reason",
+    "sleep_duration_seconds"
+  ],
+  "additionalProperties": false
 }

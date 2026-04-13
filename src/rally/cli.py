@@ -7,6 +7,8 @@ from pathlib import Path
 from rally.errors import RallyError, RallyUsageError
 from rally.services.issue_ledger import append_issue_note
 from rally.services.flow_loader import load_flow_definition
+from rally.domain.run import ResumeRequest, RunRequest
+from rally.services.runner import resume_run, run_flow
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -66,21 +68,26 @@ def _run_command(args: argparse.Namespace) -> int:
             "Preflight passed for flow "
             f"`{flow.name}` with {len(flow.agents)} agents, "
             f"start agent `{flow.start_agent_key}`, "
+            f"flow code `{flow.code}`, "
             f"and adapter `{flow.adapter.name}`."
         )
         return 0
 
-    raise RallyUsageError(
-        "Run execution is not implemented yet. "
-        "Use `rally run <flow> --brief-file <path> --preflight-only` for the Phase 1 proof surface."
+    result = run_flow(
+        repo_root=repo_root,
+        request=RunRequest(flow_name=args.flow_name, brief_file=brief_file),
     )
+    print(result.message)
+    return 0
 
 
 def _resume_command(args: argparse.Namespace) -> int:
-    raise RallyUsageError(
-        "Resume is not implemented yet. "
-        f"Run-store and session recovery surfaces are still pending for run `{args.run_id}`."
+    result = resume_run(
+        repo_root=_repo_root(),
+        request=ResumeRequest(run_id=args.run_id),
     )
+    print(result.message)
+    return 0
 
 
 def _issue_note_command(args: argparse.Namespace) -> int:

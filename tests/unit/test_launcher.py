@@ -20,12 +20,14 @@ class LauncherTests(unittest.TestCase):
                 run_home=run_home,
                 run_id="FLW-1",
                 flow_code="FLW",
+                agent_slug="scope_lead",
             )
 
             self.assertEqual(env["CODEX_HOME"], str(run_home.resolve()))
             self.assertEqual(env["RALLY_BASE_DIR"], str(repo_root.resolve()))
             self.assertEqual(env["RALLY_RUN_ID"], "FLW-1")
             self.assertEqual(env["RALLY_FLOW_CODE"], "FLW")
+            self.assertEqual(env["RALLY_AGENT_SLUG"], "scope_lead")
 
     def test_build_codex_launch_env_rejects_blank_run_id(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -39,6 +41,7 @@ class LauncherTests(unittest.TestCase):
                     run_home=run_home,
                     run_id="",
                     flow_code="FLW",
+                    agent_slug="scope_lead",
                 )
 
     def test_build_codex_launch_env_rejects_blank_flow_code(self) -> None:
@@ -53,6 +56,7 @@ class LauncherTests(unittest.TestCase):
                     run_home=run_home,
                     run_id="FLW-1",
                     flow_code="",
+                    agent_slug="scope_lead",
                 )
 
 

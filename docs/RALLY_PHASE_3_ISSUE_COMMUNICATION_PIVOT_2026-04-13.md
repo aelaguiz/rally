@@ -27,14 +27,17 @@ Phase 3 changed Rally to one simple communication model:
 
 There is no separate handoff artifact.
 There is no second return path.
+The final JSON is one flat object with five keys.
+Fields that do not apply are `null`.
 
 # Shipped Rules
 
 - Every Rally-managed agent inherits the shared base agent in `stdlib/rally/prompts/rally/base_agent.prompt`.
 - Every Rally-managed agent gets the shared `rally-kernel` skill.
 - The shared note path is `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"`.
-- Rally injects `RALLY_BASE_DIR`, `RALLY_RUN_ID`, and `RALLY_FLOW_CODE`.
-- `rally.turn_results` is the only shared control shape for `handoff`, `done`, `blocker`, and `sleep`.
+- Rally injects `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_AGENT_SLUG`.
+- `rally.turn_results` is one flat JSON object with `kind`, `next_owner`, `summary`, `reason`, and `sleep_duration_seconds`.
+- Agents keep unused turn-result fields as `null`.
 - Notes keep context only. Notes never carry `next_owner`, `done`, `blocker`, or `sleep` truth.
 
 # Shipped Surfaces

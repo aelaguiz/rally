@@ -11,6 +11,10 @@ FIXTURE_ROOT="${FLOW_ROOT}/fixtures/tiny_issue_service"
 mkdir -p "${RALLY_FLOW_HOME}/repos" "${RALLY_FLOW_HOME}/artifacts"
 rm -rf "${RALLY_FLOW_HOME}/repos/tiny_issue_service"
 cp -R "${FIXTURE_ROOT}" "${RALLY_FLOW_HOME}/repos/tiny_issue_service"
+rm -rf \
+  "${RALLY_FLOW_HOME}/repos/tiny_issue_service/.venv" \
+  "${RALLY_FLOW_HOME}/repos/tiny_issue_service/.pytest_cache" \
+  "${RALLY_FLOW_HOME}/repos/tiny_issue_service/tiny_issue_service.egg-info"
 
 cat >> "${RALLY_ISSUE_PATH}" <<'EOF'
 

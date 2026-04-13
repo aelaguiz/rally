@@ -17,9 +17,14 @@ class FlowLoaderTests(unittest.TestCase):
         flow = load_flow_definition(repo_root=repo_root, flow_name="single_repo_repair")
 
         self.assertEqual(flow.name, "single_repo_repair")
+        self.assertEqual(flow.code, "SRR")
         self.assertEqual(flow.start_agent_key, "01_scope_lead")
         self.assertEqual(flow.agent("01_scope_lead").slug, "scope_lead")
         self.assertEqual(flow.agent("02_change_engineer").compiled.slug, "change_engineer")
+        self.assertEqual(
+            flow.adapter.prompt_input_command,
+            repo_root / "flows/single_repo_repair/setup/prompt_inputs.py",
+        )
         self.assertEqual(
             flow.agent("01_scope_lead").compiled.final_output.schema_file,
             repo_root / "stdlib/rally/schemas/rally_turn_result.schema.json",
@@ -38,7 +43,7 @@ class FlowLoaderTests(unittest.TestCase):
             repo_root = Path(temp_dir).resolve()
             self._write_fixture_repo(repo_root=repo_root, include_next_owner=False)
 
-            with self.assertRaisesRegex(RallyConfigError, "must require `next_owner`"):
+            with self.assertRaisesRegex(RallyConfigError, "must require .*next_owner"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
     def test_load_flow_definition_rejects_support_files_outside_repo_root(self) -> None:
@@ -81,6 +86,7 @@ class FlowLoaderTests(unittest.TestCase):
             textwrap.dedent(
                 """\
                 name: demo
+                code: DEMO
                 start_agent: 01_scope_lead
                 setup_home_script: setup/prepare_home.sh
                 agents:
@@ -92,6 +98,7 @@ class FlowLoaderTests(unittest.TestCase):
                       - fixture-repo
                 runtime:
                   adapter: codex
+                  prompt_input_command: setup/prompt_inputs.py
                   adapter_args:
                     model: gpt-5.4
                 """
@@ -100,6 +107,7 @@ class FlowLoaderTests(unittest.TestCase):
         )
         (flow_root / "setup").mkdir(parents=True)
         (flow_root / "setup" / "prepare_home.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+        (flow_root / "setup" / "prompt_inputs.py").write_text("print('{}')\n", encoding="utf-8")
         (prompts_root / "AGENTS.prompt").write_text("agent ScopeLead:\n", encoding="utf-8")
         (build_root / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
         (build_root / "AGENTS.contract.json").write_text(
@@ -139,28 +147,36 @@ class FlowLoaderTests(unittest.TestCase):
             )
 
     def _schema_text(self, *, include_next_owner: bool) -> str:
-        required = '["kind", "next_owner"]' if include_next_owner else '["kind"]'
+        next_owner_required = '"next_owner",' if include_next_owner else ""
         return textwrap.dedent(
             f"""\
             {{
-              "oneOf": [
-                {{
-                  "type": "object",
-                  "required": {required},
-                  "properties": {{
-                    "kind": {{ "const": "handoff" }},
-                    "next_owner": {{ "type": "string" }}
-                  }}
+              "type": "object",
+              "required": [
+                "kind",
+                {next_owner_required}
+                "summary",
+                "reason",
+                "sleep_duration_seconds"
+              ],
+              "properties": {{
+                "kind": {{
+                  "type": "string",
+                  "enum": ["handoff", "done", "blocker", "sleep"]
                 }},
-                {{
-                  "type": "object",
-                  "required": ["kind", "summary"],
-                  "properties": {{
-                    "kind": {{ "const": "done" }},
-                    "summary": {{ "type": "string" }}
-                  }}
+                "next_owner": {{
+                  "type": ["string", "null"]
+                }},
+                "summary": {{
+                  "type": ["string", "null"]
+                }},
+                "reason": {{
+                  "type": ["string", "null"]
+                }},
+                "sleep_duration_seconds": {{
+                  "type": ["integer", "null"]
                 }}
-              ]
+              }}
             }}
             """
         )

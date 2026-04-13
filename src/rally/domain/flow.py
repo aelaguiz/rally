@@ -19,6 +19,7 @@ def flow_agent_key_to_slug(agent_key: str) -> str:
 @dataclass(frozen=True)
 class AdapterConfig:
     name: str
+    prompt_input_command: Path | None
     args: Mapping[str, object]
 
     def __post_init__(self) -> None:
@@ -60,6 +61,7 @@ class FlowAgent:
 @dataclass(frozen=True)
 class FlowDefinition:
     name: str
+    code: str
     root_dir: Path
     flow_file: Path
     prompt_entrypoint: Path
@@ -74,3 +76,9 @@ class FlowDefinition:
 
     def agent(self, agent_key: str) -> FlowAgent:
         return self.agents[agent_key]
+
+    def agent_by_slug(self, agent_slug: str) -> FlowAgent:
+        for agent in self.agents.values():
+            if agent.slug == agent_slug:
+                return agent
+        raise KeyError(agent_slug)

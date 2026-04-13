@@ -32,6 +32,7 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
         raise RallyConfigError(
             f"Flow name mismatch in `{flow_file}`: expected `{flow_name}`, found `{flow_payload_name}`."
         )
+    flow_code = _require_string(payload, "code", context="flow.yaml")
 
     build_agents_dir = flow_root / "build" / "agents"
     compiled_agents = _load_compiled_agents(repo_root=repo_root, build_agents_dir=build_agents_dir)
@@ -67,6 +68,16 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
     runtime_payload = _require_mapping(payload, "runtime", context="flow.yaml")
     adapter_name = _require_string(runtime_payload, "adapter", context="runtime")
     adapter_args = _require_mapping(runtime_payload, "adapter_args", context="runtime")
+    prompt_input_command_rel = runtime_payload.get("prompt_input_command")
+    prompt_input_command = None
+    if prompt_input_command_rel is not None:
+        if not isinstance(prompt_input_command_rel, str) or not prompt_input_command_rel:
+            raise RallyConfigError("`runtime.prompt_input_command` must be a non-empty string when present.")
+        prompt_input_command = _resolve_flow_relative_file(
+            flow_root=flow_root,
+            relative_path=prompt_input_command_rel,
+            context="runtime.prompt_input_command",
+        )
     prompt_entrypoint = _resolve_repo_relative_file(
         repo_root=repo_root,
         relative_path=f"flows/{flow_name}/prompts/AGENTS.prompt",
@@ -86,6 +97,7 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
 
     return FlowDefinition(
         name=flow_name,
+        code=flow_code,
         root_dir=flow_root,
         flow_file=flow_file,
         prompt_entrypoint=prompt_entrypoint,
@@ -93,7 +105,7 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
         setup_home_script=setup_home_script,
         start_agent_key=start_agent_key,
         agents=agents,
-        adapter=AdapterConfig(name=adapter_name, args=adapter_args),
+        adapter=AdapterConfig(name=adapter_name, prompt_input_command=prompt_input_command, args=adapter_args),
     )
 
 
@@ -172,7 +184,7 @@ def _load_compiled_agent_contract(
             f"Compiled agent `{slug}` must use `json_schema` final output mode, found `{format_mode}`."
         )
 
-    _validate_handoff_requires_next_owner(schema_file)
+    _validate_turn_result_schema(schema_file)
 
     return CompiledAgentContract(
         name=_require_string(agent_payload, "name", context=f"{contract_path} agent"),
@@ -209,29 +221,22 @@ def _load_compiled_agent_contract(
     )
 
 
-def _validate_handoff_requires_next_owner(schema_file: Path) -> None:
+def _validate_turn_result_schema(schema_file: Path) -> None:
     payload = _load_json_mapping(schema_file)
-    branches = payload.get("oneOf")
-    if not isinstance(branches, list):
+    properties = payload.get("properties")
+    required = payload.get("required")
+    if not isinstance(properties, Mapping) or not isinstance(required, list):
         raise RallyConfigError(
-            f"Turn-result schema `{schema_file}` must use top-level `oneOf` branches."
+            f"Turn-result schema `{schema_file}` must declare object properties and required fields."
         )
-    for branch in branches:
-        if not isinstance(branch, Mapping):
-            continue
-        properties = branch.get("properties")
-        if not isinstance(properties, Mapping):
-            continue
-        kind = properties.get("kind")
-        if not isinstance(kind, Mapping) or kind.get("const") != "handoff":
-            continue
-        required = branch.get("required")
-        if isinstance(required, list) and "next_owner" in required:
-            return
-        break
-    raise RallyConfigError(
-        f"Turn-result schema `{schema_file}` must require `next_owner` for `handoff`."
-    )
+    expected_fields = {"kind", "next_owner", "summary", "reason", "sleep_duration_seconds"}
+    if set(required) != expected_fields:
+        raise RallyConfigError(
+            f"Turn-result schema `{schema_file}` must require {sorted(expected_fields)}."
+        )
+    kind_field = properties.get("kind")
+    if not isinstance(kind_field, Mapping):
+        raise RallyConfigError(f"Turn-result schema `{schema_file}` must define `properties.kind`.")
 
 
 def _load_yaml_mapping(path: Path) -> Mapping[str, Any]:

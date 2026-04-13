@@ -1,3 +1,8 @@
+---
+name: pytest-local
+description: "Run `uv run pytest` in a prepared repo when a Rally turn needs a local repro or proof."
+---
+
 # pytest-local
 
 Use this skill when a Rally turn needs a repeatable local pytest check inside a

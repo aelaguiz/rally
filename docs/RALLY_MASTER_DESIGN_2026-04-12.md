@@ -10,6 +10,7 @@ Exact implementation details now live in:
 
 - [RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md](RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md)
 - [RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md](RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md)
+- [RALLY_CLI_AND_LOGGING_2026-04-13.md](RALLY_CLI_AND_LOGGING_2026-04-13.md)
 
 ## Repo Guide
 
@@ -214,6 +215,15 @@ They do not carry trusted routing, blocker, sleep, or done truth.
 
 The structured final turn result is the only turn-ending control surface.
 It tells Rally whether to route, stop, block, or sleep.
+The shared JSON always carries the same five keys:
+
+- `kind`
+- `next_owner`
+- `summary`
+- `reason`
+- `sleep_duration_seconds`
+
+Fields that do not apply are `null`.
 If the result uses `kind: handoff`, that is only the label of the route-to-next-owner branch in the final structured result.
 
 The end-turn helper inside the Rally kernel skill may help the agent shape that JSON, but it is not a second return path.
@@ -269,9 +279,11 @@ For the Codex adapter, Rally should enforce this launch contract:
 
 - choose `cwd` explicitly
 - set `CODEX_HOME` to the run home
+- launch with `--dangerously-bypass-approvals-and-sandbox`
 - inject compiled doctrine explicitly
 - disable ambient project-doc discovery with `project_doc_max_bytes = 0`
 - inject `RALLY_RUN_ID=<run-id>` and `RALLY_FLOW_CODE=<flow-code>`
+- inject `RALLY_AGENT_SLUG=<agent-slug>`
 - assemble MCP config explicitly from Rally's allowlisted definitions
 - require a strict final-turn JSON schema for end-of-turn completion
 
@@ -416,6 +428,7 @@ The exact checked-in structure, runtime-created structure, behavior list, and ac
 ### Phase 5: Make Rally Operator-Native And Prove The Shape Repeats
 
 Phase 5 begins only after Phase 4 proves the first honest runnable flow.
+That proof now exists for `single_repo_repair` on the Codex path.
 
 Its job is to make the runtime believable as a narrow v1 without broadening the product shape.
 At a high level, Phase 5 should add:

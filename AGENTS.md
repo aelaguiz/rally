@@ -32,6 +32,17 @@
 - For Codex adapter work, keep the launch rules exact: Rally sets `cwd`, points `CODEX_HOME` at the run home, sets `RALLY_RUN_ID` and `RALLY_FLOW_CODE`, turns off ambient project-doc discovery, and injects compiled prompt output directly.
 - Do not add side-door instruction sources or Markdown overlays outside the declared `.prompt` graph.
 
+## Enduring Design Rules
+
+- Keep Rally CLI-first and filesystem-first. New operator-visible behavior should land in `rally` or repo files, not in a GUI, dashboard, or DB-only path.
+- Prefer front-door Rally paths. Notes, logs, history, and similar runtime behavior should flow through Rally-owned CLI and run files such as `home/issue.md` and `issue_history/`, not ad hoc scripts or direct adapter state.
+- Fail loud on dirty or unclear runtime state. Do not add silent retries, hidden cleanup, or background auto-heal behavior when Rally can stop with a clear blocker.
+- Keep run archaeology bundled under `runs/<run-id>/`. If a reader needs to understand a run, the useful files should live there.
+- Keep the operator surface small and explicit. Add a new command or runtime path only when it matches a real operator action or proof path.
+- Push hard on modular code. Favor small files, small functions, and clear module seams over big mixed-purpose files.
+- Build reusable parts with one job each. Hide adapter details, file-format details, and one-off glue inside the owning module instead of leaking them across the repo.
+- Treat a non-generated file near or above 1,000 lines as a design smell. Split it before it turns into a catch-all file, and do not add new 1k+ monstrosities.
+
 ## Build And Verify
 
 - Prove the smallest proof path that matches the change:
@@ -60,7 +71,7 @@
 - The smallest useful proof ran, or the exact missing proof dependency was reported.
 - For `.prompt` changes, you re-checked that the result uses Doctrine features as far as they fit cleanly. If a missing Doctrine feature blocks the clean version, name that blocker plainly.
 - New docs and rules capture lasting repo truth, not temporary scaffolding, deleted plans, or implementation shortcuts.
-- If you changed communication or runtime design docs, keep the Rally master design and the matching phase docs aligned in the same pass.
+- If you changed communication or runtime design docs, keep the Rally master design, the matching phase docs, and the focused CLI/logging doc aligned in the same pass when they touch the same topic.
 
 ## Plain English
 
@@ -91,6 +102,7 @@
 ## Docs Map
 
 - `docs/`: use the current Rally master design doc as the main design source. Ignore stale plans and worklogs. Find it with `rg --files docs | rg 'RALLY_MASTER_DESIGN'`
+- `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md`: focused command, issue-ledger, snapshot, and logging detail; use it when CLI shape, run logs, renderer rules, or recovery paths change
 - `docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md`: communication-model pivot; keep it aligned with the master doc when notes, end-turn control, or harness env rules change
 - `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`: runtime plan; keep it aligned with the master doc when runtime scope, proof paths, or launch rules change
 - `flows/*/flow.yaml`: runtime config, adapter settings, and allowlisted skills and MCPs

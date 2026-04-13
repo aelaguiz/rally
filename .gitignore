@@ -23,3 +23,6 @@ htmlcov/
 
 # macOS finder noise
 .DS_Store
+
+# Local reference repos
+/for_reference_only/

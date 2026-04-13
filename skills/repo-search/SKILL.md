@@ -1,3 +1,8 @@
+---
+name: repo-search
+description: "Use `rg` and exact file reads to ground a Rally turn in the prepared repo."
+---
+
 # repo-search
 
 Use this skill when a Rally turn needs exact file-level grounding inside a
