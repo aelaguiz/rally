@@ -138,7 +138,7 @@ It does not claim the current repo already behaves this way.
 - `RallyManagedInputs` includes the shared issue ledger and the current agent slug.
 - `RallyManagedSkills` includes `rally-memory` beside `rally-kernel`.
 - the shared stdlib defines the memory entry body shape and shared read-order blocks
-- compiled readback for `_stdlib_smoke`, `single_repo_repair`, and `poem_loop` shows the shared issue-ledger and memory contract honestly
+- compiled readback for `_stdlib_smoke` and `poem_loop` shows the shared issue-ledger and memory contract honestly
 - the runtime saves memory under repo-local markdown paths and forces QMD state to stay repo-local
 - memory scope resolves by flow plus compiled agent slug
 - one narrow real-flow proof shows a relevant memory can be found, used, and saved without changing note or routing semantics
@@ -546,21 +546,21 @@ It is not a claim about the current repo state.
 - The relevant future operator surface is CLI plus run-directory artifacts:
 
 ```text
-rally memory search --run-id SRR-7 --query "repeat fix after review"
-  1. mem_srr_scope_lead_repeat_fix_guard
-     Save the lesson after you come back for a second fix.
+rally memory search --run-id POM-7 --query "tighten the next revision"
+  1. mem_pom_poem_critic_revision_guard
+     Ask for one concrete revision target before you ask for a full rewrite.
 
-rally memory use --run-id SRR-7 mem_srr_scope_lead_repeat_fix_guard
+rally memory use --run-id POM-7 mem_pom_poem_critic_revision_guard
   -> returns the selected memory
   -> logs memory_used
   -> appends "Memory Used" to home/issue.md
 
-rally memory save --run-id SRR-7 <<'EOF'
+rally memory save --run-id POM-7 <<'EOF'
 # Lesson
-When a fix comes back after review, save the reusable lesson before you hand off.
+When a draft misses the mark, give one concrete revision target before you ask for a rewrite.
 
 # When This Matters
-Use this after rework, repeat fixes, or any case where the same owner had to return.
+Use this after a weak draft, a vague critique, or any case where the writer needs a clearer next step.
 
 # What To Do
 Write the memory, then hand off with normal final JSON.
@@ -586,7 +586,7 @@ EOF
 | Shared kernel skill | `skills/rally-kernel/SKILL.md` | note guidance | teaches note path and final JSON | clarify that notes are run-local and cross-run memory belongs to `rally-memory` | keeps note and memory boundaries explicit | note-only contract | skill inspection |
 | Flow-local proof input | `flows/poem_loop/prompts/shared/inputs.prompt` | `IssueLedger` | defines a local `issue.md` input | remove the generic local issue-ledger input and inherit the shared stdlib input instead | avoid a second generic ledger story | shared issue-ledger contract adoption | compile/readback inspection |
 | Flow-local proof prose | `flows/poem_loop/prompts/shared/contracts.prompt` and `flows/poem_loop/prompts/AGENTS.prompt` | issue-ledger and primary-path prose | still talks about `issue.md` as the shared ledger | update to `home/issue.md` and the inherited shared issue contract | keep the flow proof aligned with Rally truth | synced flow prompt contract | compile/readback inspection |
-| Flow readback | `flows/_stdlib_smoke/build/**`, `flows/single_repo_repair/build/**`, `flows/poem_loop/build/**` | compiled agents | current readback does not show shared memory contract | rebuild after stdlib changes and inspect representative agents | readback must tell the truth about the shared contract | rebuilt compiled readback | `tests/unit/test_flow_build.py` plus readback inspection |
+| Flow readback | `flows/_stdlib_smoke/build/**` and `flows/poem_loop/build/**` | compiled agents | current readback does not show shared memory contract | rebuild after stdlib changes and inspect representative agents | readback must tell the truth about the shared contract | rebuilt compiled readback | `tests/unit/test_flow_build.py` plus readback inspection |
 | Flow loader | `src/rally/services/flow_loader.py` | slug loading | derives `FlowAgent.slug` from flow key, then validates against compiled artifacts | tighten the loader so the compiled contract slug is treated as the carried source of truth after validation | runtime scope should follow Doctrine identity, not a second long-lived derivation | compiled-slug-backed flow-agent identity contract | `tests/unit/test_flow_loader.py` |
 | Flow domain | `src/rally/domain/flow.py` | `CompiledAgentContract.slug`, `FlowAgent.slug` | already models agent slug | preserve the compiled slug as the canonical carried identity and document the boundary with small code comments if needed | one source of truth for agent scope | canonical slug contract | `tests/unit/test_flow_loader.py` |
 | Launcher | `src/rally/adapters/codex/launcher.py` | `build_codex_launch_env` | already injects `RALLY_AGENT_SLUG` | keep env injection, but treat it as a projection of compiled slug and extend tests around that meaning if needed | no new identity source should appear | runtime slug projection contract | `tests/unit/test_launcher.py` |
@@ -633,7 +633,7 @@ EOF
   - sync `docs/RALLY_MASTER_DESIGN_2026-04-12.md` when memory ships
   - sync `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md` when issue-ledger and event surfaces change
   - sync `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` when the memory CLI and visible readback land
-  - rebuild compiled readback for `_stdlib_smoke`, `single_repo_repair`, and `poem_loop`
+  - rebuild compiled readback for `_stdlib_smoke` and `poem_loop`
   - add only small high-leverage code comments at the canonical boundaries where future drift would be costly
 
 * Behavior-preservation signals for refactors:
@@ -680,7 +680,7 @@ Work
 - Update `skills/rally-kernel/SKILL.md` to keep notes and memory separate.
 - Add `skills/rally-memory/SKILL.md` as the thin shared front-door skill.
 - Converge `poem_loop` away from its local generic issue-ledger input and onto the shared stdlib contract.
-- Rebuild `_stdlib_smoke`, `single_repo_repair`, and `poem_loop` after the prompt changes.
+- Rebuild `_stdlib_smoke` and `poem_loop` after the prompt changes.
 
 Verification (required proof)
 - Recompile the affected flows with the paired Doctrine compiler.
@@ -780,7 +780,7 @@ Goal
 - Finish with one believable end-to-end proof and one truthful repo-wide story about built-in memory.
 
 Work
-- Add one narrow Rally proof for `single_repo_repair` that covers:
+- Add one narrow Rally proof for `poem_loop` that covers:
   - scoped memory save
   - later scoped memory retrieval
   - visible `memory_used` and `memory_saved` records
@@ -794,7 +794,7 @@ Work
 
 Verification (required proof)
 - Run the existing contract tests plus the new memory unit coverage.
-- Recompile `_stdlib_smoke`, `single_repo_repair`, and `poem_loop`, then inspect representative readback.
+- Recompile `_stdlib_smoke` and `poem_loop`, then inspect representative readback.
 - Run one narrow real-flow proof that memory recall and learning work without changing routing, `done`, `blocker`, or `sleep` truth.
 
 Docs/comments (propagation; only if needed)
@@ -825,7 +825,7 @@ Keep the proof set small and real. Prefer existing signals before adding new one
 
 ## 8.2 Integration tests (flows)
 
-- Recompile `_stdlib_smoke`, `single_repo_repair`, and `poem_loop` and inspect representative generated agents for the shared memory contract.
+- Recompile `_stdlib_smoke` and `poem_loop` and inspect representative generated agents for the shared memory contract.
 - Add one narrow Rally integration check that proves memory lookup and save do not change note or routing behavior.
 - Add one narrow Rally integration check that proves `memory search` stays out of the issue ledger while `memory use` and `memory save` land there through the front door.
 

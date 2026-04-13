@@ -27,8 +27,9 @@ Phase 3 changed Rally to one simple communication model:
 
 There is no separate handoff artifact.
 There is no second return path.
-The final JSON is one flat object with five keys.
-Fields that do not apply are `null`.
+The final JSON still ends the turn through one adapter path.
+Many turns use one flat five-key object.
+Review-native turns may use control-ready Doctrine review JSON instead.
 
 # Shipped Rules
 
@@ -36,8 +37,8 @@ Fields that do not apply are `null`.
 - Every Rally-managed agent gets the shared `rally-kernel` skill.
 - The shared note path is `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"`.
 - Rally injects `RALLY_BASE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`.
-- `rally.turn_results` is one flat JSON object with `kind`, `next_owner`, `summary`, `reason`, and `sleep_duration_seconds`.
-- Agents keep unused turn-result fields as `null`.
+- `rally.turn_results` is the classic shared five-key control JSON.
+- Review-native turns may declare a different final JSON when Doctrine emits control-ready review metadata.
 - Notes keep context only. Notes never carry `next_owner`, `done`, `blocker`, or `sleep` truth.
 - Rally, not the agent, adds the turn number to in-turn note blocks.
 
@@ -51,9 +52,9 @@ Fields that do not apply are `null`.
 - `stdlib/rally/prompts/rally/notes.prompt`
   - one shared note output that shells through the Rally CLI
 - `stdlib/rally/prompts/rally/turn_results.prompt`
-  - one shared final JSON contract
+  - the classic shared final JSON contract
 - `skills/rally-kernel/SKILL.md`
-  - teaches when to leave a note and how to end a turn with valid JSON
+  - teaches when to leave a note and how to end a turn with the declared final JSON
 - `src/rally/cli.py`
   - ships `rally issue note`
 - `src/rally/services/issue_ledger.py`
@@ -63,12 +64,14 @@ Fields that do not apply are `null`.
 
 # Doctrine Note
 
-Rally does not ship a shared file-state carrier.
-
 Some authored reviews may still use local Doctrine review-state syntax when the
 compiler requires it.
 That is local review syntax.
 It is not a Rally communication path.
+
+Rally now may also read a review-native final JSON directly when Doctrine marks
+it control-ready.
+That still stays on the same one final-return path.
 
 # Proof
 

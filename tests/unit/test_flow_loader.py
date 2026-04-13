@@ -37,22 +37,27 @@ class FlowLoaderTests(unittest.TestCase):
     def test_load_flow_definition_uses_compiled_slug_mapping(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
 
-        flow = load_flow_definition(repo_root=repo_root, flow_name="single_repo_repair")
+        flow = load_flow_definition(repo_root=repo_root, flow_name="poem_loop")
 
-        self.assertEqual(flow.name, "single_repo_repair")
-        self.assertEqual(flow.code, "SRR")
-        self.assertEqual(flow.start_agent_key, "01_scope_lead")
-        self.assertEqual(flow.max_command_turns, 12)
-        self.assertEqual(flow.agent("01_scope_lead").slug, "scope_lead")
-        self.assertEqual(flow.agent("02_change_engineer").compiled.slug, "change_engineer")
+        self.assertEqual(flow.name, "poem_loop")
+        self.assertEqual(flow.code, "POM")
+        self.assertEqual(flow.start_agent_key, "01_poem_writer")
+        self.assertEqual(flow.max_command_turns, 20)
+        self.assertEqual(flow.agent("01_poem_writer").slug, "poem_writer")
+        self.assertEqual(flow.agent("02_poem_critic").compiled.slug, "poem_critic")
+        self.assertIsNone(flow.setup_home_script)
+        self.assertIsNone(flow.adapter.prompt_input_command)
         self.assertEqual(
-            flow.adapter.prompt_input_command,
-            repo_root / "flows/single_repo_repair/setup/prompt_inputs.py",
-        )
-        self.assertEqual(
-            flow.agent("01_scope_lead").compiled.final_output.schema_file,
+            flow.agent("01_poem_writer").compiled.final_output.schema_file,
             repo_root / "stdlib/rally/schemas/rally_turn_result.schema.json",
         )
+        self.assertEqual(
+            flow.agent("02_poem_critic").compiled.final_output.schema_file,
+            repo_root / "flows/poem_loop/schemas/poem_review.schema.json",
+        )
+        self.assertIsNotNone(flow.agent("02_poem_critic").compiled.review)
+        self.assertEqual(flow.agent("02_poem_critic").compiled.review.final_response.mode, "carrier")
+        self.assertTrue(flow.agent("02_poem_critic").compiled.review.final_response.control_ready)
 
     def test_load_flow_definition_supports_issue_ledger_first_flow_without_setup_or_prompt_inputs(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
@@ -73,6 +78,10 @@ class FlowLoaderTests(unittest.TestCase):
             flow.agent("01_poem_writer").compiled.final_output.schema_file,
             repo_root / "stdlib/rally/schemas/rally_turn_result.schema.json",
         )
+        self.assertEqual(
+            flow.agent("02_poem_critic").compiled.final_output.schema_file,
+            repo_root / "flows/poem_loop/schemas/poem_review.schema.json",
+        )
 
     def test_poem_loop_compiled_readback_includes_kernel_skill_and_rationale_contract(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
@@ -88,10 +97,12 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertIn("Artistic Rationale", writer_readback)
         self.assertIn("### Rally Turn Result", writer_readback)
         self.assertIn('Append With: `"$RALLY_BASE_DIR/rally" issue note --run-id "$RALLY_RUN_ID"`', writer_readback)
-        self.assertIn("### Issue Note", critic_readback)
-        self.assertNotIn("\n### Critic Issue Note\n", critic_readback)
-        self.assertIn("Rationale Fit", critic_readback)
-        self.assertIn("### Rally Turn Result", critic_readback)
+        self.assertNotIn("### Issue Note", critic_readback)
+        self.assertIn("## Poem Review", critic_readback)
+        self.assertIn("### Poem Review Response", critic_readback)
+        self.assertIn("#### Review Summary", critic_readback)
+        self.assertIn("#### Findings First", critic_readback)
+        self.assertNotIn("### Rally Turn Result", critic_readback)
 
     def test_load_flow_definition_rejects_unsupported_contract_version(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -147,6 +158,25 @@ class FlowLoaderTests(unittest.TestCase):
             (shared / "example.json").write_text('{"kind":"done","summary":"ok"}\n', encoding="utf-8")
 
             with self.assertRaisesRegex(RallyConfigError, "escapes the Rally repo root"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_accepts_control_ready_review_final_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_review_fixture_repo(repo_root=repo_root, control_ready=True)
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            self.assertIsNotNone(flow.agent("01_scope_lead").compiled.review)
+            self.assertTrue(flow.agent("01_scope_lead").compiled.review.final_response.control_ready)
+            self.assertEqual(flow.agent("01_scope_lead").compiled.review.final_response.mode, "carrier")
+
+    def test_load_flow_definition_rejects_non_control_ready_review_final_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_review_fixture_repo(repo_root=repo_root, control_ready=False)
+
+            with self.assertRaisesRegex(RallyConfigError, "not control-ready"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
     def _write_fixture_repo(
@@ -235,6 +265,123 @@ class FlowLoaderTests(unittest.TestCase):
                 '{"kind":"done","summary":"ok"}\n',
                 encoding="utf-8",
             )
+
+    def _write_review_fixture_repo(self, *, repo_root: Path, control_ready: bool) -> None:
+        flow_root = repo_root / "flows" / "demo"
+        build_root = flow_root / "build" / "agents" / "scope_lead"
+        prompts_root = flow_root / "prompts"
+        schema_root = flow_root / "schemas"
+        example_root = flow_root / "examples"
+
+        build_root.mkdir(parents=True)
+        prompts_root.mkdir(parents=True)
+        schema_root.mkdir(parents=True)
+        example_root.mkdir(parents=True)
+
+        (flow_root / "flow.yaml").write_text(
+            textwrap.dedent(
+                """\
+                name: demo
+                code: DEMO
+                start_agent: 01_scope_lead
+                agents:
+                  01_scope_lead:
+                    timeout_sec: 60
+                    allowed_skills: []
+                    allowed_mcps: []
+                runtime:
+                  adapter: codex
+                  max_command_turns: 8
+                  adapter_args: {}
+                """
+            ),
+            encoding="utf-8",
+        )
+        (prompts_root / "AGENTS.prompt").write_text("agent ScopeLead:\n", encoding="utf-8")
+        (build_root / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
+        (schema_root / "review_response.schema.json").write_text(
+            textwrap.dedent(
+                """\
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "verdict": {"type": "string"},
+                    "reviewed_artifact": {"type": "string"},
+                    "analysis_performed": {"type": "string"},
+                    "findings_first": {"type": "string"}
+                  },
+                  "required": ["verdict", "reviewed_artifact", "analysis_performed", "findings_first"]
+                }
+                """
+            ),
+            encoding="utf-8",
+        )
+        (example_root / "review_response.example.json").write_text(
+            '{"verdict":"accept","reviewed_artifact":"artifacts/demo.md","analysis_performed":"ok","findings_first":"ok"}\n',
+            encoding="utf-8",
+        )
+        (build_root / "AGENTS.contract.json").write_text(
+            json.dumps(
+                {
+                    "contract_version": 1,
+                    "agent": {
+                        "name": "ScopeLead",
+                        "slug": "scope_lead",
+                        "entrypoint": "flows/demo/prompts/AGENTS.prompt",
+                    },
+                    "final_output": {
+                        "exists": True,
+                        "declaration_key": "ReviewResponse",
+                        "declaration_name": "ReviewResponse",
+                        "format_mode": "json_schema",
+                        "schema_profile": "OpenAIStructuredOutput",
+                        "schema_file": "flows/demo/schemas/review_response.schema.json",
+                        "example_file": "flows/demo/examples/review_response.example.json",
+                    },
+                    "review": {
+                        "exists": True,
+                        "comment_output": {
+                            "declaration_key": "ReviewResponse",
+                            "declaration_name": "ReviewResponse",
+                        },
+                        "carrier_fields": {
+                            "verdict": "verdict",
+                            "reviewed_artifact": "reviewed_artifact",
+                            "analysis": "analysis_performed",
+                            "readback": "findings_first",
+                        },
+                        "final_response": {
+                            "mode": "carrier",
+                            "declaration_key": "ReviewResponse",
+                            "declaration_name": "ReviewResponse",
+                            "review_fields": {},
+                            "control_ready": control_ready,
+                        },
+                        "outcomes": {
+                            "accept": {
+                                "exists": True,
+                                "verdict": "accept",
+                                "route_behavior": "never",
+                            },
+                            "changes_requested": {
+                                "exists": True,
+                                "verdict": "changes_requested",
+                                "route_behavior": "always",
+                            },
+                            "blocked": {
+                                "exists": False,
+                                "verdict": "changes_requested",
+                                "route_behavior": "never",
+                            },
+                        },
+                    },
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     def _schema_text(self, *, include_next_owner: bool) -> str:
         next_owner_required = '"next_owner",' if include_next_owner else ""

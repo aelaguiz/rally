@@ -14,7 +14,7 @@ from typing import Callable, Sequence
 
 from rally.adapters.codex.event_stream import CodexEventStreamParser
 from rally.adapters.codex.launcher import build_codex_launch_env, write_codex_launch_record
-from rally.adapters.codex.result_contract import load_turn_result
+from rally.adapters.codex.result_contract import load_agent_final_response
 from rally.adapters.codex.session_store import (
     CodexSessionRecord,
     TurnArtifactPaths,
@@ -634,7 +634,19 @@ def _execute_single_turn(
             ),
         )
 
-    turn_result = load_turn_result(last_message_file=artifacts.last_message_file)
+    loaded_final_response = load_agent_final_response(
+        compiled_agent=agent.compiled,
+        last_message_file=artifacts.last_message_file,
+    )
+    turn_result = loaded_final_response.turn_result
+    if loaded_final_response.review_note_markdown is not None:
+        _append_review_note(
+            repo_root=repo_root,
+            run_id=run_record.id,
+            agent=agent,
+            turn_index=turn_index,
+            note_markdown=loaded_final_response.review_note_markdown,
+        )
     if isinstance(turn_result, SleepTurnResult):
         blocked_state = RunState(
             status=RunStatus.BLOCKED,
@@ -1388,6 +1400,25 @@ def _append_issue_records_for_turn_result(
             detail_lines=(f"Agent: `{agent.key}`", f"Summary: {turn_result.summary}"),
             turn_index=turn_index,
         )
+
+
+def _append_review_note(
+    *,
+    repo_root: Path,
+    run_id: str,
+    agent: FlowAgent,
+    turn_index: int,
+    note_markdown: str,
+) -> None:
+    append_issue_event(
+        repo_root=repo_root,
+        run_id=run_id,
+        title="Rally Note",
+        source="rally runtime review",
+        detail_lines=(f"Agent: `{agent.key}`",),
+        body=note_markdown,
+        turn_index=turn_index,
+    )
 
 
 def _append_run_started_event_if_needed(

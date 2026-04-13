@@ -7,6 +7,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 _FLOW_KEY_PREFIX_RE = re.compile(r"^\d+_")
+FieldPath = tuple[str, ...]
 
 
 def flow_agent_key_to_slug(agent_key: str) -> str:
@@ -38,6 +39,44 @@ class FinalOutputContract:
 
 
 @dataclass(frozen=True)
+class ReviewOutputContract:
+    declaration_key: str | None
+    declaration_name: str | None
+
+
+@dataclass(frozen=True)
+class ReviewFinalResponseContract:
+    mode: str
+    declaration_key: str | None
+    declaration_name: str | None
+    review_fields: Mapping[str, FieldPath]
+    control_ready: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "review_fields", MappingProxyType(dict(self.review_fields)))
+
+
+@dataclass(frozen=True)
+class ReviewOutcomeContract:
+    exists: bool
+    verdict: str
+    route_behavior: str
+
+
+@dataclass(frozen=True)
+class ReviewContract:
+    exists: bool
+    comment_output: ReviewOutputContract
+    carrier_fields: Mapping[str, FieldPath]
+    final_response: ReviewFinalResponseContract
+    outcomes: Mapping[str, ReviewOutcomeContract]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "carrier_fields", MappingProxyType(dict(self.carrier_fields)))
+        object.__setattr__(self, "outcomes", MappingProxyType(dict(self.outcomes)))
+
+
+@dataclass(frozen=True)
 class CompiledAgentContract:
     name: str
     slug: str
@@ -46,6 +85,7 @@ class CompiledAgentContract:
     contract_path: Path
     contract_version: int
     final_output: FinalOutputContract
+    review: ReviewContract | None = None
 
 
 @dataclass(frozen=True)

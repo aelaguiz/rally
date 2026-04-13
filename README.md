@@ -174,6 +174,7 @@ Doctrine gives Rally the parts normal prompt folders do not:
 - shared route semantics
 - schema-backed final outputs
 - fail-loud compile errors when the authored flow is dishonest or incomplete
+- machine-readable review metadata when a flow uses Doctrine `review:`
 
 In practice, that means humans and coding agents edit this:
 
@@ -203,6 +204,7 @@ That split is a big deal:
 - authors edit structure, not giant emitted Markdown blobs
 - shared rules land once
 - route and final-output meaning stay typed
+- Rally can read control-ready review JSON from compiler metadata
 - Rally does not need to scrape prose to guess what the flow meant
 
 ## The Rally Model
@@ -311,7 +313,7 @@ Rally does not want to reconstruct "what matters now" from chat history.
 Rally's stability comes from design choices, not from optimism.
 
 - One instruction source: the declared Doctrine prompt graph.
-- One turn-ending control path: strict final JSON.
+- One turn-ending control path: the declared final JSON.
 - One visible semantic ledger: `home/issue.md`.
 - One active run per flow by default.
 - One prepared home per run.
@@ -411,35 +413,23 @@ It should not need them to be useful.
 
 ## A Concrete Example
 
-The first enduring Rally flows are `single_repo_repair` and `poem_loop`.
+The main Rally flow today is `poem_loop`.
 
-It captures the shape Rally cares about:
+It is narrow on purpose:
 
-1. A scope lead reads the opening brief from `home/issue.md` and writes a repair plan.
-2. A change engineer makes the code change in a prepared repo.
-3. A proof engineer runs the local check and writes a verification report.
-4. An acceptance critic reviews the report and either routes back or closes the
-   loop.
+1. A poem writer reads the opening issue from `home/issue.md`.
+2. The writer drafts `artifacts/poem.md`.
+3. The writer keeps short draft notes on `home/issue.md`.
+4. The critic uses a Doctrine `review:` turn with one JSON review response.
+5. Rally reads that review JSON, saves a review note on `home/issue.md`, and
+   either routes the poem back for another draft or ends the run.
 
-That is not a toy because it forces Rally to prove the hard parts:
+It still proves:
 
 - explicit ownership changes
 - durable artifacts
 - typed currentness
 - review-driven routing
-- notes that do not control the flow
-
-The narrow `poem_loop` flow proves the same runtime shape without a repo setup
-step:
-
-1. A poem writer reads the opening issue from `home/issue.md`.
-2. The writer drafts `artifacts/poem.md`.
-3. The writer and critic keep durable guidance on `home/issue.md`.
-4. The critic either routes the poem back for another draft or accepts it and
-   ends the run.
-
-It still proves:
-
 - strict final turn control
 - honest resume
 

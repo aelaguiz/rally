@@ -30,11 +30,11 @@ input RallyFlowCode: "Rally Flow Code"
 
 
 skill RallyKernelSkill: "rally-kernel"
-    purpose: "Use the shared Rally kernel skill to leave notes and end the turn with valid JSON."
+    purpose: "Use the shared Rally kernel skill to leave notes when needed and end the turn with the declared final JSON."
 
     use_when: "Use When"
         "Use this when a later reader needs a note."
-        "Use this when the turn needs the shared Rally final JSON rules."
+        "Use this when the turn needs Rally's shared final JSON rules."
 
 
 inputs RallyManagedInputs: "Inputs"
@@ -62,8 +62,11 @@ outputs RallyManagedOutputs: "Outputs"
 abstract agent RallyManagedBaseAgent:
     rally_contract: "Rally Rules"
         "Rally owns the run home, the note path, and the final JSON for this turn."
-        "Use final JSON for `handoff`, `done`, `blocker`, or `sleep`."
+        "End the turn with the final JSON shape this turn declares."
+        "Many Rally turns use `rally.turn_results.RallyTurnResult`."
+        "Review-native turns may end with Doctrine review JSON that Rally can read."
         "Leave a note only when a later reader needs context."
+        "If Rally already saves the final review to `issue.md`, do not leave a second note unless the flow asks for one."
         "Use the shared `rally-kernel` skill for that note."
         "Do not edit `home/issue.md` directly."
         "Read run identity from `RALLY_BASE_DIR`, `RALLY_RUN_ID`, and `RALLY_FLOW_CODE`."

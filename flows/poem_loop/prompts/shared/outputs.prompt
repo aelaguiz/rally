@@ -29,29 +29,6 @@ document WriterIssueNoteDocument: "Poem Writer Note"
         "Tell the critic what to judge next."
 
 
-document CriticIssueNoteDocument: "Poem Critic Note"
-    section verdict: "Verdict"
-        "State exactly one verdict: `accept` or `revise`."
-
-    section findings_first: "Findings First"
-        "Start with the main finding, then the decision."
-
-    section rationale_fit: "Rationale Fit"
-        "Say whether the poem on the page matches the writer's stated rationale."
-
-    section what_works: "What Works"
-        "Name the strongest parts to keep."
-
-    section must_fix: "Must Fix"
-        "Name what must change. If nothing must change, say `None.`"
-
-    section poem_path: "Poem Path"
-        "Point the writer to `artifacts/poem.md`."
-
-    section next_step: "Next Step"
-        "Say who owns next and what should happen next."
-
-
 output PoemDraft: "Poem Draft"
     target: File
         path: "artifacts/poem.md"
@@ -70,14 +47,3 @@ output WriterIssueNote: "Writer Issue Note"
 
     standalone_read: "Standalone Read"
         "This note should stand on its own for the critic."
-
-
-output CriticIssueNote: "Critic Issue Note"
-    target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: "\"$RALLY_BASE_DIR/rally\" issue note --run-id \"$RALLY_RUN_ID\""
-    shape: MarkdownDocument
-    structure: CriticIssueNoteDocument
-    requirement: Required
-
-    standalone_read: "Standalone Read"
-        "This note should stand on its own for the writer."

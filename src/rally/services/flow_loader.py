@@ -10,9 +10,14 @@ import yaml
 from rally.domain.flow import (
     AdapterConfig,
     CompiledAgentContract,
+    FieldPath,
     FinalOutputContract,
     FlowAgent,
     FlowDefinition,
+    ReviewContract,
+    ReviewFinalResponseContract,
+    ReviewOutcomeContract,
+    ReviewOutputContract,
     flow_agent_key_to_slug,
 )
 from rally.errors import RallyConfigError
@@ -201,7 +206,37 @@ def _load_compiled_agent_contract(
             f"Compiled agent `{slug}` must use `json_schema` final output mode, found `{format_mode}`."
         )
 
-    _validate_turn_result_schema(schema_file)
+    final_output = FinalOutputContract(
+        exists=True,
+        declaration_key=_require_string(
+            final_output_payload,
+            "declaration_key",
+            context=f"{contract_path} final_output",
+        ),
+        declaration_name=_require_string(
+            final_output_payload,
+            "declaration_name",
+            context=f"{contract_path} final_output",
+        ),
+        format_mode=format_mode,
+        schema_profile=_require_string(
+            final_output_payload,
+            "schema_profile",
+            context=f"{contract_path} final_output",
+        ),
+        schema_file=schema_file,
+        example_file=example_file,
+    )
+    review = _load_review_contract(payload=payload, contract_path=contract_path)
+    if review is None:
+        _validate_turn_result_schema(schema_file)
+    else:
+        _validate_review_native_contract(
+            slug=slug,
+            contract_path=contract_path,
+            final_output=final_output,
+            review=review,
+        )
 
     return CompiledAgentContract(
         name=_require_string(agent_payload, "name", context=f"{contract_path} agent"),
@@ -214,27 +249,8 @@ def _load_compiled_agent_contract(
         markdown_path=markdown_path,
         contract_path=contract_path,
         contract_version=contract_version,
-        final_output=FinalOutputContract(
-            exists=True,
-            declaration_key=_require_string(
-                final_output_payload,
-                "declaration_key",
-                context=f"{contract_path} final_output",
-            ),
-            declaration_name=_require_string(
-                final_output_payload,
-                "declaration_name",
-                context=f"{contract_path} final_output",
-            ),
-            format_mode=format_mode,
-            schema_profile=_require_string(
-                final_output_payload,
-                "schema_profile",
-                context=f"{contract_path} final_output",
-            ),
-            schema_file=schema_file,
-            example_file=example_file,
-        ),
+        final_output=final_output,
+        review=review,
     )
 
 
@@ -254,6 +270,157 @@ def _validate_turn_result_schema(schema_file: Path) -> None:
     kind_field = properties.get("kind")
     if not isinstance(kind_field, Mapping):
         raise RallyConfigError(f"Turn-result schema `{schema_file}` must define `properties.kind`.")
+
+
+def _validate_review_native_contract(
+    *,
+    slug: str,
+    contract_path: Path,
+    final_output: FinalOutputContract,
+    review: ReviewContract,
+) -> None:
+    if not review.final_response.control_ready:
+        raise RallyConfigError(
+            f"Compiled review agent `{slug}` is not control-ready in `{contract_path}`."
+        )
+    if review.final_response.mode not in {"carrier", "split"}:
+        raise RallyConfigError(
+            f"Compiled review agent `{slug}` uses unsupported final review mode "
+            f"`{review.final_response.mode}` in `{contract_path}`."
+        )
+    if review.final_response.mode == "carrier":
+        if review.comment_output.declaration_key != final_output.declaration_key:
+            raise RallyConfigError(
+                f"Compiled review agent `{slug}` says the final response is the review carrier, "
+                f"but `{contract_path}` points final_output at `{final_output.declaration_key}`."
+            )
+        return
+    if review.final_response.declaration_key != final_output.declaration_key:
+        raise RallyConfigError(
+            f"Compiled review agent `{slug}` split final response does not match "
+            f"`final_output` in `{contract_path}`."
+        )
+
+
+def _load_review_contract(
+    *,
+    payload: Mapping[str, Any],
+    contract_path: Path,
+) -> ReviewContract | None:
+    raw_review = payload.get("review")
+    if raw_review is None:
+        return None
+    review_payload = _require_mapping(payload, "review", context=str(contract_path))
+    if not _require_bool(review_payload, "exists", context=f"{contract_path} review"):
+        raise RallyConfigError(f"Compiled review block in `{contract_path}` must set `exists: true`.")
+
+    comment_output_payload = _require_mapping(review_payload, "comment_output", context=f"{contract_path} review")
+    final_response_payload = _require_mapping(review_payload, "final_response", context=f"{contract_path} review")
+    outcomes_payload = _require_mapping(review_payload, "outcomes", context=f"{contract_path} review")
+
+    return ReviewContract(
+        exists=True,
+        comment_output=ReviewOutputContract(
+            declaration_key=_require_optional_string(
+                comment_output_payload,
+                "declaration_key",
+                context=f"{contract_path} review.comment_output",
+            ),
+            declaration_name=_require_optional_string(
+                comment_output_payload,
+                "declaration_name",
+                context=f"{contract_path} review.comment_output",
+            ),
+        ),
+        carrier_fields=_require_field_paths(
+            review_payload,
+            "carrier_fields",
+            context=f"{contract_path} review",
+        ),
+        final_response=ReviewFinalResponseContract(
+            mode=_require_string(final_response_payload, "mode", context=f"{contract_path} review.final_response"),
+            declaration_key=_require_optional_string(
+                final_response_payload,
+                "declaration_key",
+                context=f"{contract_path} review.final_response",
+            ),
+            declaration_name=_require_optional_string(
+                final_response_payload,
+                "declaration_name",
+                context=f"{contract_path} review.final_response",
+            ),
+            review_fields=_require_field_paths(
+                final_response_payload,
+                "review_fields",
+                context=f"{contract_path} review.final_response",
+            ),
+            control_ready=_require_bool(
+                final_response_payload,
+                "control_ready",
+                context=f"{contract_path} review.final_response",
+            ),
+        ),
+        outcomes={
+            outcome_key: ReviewOutcomeContract(
+                exists=_require_bool(outcome_payload, "exists", context=f"{contract_path} review.outcomes.{outcome_key}"),
+                verdict=_require_string(
+                    outcome_payload,
+                    "verdict",
+                    context=f"{contract_path} review.outcomes.{outcome_key}",
+                ),
+                route_behavior=_require_string(
+                    outcome_payload,
+                    "route_behavior",
+                    context=f"{contract_path} review.outcomes.{outcome_key}",
+                ),
+            )
+            for outcome_key, outcome_payload in _iter_review_outcomes(
+                outcomes_payload=outcomes_payload,
+                contract_path=contract_path,
+            )
+        },
+    )
+
+
+def _iter_review_outcomes(
+    *,
+    outcomes_payload: Mapping[str, Any],
+    contract_path: Path,
+) -> tuple[tuple[str, Mapping[str, Any]], ...]:
+    pairs: list[tuple[str, Mapping[str, Any]]] = []
+    for outcome_key, outcome_value in outcomes_payload.items():
+        if not isinstance(outcome_key, str) or not outcome_key:
+            raise RallyConfigError(f"`review.outcomes` keys in `{contract_path}` must be non-empty strings.")
+        pairs.append(
+            (
+                outcome_key,
+                _require_mapping_value(
+                    outcome_value,
+                    context=f"{contract_path} review.outcomes.{outcome_key}",
+                ),
+            )
+        )
+    return tuple(pairs)
+
+
+def _require_field_paths(
+    payload: Mapping[str, Any],
+    key: str,
+    *,
+    context: str,
+) -> dict[str, FieldPath]:
+    mapping = _require_mapping(payload, key, context=context)
+    paths: dict[str, FieldPath] = {}
+    for field_name, raw_path in mapping.items():
+        if not isinstance(field_name, str) or not field_name:
+            raise RallyConfigError(f"`{key}` keys in {context} must be non-empty strings.")
+        if not isinstance(raw_path, str) or not raw_path:
+            raise RallyConfigError(f"`{key}.{field_name}` must be a non-empty string in {context}.")
+        parts = tuple(raw_path.split("."))
+        if any(not part for part in parts):
+            raise RallyConfigError(f"`{key}.{field_name}` in {context} must not contain empty path parts.")
+        paths[field_name] = parts
+    return paths
 
 
 def _load_yaml_mapping(path: Path) -> Mapping[str, Any]:
@@ -317,6 +484,22 @@ def _require_string(payload: Mapping[str, Any], key: str, *, context: str) -> st
     value = payload.get(key)
     if not isinstance(value, str) or not value:
         raise RallyConfigError(f"`{key}` must be a non-empty string in {context}.")
+    return value
+
+
+def _require_optional_string(payload: Mapping[str, Any], key: str, *, context: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise RallyConfigError(f"`{key}` must be a non-empty string or null in {context}.")
+    return value
+
+
+def _require_bool(payload: Mapping[str, Any], key: str, *, context: str) -> bool:
+    value = payload.get(key)
+    if not isinstance(value, bool):
+        raise RallyConfigError(f"`{key}` must be a boolean in {context}.")
     return value
 
 

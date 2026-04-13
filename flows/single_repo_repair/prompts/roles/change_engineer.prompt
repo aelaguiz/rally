@@ -1,5 +1,0 @@
-workflow ChangeEngineerJob: "Your Job"
-    "Use the repair plan while you change `repos/tiny_issue_service`."
-    "Keep the code change small and focused on the pagination bug."
-    "If a later reader needs a short note that does not belong in the repair plan or final JSON, use `rally-kernel`."
-    "Pass the work only through the final JSON result."

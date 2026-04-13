@@ -1,0 +1,67 @@
+json schema PoemReviewSchema: "Poem Review Schema"
+    profile: OpenAIStructuredOutput
+    file: "schemas/poem_review.schema.json"
+
+
+output shape PoemReviewJson: "Poem Review JSON"
+    kind: JsonObject
+    schema: PoemReviewSchema
+    example_file: "examples/poem_review.example.json"
+
+    field_notes: "Field Notes"
+        "Use owner key `poem_writer` when the poem needs another draft."
+        "Use `artifacts/poem.md` for `reviewed_artifact` and `current_artifact` when the poem draft is current."
+        "Skip `current_artifact` and `next_owner` when the review is blocked before a poem draft exists."
+
+
+workflow PoemReviewContract: "Poem Review Contract"
+    brief_match: "Brief Match"
+        "Check that the poem fits the asked type and subject."
+
+    rationale_fit: "Rationale Fit"
+        "Check that the poem matches the writer's stated reason for this draft."
+
+    finish_quality: "Finish Quality"
+        "Accept only when the poem feels finished and worth keeping."
+
+
+output PoemReviewResponse: "Poem Review Response"
+    target: TurnResponse
+    shape: PoemReviewJson
+    requirement: Required
+
+    verdict: "Verdict"
+        "Say whether the review accepts the poem or asks for changes."
+
+    reviewed_artifact: "Reviewed Artifact"
+        "Use `artifacts/poem.md`."
+
+    analysis_performed: "Review Summary"
+        "Explain the review in 2-4 plain sentences."
+        "Say whether the poem matches the writer's stated reason."
+        "Keep what works."
+        "Say what must change when the poem is not ready."
+
+    findings_first: "Findings First"
+        "Start with the main finding, then the next move."
+        "Keep it short and plain."
+
+    current_artifact: "Current Artifact" when present(current_artifact):
+        "Use `artifacts/poem.md` when the poem draft still stands."
+
+    next_owner: "Next Owner" when present(next_owner):
+        "Use {{PoemWriter:key}} when the poem needs another draft."
+
+    failure_detail: "Failure Detail" when verdict == ReviewVerdict.changes_requested:
+        blocked_gate: "Blocked Gate" when present(blocked_gate):
+            "Name the blocking reason when the review could not start."
+
+        failing_gates: "Failing Gates"
+            "List the exact failing review gates in authored order."
+
+    trust_surface:
+        current_artifact
+
+    standalone_read: "Standalone Read"
+        "This review should stand on its own."
+        "A later reader should know the verdict, the draft path when one still stands, and the next move."

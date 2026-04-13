@@ -10,8 +10,8 @@ related:
   - docs/RALLY_MASTER_DESIGN_2026-04-12.md
   - docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md
   - docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
-  - flows/single_repo_repair/flow.yaml
-  - flows/single_repo_repair/prompts/AGENTS.prompt
+  - flows/poem_loop/flow.yaml
+  - flows/poem_loop/prompts/AGENTS.prompt
   - stdlib/rally/prompts/rally/base_agent.prompt
   - stdlib/rally/prompts/rally/turn_results.prompt
   - src/rally/services/flow_loader.py
@@ -24,7 +24,7 @@ related:
 
 Phase 4 now has a proved Codex vertical slice.
 Rally can create a real run, prepare a real run home, launch real Codex turns,
-read strict final JSON results, and drive the authored flow to a real done
+read strict final JSON results, including control-ready review finals, and drive the authored flow to a real done
 state.
 
 Use `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` for the focused command and
@@ -37,7 +37,9 @@ What is real today:
 - flow codes and run ids shaped like `<FLOW_CODE>-<n>`
 - one active run per flow with a flow lock
 - run directories under `runs/active/<run-id>/`
-- home materialization for agents, skills, MCPs, repos, config, auth links, and setup
+- home materialization for agents, repos, config, auth links, and setup
+- Rally-managed agents, skills, MCPs, config, and auth links refreshed on each start or resume
+- flow-validated skills and MCPs copied into the run home, but still as the per-flow union rather than per-agent-isolated subsets
 - `rally run`
 - `rally run --new`
 - `rally resume`
@@ -61,6 +63,7 @@ What is outside Phase 4:
 
 - `rally archive`
 - stale-run cleanup and diagnosis beyond the current lock and state checks
+- per-agent runtime enforcement for `allowed_skills` and `allowed_mcps`
 - a Codex-native MCP auth and readiness contract that proves required MCPs
   work for both top-level and child agents and fails loud when auth or launch
   state is broken
@@ -69,8 +72,8 @@ What is outside Phase 4:
 
 - Notes are context only.
 - Final JSON is the only turn-ending control path.
-- The shared final JSON always includes `kind`, `next_owner`, `summary`, `reason`, and `sleep_duration_seconds`.
-- Unused final-result fields are `null`.
+- Many turns use the shared five-key Rally turn result.
+- Review-native turns may use control-ready Doctrine review JSON instead.
 - `AGENTS.md` is injected instruction readback only.
 - `AGENTS.contract.json` is the compiler-owned metadata file Rally loads.
 - Rally does not ship a shared file-state carrier.
@@ -105,11 +108,8 @@ The current checked-in runtime surface is:
   - owns flow locks
 - `src/rally/services/home_materializer.py`
   - prepares the run-home layout
-  - refreshes `home/agents/` from the current compiled readback on each start or resume
-  - copies valid skill and MCP bundles
-  - writes Codex config
-  - seeds auth links
-  - runs flow setup
+  - refreshes `home/agents/`, `home/skills/`, `home/mcps/`, `config.toml`, and auth links on each start or resume
+  - runs flow setup only when the run home first becomes ready
 - `src/rally/services/issue_ledger.py`
   - appends Rally-stamped notes and runtime event blocks
   - snapshots the full issue log after each append
@@ -140,13 +140,12 @@ The current checked-in runtime surface is:
   - appends Rally-owned ledger blocks with Markdown `---` dividers and turn labels on turn-scoped records
   - keeps chaining turns after handoffs until Rally reaches `done`, `blocker`, a runtime failure, a sleep request, or the command turn cap
 
-The live smoke now proves the full `single_repo_repair` loop:
-`scope_lead -> change_engineer -> proof_engineer -> acceptance_critic -> scope_lead -> done`.
+The live smoke now proves the full `poem_loop` loop:
+`poem_writer -> poem_critic -> poem_writer -> done`.
 That loop now runs in one Rally command unless a real stop point interrupts it.
 
-The checked-in second narrow flow is `poem_loop`.
-It keeps the human issue and durable notes on `home/issue.md` and keeps the
-only file artifact at `artifacts/poem.md`.
+`poem_loop` keeps the human issue and durable notes on `home/issue.md` and keeps
+the only file artifact at `artifacts/poem.md`.
 It also uses the same chained handoff model and per-command turn cap.
 
 # Proof Path
@@ -164,7 +163,6 @@ Use the smallest honest proof for each layer:
 The current core proof set is:
 
 - flow rebuild for `_stdlib_smoke`
-- flow rebuild for `single_repo_repair`
 - flow rebuild for `poem_loop`
 - `tests/unit/test_flow_loader.py`
 - `tests/unit/domain/test_turn_result_contracts.py`
@@ -175,7 +173,7 @@ The current core proof set is:
 - `tests/unit/test_run_events.py`
 - `tests/unit/test_codex_event_stream.py`
 - `tests/unit/test_runner.py`
-- one live end-to-end `single_repo_repair` run on Codex that reached `done`
+- one live end-to-end `poem_loop` run on Codex that reached `done`
 
 # Next Work
 

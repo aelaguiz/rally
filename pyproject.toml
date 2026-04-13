@@ -29,11 +29,6 @@ name = "poem_loop"
 entrypoint = "flows/poem_loop/prompts/AGENTS.prompt"
 output_dir = "flows/poem_loop/build/agents"
 
-[[tool.doctrine.emit.targets]]
-name = "single_repo_repair"
-entrypoint = "flows/single_repo_repair/prompts/AGENTS.prompt"
-output_dir = "flows/single_repo_repair/build/agents"
-
 [tool.setuptools]
 package-dir = {"" = "src"}
 

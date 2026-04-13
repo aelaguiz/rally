@@ -180,11 +180,10 @@ class RunnerTests(unittest.TestCase):
                     {
                         "thread_id": "session-poem-2",
                         "last_message": {
-                            "kind": "done",
-                            "next_owner": None,
-                            "summary": "accepted",
-                            "reason": None,
-                            "sleep_duration_seconds": None,
+                            "verdict": "accept",
+                            "reviewed_artifact": "artifacts/poem.md",
+                            "analysis_performed": "The sonnet keeps its moon focus, the images stay clear, and the draft now feels finished.",
+                            "findings_first": "The poem is ready to keep as written."
                         },
                     }
                 ]
@@ -212,6 +211,7 @@ class RunnerTests(unittest.TestCase):
                 )
 
             run_dir = find_run_dir(repo_root=repo_root, run_id="POM-1")
+            issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
             prompt_text = fake_run.calls[0]["kwargs"]["input"]
 
             self.assertEqual(result.run_id, "POM-1")
@@ -227,6 +227,10 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("Artistic Rationale", prompt_text)
             self.assertIn("### Rally Turn Result", prompt_text)
             self.assertNotIn("\n### Writer Turn Result\n", prompt_text)
+            self.assertIn("## Rally Note", issue_text)
+            self.assertIn("- Source: `rally runtime review`", issue_text)
+            self.assertIn("### Findings First", issue_text)
+            self.assertIn("The poem is ready to keep as written.", issue_text)
 
     def test_run_flow_rebuild_failure_stops_before_creating_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -422,6 +426,248 @@ class RunnerTests(unittest.TestCase):
                 (run_dir / "home" / "agents" / "change_engineer" / "AGENTS.md").read_text(encoding="utf-8"),
                 updated_markdown,
             )
+
+    def test_resume_run_refreshes_run_home_capabilities_before_next_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root, max_command_turns=1)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            first_result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=_FakeCodexRun(
+                    [
+                        {
+                            "thread_id": "session-1",
+                            "last_message": {
+                                "kind": "handoff",
+                                "next_owner": "change_engineer",
+                                "summary": None,
+                                "reason": None,
+                                "sleep_duration_seconds": None,
+                            },
+                        }
+                    ]
+                ),
+            )
+
+            self.assertEqual(first_result.status, RunStatus.BLOCKED)
+
+            updated_skill = textwrap.dedent(
+                """\
+                ---
+                name: repo-search
+                description: "Use `rg` to find the exact files and tests for the current task."
+                ---
+
+                # Repo Search
+
+                Updated for resume.
+                """
+            )
+            (repo_root / "skills" / "repo-search" / "SKILL.md").write_text(updated_skill, encoding="utf-8")
+            self._write_fixture_repo_mcp(repo_root=repo_root)
+
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_text = flow_text.replace("    allowed_mcps: []\n", "    allowed_mcps: [fixture-repo]\n")
+            flow_text = flow_text.replace("    project_doc_max_bytes: 0\n", "    project_doc_max_bytes: 2048\n")
+            flow_path.write_text(flow_text, encoding="utf-8")
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Fix the pagination bug.\n", encoding="utf-8")
+                return IssueEditorResult(status="saved", cleaned_text="Fix the pagination bug.\n")
+
+            with patch(
+                "rally.services.runner.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.runner.edit_existing_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                second_result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1", edit_issue=True),
+                    subprocess_run=_FakeCodexRun(
+                        [
+                            {
+                                "thread_id": "session-2",
+                                "last_message": {
+                                    "kind": "done",
+                                    "next_owner": None,
+                                    "summary": "verified",
+                                    "reason": None,
+                                    "sleep_duration_seconds": None,
+                                },
+                            }
+                        ]
+                    ),
+                )
+
+            self.assertEqual(second_result.status, RunStatus.DONE)
+            self.assertEqual(
+                (run_dir / "home" / "skills" / "repo-search" / "SKILL.md").read_text(encoding="utf-8"),
+                updated_skill,
+            )
+            self.assertTrue((run_dir / "home" / "mcps" / "fixture-repo" / "server.toml").is_file())
+            config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
+            self.assertIn("project_doc_max_bytes = 2048", config_text)
+            self.assertIn('[mcp_servers."fixture-repo"]', config_text)
+            self.assertIn('command = ["uv", "run", "fixture-repo"]', config_text)
+
+    def test_resume_run_removes_stale_run_home_capabilities(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root, max_command_turns=1)
+            self._write_fixture_repo_mcp(repo_root=repo_root)
+
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_text = flow_text.replace("    allowed_mcps: []\n", "    allowed_mcps: [fixture-repo]\n")
+            flow_text = flow_text.replace("    project_doc_max_bytes: 0\n", "    project_doc_max_bytes: 512\n")
+            flow_path.write_text(flow_text, encoding="utf-8")
+
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            first_result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=_FakeCodexRun(
+                    [
+                        {
+                            "thread_id": "session-1",
+                            "last_message": {
+                                "kind": "handoff",
+                                "next_owner": "change_engineer",
+                                "summary": None,
+                                "reason": None,
+                                "sleep_duration_seconds": None,
+                            },
+                        }
+                    ]
+                ),
+            )
+
+            self.assertEqual(first_result.status, RunStatus.BLOCKED)
+            self.assertTrue((run_dir / "home" / "skills" / "repo-search" / "SKILL.md").is_file())
+            self.assertTrue((run_dir / "home" / "mcps" / "fixture-repo" / "server.toml").is_file())
+
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_text = flow_text.replace("    allowed_skills: [repo-search]\n", "    allowed_skills: []\n")
+            flow_text = flow_text.replace("    allowed_mcps: [fixture-repo]\n", "    allowed_mcps: []\n")
+            flow_text = flow_text.replace("    project_doc_max_bytes: 512\n", "    project_doc_max_bytes: 0\n")
+            flow_path.write_text(flow_text, encoding="utf-8")
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Fix the pagination bug.\n", encoding="utf-8")
+                return IssueEditorResult(status="saved", cleaned_text="Fix the pagination bug.\n")
+
+            with patch(
+                "rally.services.runner.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.runner.edit_existing_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                second_result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1", edit_issue=True),
+                    subprocess_run=_FakeCodexRun(
+                        [
+                            {
+                                "thread_id": "session-2",
+                                "last_message": {
+                                    "kind": "done",
+                                    "next_owner": None,
+                                    "summary": "verified",
+                                    "reason": None,
+                                    "sleep_duration_seconds": None,
+                                },
+                            }
+                        ]
+                    ),
+                )
+
+            self.assertEqual(second_result.status, RunStatus.DONE)
+            self.assertFalse((run_dir / "home" / "skills" / "repo-search").exists())
+            self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "mcps" / "fixture-repo").exists())
+            config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
+            self.assertEqual(config_text, "project_doc_max_bytes = 0\n")
+            self.assertNotIn('mcp_servers."fixture-repo"', config_text)
+
+    def test_resume_run_does_not_rerun_setup_after_home_is_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root, with_setup_script=True, max_command_turns=1)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            first_result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=_FakeCodexRun(
+                    [
+                        {
+                            "thread_id": "session-1",
+                            "last_message": {
+                                "kind": "handoff",
+                                "next_owner": "change_engineer",
+                                "summary": None,
+                                "reason": None,
+                                "sleep_duration_seconds": None,
+                            },
+                        }
+                    ]
+                ),
+            )
+
+            self.assertEqual(first_result.status, RunStatus.BLOCKED)
+            self.assertEqual((run_dir / "home" / "setup-ok.txt").read_text(encoding="utf-8"), "ok\n")
+
+            (repo_root / "flows" / "demo" / "setup" / "prepare_home.sh").write_text(
+                "#!/usr/bin/env bash\nset -euo pipefail\nprintf 'reran\\n' > \"$RALLY_RUN_HOME/setup-ok.txt\"\n",
+                encoding="utf-8",
+            )
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Fix the pagination bug.\n", encoding="utf-8")
+                return IssueEditorResult(status="saved", cleaned_text="Fix the pagination bug.\n")
+
+            with patch(
+                "rally.services.runner.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.runner.edit_existing_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                second_result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1", edit_issue=True),
+                    subprocess_run=_FakeCodexRun(
+                        [
+                            {
+                                "thread_id": "session-2",
+                                "last_message": {
+                                    "kind": "done",
+                                    "next_owner": None,
+                                    "summary": "verified",
+                                    "reason": None,
+                                    "sleep_duration_seconds": None,
+                                },
+                            }
+                        ]
+                    ),
+                )
+
+            self.assertEqual(second_result.status, RunStatus.DONE)
+            self.assertEqual((run_dir / "home" / "setup-ok.txt").read_text(encoding="utf-8"), "ok\n")
 
     def test_resume_run_uses_saved_session_and_finishes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1386,6 +1632,18 @@ class RunnerTests(unittest.TestCase):
             flow_root=flow_root,
             slug="change_engineer",
             name="ChangeEngineer",
+        )
+
+    def _write_fixture_repo_mcp(self, *, repo_root: Path) -> None:
+        (repo_root / "mcps" / "fixture-repo").mkdir(parents=True)
+        (repo_root / "mcps" / "fixture-repo" / "server.toml").write_text(
+            textwrap.dedent(
+                """\
+                command = ["uv", "run", "fixture-repo"]
+                cwd = "/tmp/fixture-repo"
+                """
+            ),
+            encoding="utf-8",
         )
 
     def _write_poem_repo(self, *, repo_root: Path) -> None:

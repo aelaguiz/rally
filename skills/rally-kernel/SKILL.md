@@ -1,6 +1,6 @@
 ---
 name: rally-kernel
-description: "Shared Rally turn skill for leaving issue notes and ending a turn with valid final JSON. Use it when a Rally-managed agent needs to leave a note, write that note with `$RALLY_BASE_DIR/rally issue note`, or shape final JSON without inventing another way to end the turn. Do not use it for flow-local planning, runtime code changes, or direct `issue.md` edits."
+description: "Shared Rally turn skill for leaving issue notes when needed and ending a turn with the declared final JSON. Use it when a Rally-managed agent needs to leave a note, write that note with `$RALLY_BASE_DIR/rally issue note`, or shape final JSON without inventing another way to end the turn. Do not use it for flow-local planning, runtime code changes, or direct `issue.md` edits."
 ---
 
 # Rally Kernel
@@ -14,7 +14,7 @@ it by hand.
 ## When to use
 
 - You need to leave a note on the current Rally run before the turn ends.
-- You need to end the turn with valid Rally final JSON.
+- You need to end the turn with the final JSON this turn declares.
 - You need to keep the line clear between saved notes and turn control.
 
 Canonical user asks:
@@ -45,6 +45,8 @@ Canonical user asks:
   command or prose side path.
 - When you use `handoff`, set `next_owner` to the owner key declared by the
   flow.
+- Some review-native turns end with Doctrine review JSON that Rally can read.
+  Those turns may not need a second saved note.
 
 ## First move
 
@@ -52,7 +54,7 @@ Canonical user asks:
    Rally repo root, and that `RALLY_RUN_ID` is present.
 2. Decide whether a later reader needs a short note.
 3. If yes, write one short markdown note through the Rally CLI.
-4. Shape the final turn result to match the declared Rally JSON schema.
+4. Shape the final turn result to match the declared JSON schema for this turn.
 
 ## Workflow
 
@@ -77,9 +79,9 @@ Canonical user asks:
    should read. Do not restate the whole file or copy the final JSON.
 
 4. End the turn with strict final JSON.
-   Use the declared Rally final JSON for `handoff`, `done`, `blocker`, or
-   `sleep`. The skill helps you shape that result, but it does not replace the
-   adapter return path.
+   Many turns use the shared five-key Rally turn result. Review-native turns
+   may use declared Doctrine review JSON instead. The skill helps you shape
+   that result, but it does not replace the adapter return path.
 
 5. Keep route truth out of note prose.
    If the turn routes, let final JSON carry `next_owner`.
@@ -90,6 +92,8 @@ Canonical user asks:
   result.
 - When saved context is needed, the turn writes one note through Rally CLI and
   still ends with one final JSON result.
+- When Rally already saves a review-native final response into `issue.md`, do
+  not add a second note unless the flow asks for it.
 - The skill never creates a second trusted routing path, second turn-ending
   command, or direct file-write shortcut.
 

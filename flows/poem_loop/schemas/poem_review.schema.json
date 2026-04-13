@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PoemReview",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "accept",
+        "changes_requested"
+      ]
+    },
+    "reviewed_artifact": {
+      "type": "string",
+      "minLength": 1
+    },
+    "analysis_performed": {
+      "type": "string",
+      "minLength": 1
+    },
+    "findings_first": {
+      "type": "string",
+      "minLength": 1
+    },
+    "current_artifact": {
+      "type": "string",
+      "minLength": 1
+    },
+    "next_owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "failure_detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "blocked_gate": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failing_gates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      }
+    }
+  },
+  "required": [
+    "verdict",
+    "reviewed_artifact",
+    "analysis_performed",
+    "findings_first"
+  ]
+}

@@ -1,5 +1,0 @@
-workflow ScopeLeadJob: "Your Job"
-    "Read the operator brief before you touch the repo."
-    "Pick the smallest fix path and write the repair plan to `artifacts/repair_plan.md`."
-    "If a later reader needs a short note that does not belong in the repair plan or final JSON, use `rally-kernel`."
-    "When the review passes later, read the accepted test report and close the run instead of reopening the same work."

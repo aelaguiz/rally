@@ -51,7 +51,8 @@ What it does today:
 - strips the starter prompt back out before saving the issue
 - still fails loud unless `home/issue.md` ends up with non-empty text
 - prepares the full run home only after `home/issue.md` is ready
-- refreshes `home/agents/` from the current compiled readback before the next turn starts
+- refreshes `home/agents/`, `home/skills/`, `home/mcps/`, `config.toml`, and Codex auth links from current repo state before the next turn starts
+- runs flow setup only the first time the run home becomes ready
 - opens a live color stream on a TTY
 - falls back to plain text when stdout is not a TTY
 - keeps running turns through Codex across handoffs
@@ -95,7 +96,8 @@ What it does today:
 - reuses the saved Codex session id when one exists
 - opens the same live stream rules as `rally run`
 - keeps going across handoffs until Rally reaches a real stop point
-- refreshes `home/agents/` from the rebuilt compiled readback before the next turn starts
+- refreshes `home/agents/`, `home/skills/`, `home/mcps/`, `config.toml`, and Codex auth links before the next turn starts
+- does not rerun flow setup after the run home is already ready
 
 If `--edit` is passed, Rally edits the real `home/issue.md` file.
 It does not seed or strip the starter prompt for that path.
@@ -160,6 +162,7 @@ separate startup brief path.
 After that, Rally appends:
 
 - note blocks from `rally issue note`
+- review-note blocks from `rally runtime review` when Rally consumes a review-native final response
 - `resume --edit` diff blocks when the operator changed `home/issue.md`
 - run-start records
 - turn-result records
@@ -179,7 +182,7 @@ The current Rally note block format is:
 - Run ID: `<run-id>`
 - Turn: `<turn-number>`
 - Time: `<utc-iso8601>`
-- Source: `rally issue note`
+- Source: `rally issue note` or `rally runtime review`
 
 <note body>
 ```
@@ -233,10 +236,9 @@ The runtime also:
 
 ## MCP Readiness Gap
 
-Today Rally writes MCP entries into `config.toml` and seeds Codex auth links
-into the run home.
-That is only bootstrap behavior.
-It is not yet the finished rule.
+Today Rally refreshes MCP entries in `config.toml` and refreshes Codex auth
+links on each `run` or `resume`.
+That closes the stale-home gap, but it is not the full readiness rule yet.
 
 Rally does not yet prove that a required MCP can start, that its auth is
 present and still valid, or that child agents will keep the same access.

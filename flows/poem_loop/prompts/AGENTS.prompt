@@ -3,6 +3,7 @@ import rally.turn_results
 import shared.inputs
 import shared.outputs
 import shared.contracts
+import shared.review
 import roles.poem_writer
 import roles.poem_critic
 
@@ -49,20 +50,50 @@ agent PoemWriter[PoemLoopRole]:
     final_output: rally.turn_results.RallyTurnResult
 
 
+review PoemReview: "Poem Review"
+    subject: shared.inputs.PoemDraftFile
+    contract: shared.review.PoemReviewContract
+    comment_output: shared.review.PoemReviewResponse
+
+    fields:
+        verdict: verdict
+        reviewed_artifact: reviewed_artifact
+        analysis: analysis_performed
+        readback: findings_first
+        current_artifact: current_artifact
+        failing_gates: failure_detail.failing_gates
+        blocked_gate: failure_detail.blocked_gate
+        next_owner: next_owner
+
+    basis_checks: "Basis Checks"
+        block "The poem draft is missing." when shared.inputs.PoemDraftFile.basis_missing
+
+    contract_checks: "Contract Checks"
+        accept "The poem meets the review contract." when contract.passes
+
+    on_accept: "If Accepted"
+        current artifact shared.inputs.PoemDraftFile via shared.review.PoemReviewResponse.current_artifact
+
+    on_reject: "If Rejected"
+        when present(blocked_gate):
+            current none
+
+        when missing(blocked_gate):
+            current artifact shared.inputs.PoemDraftFile via shared.review.PoemReviewResponse.current_artifact
+            route "Poem needs another draft." -> PoemWriter
+
+
 agent PoemCritic[PoemLoopRole]:
-    role: "Core job: judge the poem, ask for a rewrite when needed, and accept it only when it is ready."
+    role: "Core job: judge the poem with a real review, hand it back when it needs work, and finish only when it is ready."
     inherit rally_contract
     inherit system_context
     inherit ground_truth
     inherit primary_path
     your_job: roles.poem_critic.PoemCriticJob
     quality_bar: roles.poem_critic.PoemCriticQualityBar
+    review: PoemReview
     inputs: PoemLoopInputs
-    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
-        override issue_note: "Issue Note"
-            shared.outputs.CriticIssueNote
-
-        turn_result: "Turn Result"
-            rally.turn_results.RallyTurnResult
+    outputs: "Outputs"
+        shared.review.PoemReviewResponse
     skills: rally.base_agent.RallyManagedSkills
-    final_output: rally.turn_results.RallyTurnResult
+    final_output: shared.review.PoemReviewResponse

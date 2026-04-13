@@ -144,7 +144,7 @@ It also carries runtime limits such as `runtime.max_command_turns`.
 
 Every runnable flow has three stable identities:
 
-- the directory slug such as `single_repo_repair`
+- the directory slug such as `poem_loop`
 - a human-readable `name`
 - a validated three-letter uppercase `code`
 
@@ -182,16 +182,23 @@ Rally should keep one active run per flow unless the operator asks to replace it
 Each run gets one prepared home directory.
 
 The setup script prepares that home before the first agent runs.
+On every `run` or `resume`, Rally refreshes its own copied agents, skills,
+MCPs, config, and auth links before the next turn starts.
 After that:
 
 - agents assume home is already prepared
 - agents operate inside that home rather than inventing ad hoc repo-management behavior
-- skills are materialized from repo-root `skills/`
-- MCP definitions are materialized from repo-root `mcps/`
+- skills are materialized from repo-root `skills/` from each agent's allowlist
+- MCP definitions are materialized from repo-root `mcps/` from each agent's allowlist
 - repos, artifacts, env files, and adapter-local state live there
 - agents do not escape home
 
 For Codex, Rally should point `CODEX_HOME` at the run home.
+
+Follow-up gap to resolve later:
+
+- the current runtime still copies the union of all flow-allowed skills and MCPs into one shared run home
+- Rally still needs a clean enforcement story for agent-specific capability access during each turn
 
 ### Ledger, Notes, And Turn Results
 
@@ -229,8 +236,9 @@ The shared JSON always carries the same five keys:
 - `reason`
 - `sleep_duration_seconds`
 
-Fields that do not apply are `null`.
-If the result uses `kind: handoff`, that is only the label of the route-to-next-owner branch in the final structured result.
+Fields that do not apply are `null` on the classic shared shape.
+Review-native turns may use control-ready Doctrine review JSON instead of the five-key object.
+If the result uses `kind: handoff`, that is only the label of the route-to-next-owner branch in the classic shared result.
 Rally now keeps running across handoffs inside one `run` or `resume`
 command until it reaches a real stop point.
 Sleep requests are recorded, then blocked, until true sleep support lands.
@@ -352,7 +360,7 @@ These are the stable runtime surfaces the design depends on:
 | `logs/rendered.log` | plain operator transcript |
 | `logs/adapter_launch/` | proof of the launch contract per turn |
 | `home/agents/` | per-run copy of compiled agent outputs, refreshed on each start or resume |
-| `home/skills/` and `home/mcps/` | materialized allowed capabilities |
+| `home/skills/` and `home/mcps/` | materialized allowed capabilities, refreshed on each start or resume |
 | `home/sessions/` | adapter session sidecars or stable references |
 
 ### Operator Surface
@@ -424,6 +432,7 @@ Rally should now plan against the live local Doctrine direction:
 
 - route-aware `final_output` support is real
 - split review prose plus structured final output is real
+- same-output review JSON finals with emitted review metadata are real
 - routed-owner reads must be structurally bound
 - missing or dishonest route bindings fail loudly
 
@@ -454,16 +463,15 @@ What remains true:
 - legacy note and handoff output shapes are transitional
 - runtime execution belongs to Phase 4
 
-### Phase 2: Build One Single-Repo Repair Flow
+### Phase 2: Build One Narrow Authored Flow
 
-Status: the authored single-repo-repair flow is done in this repo.
+Status: the first enduring authored flow is now `poem_loop`.
 
 What this phase gives Rally:
 
-- one enduring authored flow under `flows/single_repo_repair/`
-- one prepared-home contract via `setup/prepare_home.sh`
-- one concrete seeded-bug fixture repo
-- one generic multi-agent flow that later runtime work must satisfy without changing the authored shape
+- one enduring authored flow under `flows/poem_loop/`
+- one small multi-agent loop with durable notes and one durable artifact
+- one authored shape that later runtime work must satisfy without changing the prompt contract
 
 ### Phase 3: Pivot Issue Communication To A Rally-Owned Skill
 
@@ -494,8 +502,7 @@ At a high level, Phase 4 owns:
 - the first real `src/rally/` runtime package
 - the first real `rally` CLI entrypoint
 - one real Codex adapter path
-- one real end-to-end execution path for `single_repo_repair`
-- one second deliberately narrow flow, `poem_loop`
+- one real end-to-end execution path for `poem_loop`
 - run storage, home preparation, note and final-response materialization, sessions, and logs
 
 The exact checked-in structure, runtime-created structure, behavior list, and acceptance criteria now live in the Phase 4 doc rather than here.
@@ -503,7 +510,7 @@ The exact checked-in structure, runtime-created structure, behavior list, and ac
 ### Phase 5: Make Rally Operator-Native And Prove The Shape Repeats
 
 Phase 5 begins only after Phase 4 proves the first honest runnable flow.
-That proof now exists for `single_repo_repair` on the Codex path.
+That proof now exists for `poem_loop` on the Codex path.
 
 Its job is to make the runtime believable as a narrow v1 without broadening the product shape.
 At a high level, Phase 5 should add:
@@ -529,6 +536,11 @@ Phase 5 should also close the MCP gap with:
 - one Codex-native MCP auth and readiness path
 - clear failure when a required MCP is missing or broken
 - proof that child agents keep the same MCP access on fresh runs and resumes
+
+Phase 5 should also close the per-agent capability gap with:
+
+- real runtime enforcement of each agent's `allowed_skills` and `allowed_mcps`
+- either agent-specific home materialization or another equally clear per-turn isolation path
 
 ### Phase 6: Add Human-In-The-Loop Flow Requirements
 

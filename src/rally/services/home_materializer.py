@@ -59,6 +59,9 @@ def materialize_run_home(
         event_recorder=event_recorder,
     )
     _sync_compiled_agents(run_home=run_home, flow=flow)
+    _copy_allowed_skills_and_mcps(repo_root=repo_root, run_home=run_home, flow=flow)
+    _write_codex_config(repo_root=repo_root, run_home=run_home, flow=flow)
+    _seed_codex_auth(run_home=run_home)
     if _home_ready_marker(run_home).is_file():
         return run_home
 
@@ -69,9 +72,6 @@ def materialize_run_home(
             code="HOME",
             message="Preparing run home.",
         )
-    _copy_allowed_skills_and_mcps(repo_root=repo_root, run_home=run_home, flow=flow)
-    _write_codex_config(repo_root=repo_root, run_home=run_home, flow=flow)
-    _seed_codex_auth(run_home=run_home)
     _run_setup_script(
         repo_root=repo_root,
         flow=flow,
@@ -265,16 +265,24 @@ def _home_ready_marker(run_home: Path) -> Path:
 
 
 def _sync_compiled_agents(*, run_home: Path, flow: FlowDefinition) -> None:
-    agents_dir = run_home / "agents"
-    expected_slugs = {agent.slug for agent in flow.agents.values()}
-    for existing in sorted(agents_dir.iterdir()):
-        if existing.name in expected_slugs:
+    _sync_named_directories(
+        target_root=run_home / "agents",
+        sources_by_name={
+            agent.slug: agent.compiled.markdown_path.parent for agent in flow.agents.values()
+        },
+    )
+
+
+def _sync_named_directories(*, target_root: Path, sources_by_name: dict[str, Path]) -> None:
+    expected_names = set(sources_by_name)
+    for existing in sorted(target_root.iterdir()):
+        if existing.name in expected_names:
             continue
         _remove_path(existing)
-    for agent in flow.agents.values():
-        target = agents_dir / agent.slug
+    for name, source in sorted(sources_by_name.items()):
+        target = target_root / name
         _remove_path(target)
-        shutil.copytree(agent.compiled.markdown_path.parent, target)
+        shutil.copytree(source, target)
 
 
 def _remove_path(path: Path) -> None:
@@ -287,25 +295,24 @@ def _remove_path(path: Path) -> None:
 
 
 def _copy_allowed_skills_and_mcps(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:
-    skill_names = sorted(
-        {
-            *(_MANDATORY_SKILLS),
-            *(skill for agent in flow.agents.values() for skill in agent.allowed_skills),
-        }
-    )
-    for skill_name in skill_names:
+    skill_sources: dict[str, Path] = {}
+    for skill_name in _allowed_skill_names(flow):
         source = repo_root / "skills" / skill_name
         if not source.is_dir():
             raise RallyConfigError(f"Allowed skill does not exist: `{source}`.")
         _validate_skill_bundle(source=source, skill_name=skill_name)
-        shutil.copytree(source, run_home / "skills" / skill_name, dirs_exist_ok=True)
+        skill_sources[skill_name] = source
 
-    mcp_names = sorted({mcp for agent in flow.agents.values() for mcp in agent.allowed_mcps})
-    for mcp_name in mcp_names:
+    _sync_named_directories(target_root=run_home / "skills", sources_by_name=skill_sources)
+
+    mcp_sources: dict[str, Path] = {}
+    for mcp_name in _allowed_mcp_names(flow):
         source = repo_root / "mcps" / mcp_name
         if not source.is_dir():
             raise RallyConfigError(f"Allowed MCP does not exist: `{source}`.")
-        shutil.copytree(source, run_home / "mcps" / mcp_name, dirs_exist_ok=True)
+        mcp_sources[mcp_name] = source
+
+    _sync_named_directories(target_root=run_home / "mcps", sources_by_name=mcp_sources)
 
 
 def _write_codex_config(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:
@@ -313,9 +320,8 @@ def _write_codex_config(*, repo_root: Path, run_home: Path, flow: FlowDefinition
     if not isinstance(project_doc_max_bytes, int) or project_doc_max_bytes < 0:
         raise RallyConfigError("`runtime.adapter_args.project_doc_max_bytes` must be a non-negative integer.")
 
-    mcp_names = sorted({mcp for agent in flow.agents.values() for mcp in agent.allowed_mcps})
     lines = [f"project_doc_max_bytes = {project_doc_max_bytes}", ""]
-    for mcp_name in mcp_names:
+    for mcp_name in _allowed_mcp_names(flow):
         server_file = repo_root / "mcps" / mcp_name / "server.toml"
         payload = tomllib.loads(server_file.read_text(encoding="utf-8"))
         lines.append(f'[mcp_servers."{mcp_name}"]')
@@ -330,11 +336,26 @@ def _seed_codex_auth(*, run_home: Path) -> None:
     for file_name in ("auth.json", ".credentials.json"):
         source = source_home / file_name
         target = run_home / file_name
-        if not source.exists():
-            continue
         if target.exists() or target.is_symlink():
             target.unlink()
+        if not source.exists():
+            continue
         target.symlink_to(source)
+
+
+def _allowed_skill_names(flow: FlowDefinition) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                *(_MANDATORY_SKILLS),
+                *(skill for agent in flow.agents.values() for skill in agent.allowed_skills),
+            }
+        )
+    )
+
+
+def _allowed_mcp_names(flow: FlowDefinition) -> tuple[str, ...]:
+    return tuple(sorted({mcp for agent in flow.agents.values() for mcp in agent.allowed_mcps}))
 
 
 def _run_setup_script(
