@@ -124,3 +124,7 @@ Support-surface version changes: workspace manifest 1 (unchanged); compiled cont
 ### Fixed
 - Stopped Rally-native stdlib support files from escaping host project roots in
   external Doctrine emit targets.
+
+### YANKED
+- Superseded by `v0.1.1` because `v0.1.0` still depended on the old
+  `doctrine` package line and failed fresh package installs.

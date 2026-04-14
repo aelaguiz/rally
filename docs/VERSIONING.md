@@ -3,7 +3,7 @@
 This file is the canonical home for Rally versioning, release rules, and
 Doctrine compatibility guidance.
 
-Current public Rally release version: v0.1.0
+Current public Rally release version: v0.1.1
 Current Rally package version: 0.1.1
 Current workspace manifest version: 1
 Current compiled agent contract version: 1
