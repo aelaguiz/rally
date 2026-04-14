@@ -11,5 +11,9 @@ output RallyIssueNote: "Issue Note"
         "Leave one short note when a later reader needs context."
         "Use the shared Rally CLI path instead of editing `home:issue.md` yourself."
 
+    run_local_boundary: "Run-Local Boundary"
+        "Use notes for this run only."
+        "Use `rally-memory` only for cross-run lessons."
+
     standalone_read: "Standalone Read"
         "This note should stand on its own and keep only the context later readers need."

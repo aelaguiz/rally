@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 from typing import Any
 
+from rally.memory.logging import parse_memory_command, summarize_memory_command
 from rally.services.run_events import EventDraft
 
 
@@ -306,6 +307,28 @@ class CodexEventStreamParser:
     ) -> list[EventDraft]:
         status = _normalized_status(item.get("status"), fallback=item_phase)
         message = _string_value(item.get("command")) or "command"
+        memory_command = parse_memory_command(message)
+        if memory_command is not None:
+            summary = summarize_memory_command(
+                memory_command,
+                status=status,
+                output_text=_string_value(item.get("aggregated_output")),
+            )
+            return [
+                self._trace_draft(
+                    kind="memory",
+                    code=summary.code,
+                    message=summary.message,
+                    level=summary.level,
+                    trace_class="memory",
+                    item_type="command_execution",
+                    item_id=item_id,
+                    item_phase=item_phase,
+                    status=status,
+                    detail_lines=list(summary.detail_lines),
+                    extra_data={"type": event_type, "action": memory_command.action},
+                )
+            ]
         detail_lines: list[str] = []
         if status in {"completed", "failed", "declined"}:
             exit_code = item.get("exit_code")
@@ -743,7 +766,34 @@ def _is_tool_payload(*, type_name: str, payload: dict[str, Any]) -> bool:
 def _tool_draft(build_draft, *, type_name: str, payload: dict[str, Any]) -> EventDraft:
     lowered = type_name.lower()
     tool_name = _string_value(payload.get("tool_name")) or _string_value(payload.get("name")) or "tool"
-    detail = _string_value(payload.get("command")) or _best_message(payload) or type_name
+    command = _string_value(payload.get("command"))
+    memory_command = parse_memory_command(command or "")
+    detail = command or _best_message(payload) or type_name
+    if memory_command is not None:
+        status = "in_progress"
+        if any(token in lowered for token in ("error", "fail")):
+            status = "failed"
+        elif any(token in lowered for token in ("complete", "done", "finish", "success")):
+            status = "completed"
+        summary = summarize_memory_command(
+            memory_command,
+            status=status,
+            output_text=_best_message(payload),
+        )
+        data = {
+            "trace_class": "memory",
+            "type": type_name,
+            "action": memory_command.action,
+        }
+        if summary.detail_lines:
+            data["detail_lines"] = list(summary.detail_lines)
+        return build_draft(
+            kind="memory",
+            code=summary.code,
+            message=summary.message,
+            level=summary.level,
+            data=data,
+        )
     data = {"trace_class": "tool", "type": type_name}
     if any(token in lowered for token in ("error", "fail")):
         return build_draft(

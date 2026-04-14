@@ -89,6 +89,35 @@ class CodexEventStreamTests(unittest.TestCase):
         self.assertEqual(drafts[2].level, "error")
         self.assertIn("error: bad input", drafts[2].data["detail_lines"])
 
+    def test_parser_formats_memory_commands_as_memory_events(self) -> None:
+        parser = CodexEventStreamParser(
+            turn_index=5,
+            agent_key="03_proof_engineer",
+            agent_slug="proof_engineer",
+        )
+
+        drafts = []
+        drafts.extend(
+            parser.consume_stdout_line(
+                '{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc \'\\\"$RALLY_CLI_BIN\\\" memory search --run-id \\\"$RALLY_RUN_ID\\\" --query \\\"focus the fix\\\"\'","aggregated_output":"","status":"in_progress"}}\n'
+            )
+        )
+        drafts.extend(
+            parser.consume_stdout_line(
+                '{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc \'\\\"$RALLY_CLI_BIN\\\" memory search --run-id \\\"$RALLY_RUN_ID\\\" --query \\\"focus the fix\\\"\'","aggregated_output":"1. mem_dmo_scope_lead_focus_the_fix (0.83)\\n   Focus the fix\\n   Fix the concrete bug before widening scope.","exit_code":0,"status":"completed"}}\n'
+            )
+        )
+
+        self.assertEqual([draft.code for draft in drafts], ["MEM", "MEM OK"])
+        self.assertEqual(drafts[0].message, "Search memory for 'focus the fix'.")
+        self.assertEqual(drafts[1].message, "Found 1 memory hit.")
+        self.assertEqual(drafts[1].kind, "memory")
+        self.assertEqual(drafts[1].data["trace_class"], "memory")
+        self.assertEqual(
+            drafts[1].data["detail_lines"],
+            ["mem_dmo_scope_lead_focus_the_fix: Focus the fix"],
+        )
+
     def test_parser_keeps_legacy_text_and_tool_fallbacks(self) -> None:
         parser = CodexEventStreamParser(
             turn_index=5,

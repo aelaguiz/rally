@@ -79,8 +79,6 @@ def append_issue_edit_diff(
         body=_render_issue_edit_diff(before_text=before_text, after_text=after_text),
         now=now,
     )
-
-
 def append_issue_event(
     *,
     repo_root: Path,

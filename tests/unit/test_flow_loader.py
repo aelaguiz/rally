@@ -210,8 +210,12 @@ class FlowLoaderTests(unittest.TestCase):
 
         self.assertIn("## Skills", writer_readback)
         self.assertIn("### rally-kernel", writer_readback)
+        self.assertIn("### rally-memory", writer_readback)
         self.assertIn("### Issue Note", writer_readback)
         self.assertNotIn("\n### Writer Issue Note\n", writer_readback)
+        self.assertIn("### Issue Ledger", writer_readback)
+        self.assertIn("### Rally Agent Slug", writer_readback)
+        self.assertIn("## Read First", writer_readback)
         self.assertIn("Artistic Rationale", writer_readback)
         self.assertIn("### Rally Turn Result", writer_readback)
         self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', writer_readback)
@@ -221,6 +225,21 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertIn("#### Review Summary", critic_readback)
         self.assertIn("#### Findings First", critic_readback)
         self.assertNotIn("### Rally Turn Result", critic_readback)
+
+    def test_framework_owned_memory_guidance_stays_out_of_example_flow_skills(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+
+        flow_skills_source = (
+            repo_root / "flows/software_engineering_demo/prompts/shared/skills.prompt"
+        ).read_text(encoding="utf-8")
+        base_source = (repo_root / "stdlib/rally/prompts/rally/base_agent.prompt").read_text(encoding="utf-8")
+        memory_source = (repo_root / "stdlib/rally/prompts/rally/memory.prompt").read_text(encoding="utf-8")
+
+        self.assertNotIn("Use `rally-memory` only when a past lesson could help.", flow_skills_source)
+        self.assertNotIn("skill rally_memory:", flow_skills_source)
+        self.assertIn("skill rally_memory: rally.memory.RallyMemorySkill", base_source)
+        self.assertIn("workflow RallyReadFirst", memory_source)
+        self.assertIn("workflow RallyHowToTakeATurn", memory_source)
 
     def test_load_flow_definition_rejects_unsupported_contract_version(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

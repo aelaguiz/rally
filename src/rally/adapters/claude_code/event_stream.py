@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import json
 from typing import Any
 
+from rally.memory.logging import parse_memory_command, summarize_memory_command
 from rally.services.run_events import EventDraft
 
 
@@ -139,6 +140,26 @@ class ClaudeCodeEventStreamParser:
                 tool_input = item.get("input")
                 if isinstance(tool_id, str) and isinstance(tool_input, dict):
                     self._tool_uses[tool_id] = (tool_name, dict(tool_input))
+                memory_command = None
+                if tool_name == "Bash" and isinstance(tool_input, dict):
+                    memory_command = parse_memory_command(_string_value(tool_input.get("command")) or "")
+                if memory_command is not None:
+                    summary = summarize_memory_command(memory_command, status="in_progress")
+                    drafts.append(
+                        self._draft(
+                            kind="memory",
+                            code=summary.code,
+                            message=summary.message,
+                            level=summary.level,
+                            data={
+                                "item_type": item_type,
+                                "tool_name": tool_name,
+                                "trace_class": "memory",
+                                "action": memory_command.action,
+                            },
+                        )
+                    )
+                    continue
                 drafts.append(
                     self._draft(
                         kind="tool",
@@ -161,6 +182,34 @@ class ClaudeCodeEventStreamParser:
                 continue
             tool_id = _string_value(item.get("tool_use_id"))
             tool_name, tool_input = self._tool_uses.pop(tool_id or "", ("tool", {}))
+            memory_command = None
+            if tool_name == "Bash":
+                memory_command = parse_memory_command(_string_value(tool_input.get("command")) or "")
+            if memory_command is not None:
+                output_text = _tool_result_text(item)
+                status = "failed" if item.get("is_error") else "completed"
+                summary = summarize_memory_command(
+                    memory_command,
+                    status=status,
+                    output_text=output_text,
+                )
+                data = {
+                    "tool_name": tool_name,
+                    "trace_class": "memory",
+                    "action": memory_command.action,
+                }
+                if summary.detail_lines:
+                    data["detail_lines"] = list(summary.detail_lines)
+                drafts.append(
+                    self._draft(
+                        kind="memory",
+                        code=summary.code,
+                        message=summary.message,
+                        level=summary.level,
+                        data=data,
+                    )
+                )
+                continue
             drafts.append(
                 self._draft(
                     kind="tool",
@@ -286,6 +335,13 @@ def _tool_result_message(
         first_line = content.strip().splitlines()[0]
         return _truncate(first_line, 140)
     return f"{tool_name} finished."
+
+
+def _tool_result_text(result_payload: dict[str, object]) -> str | None:
+    content = result_payload.get("content")
+    if isinstance(content, str) and content.strip():
+        return content
+    return None
 
 
 def _string_value(value: object) -> str | None:

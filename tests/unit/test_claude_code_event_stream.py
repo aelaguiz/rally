@@ -86,6 +86,63 @@ class ClaudeCodeEventStreamTests(unittest.TestCase):
         self.assertIn("/tmp/demo.txt", result_drafts[0].message)
         self.assertEqual(usage_drafts[0].code, "USAGE")
 
+    def test_parser_formats_memory_bash_calls_as_memory_events(self) -> None:
+        parser = ClaudeCodeEventStreamParser(
+            turn_index=4,
+            agent_key="02_change_engineer",
+            agent_slug="change_engineer",
+        )
+
+        start_drafts = parser.consume_stdout_line(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "session_id": "claude-session-2",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_memory_1",
+                                "name": "Bash",
+                                "input": {
+                                    "command": '/bin/zsh -lc \'"$RALLY_CLI_BIN" memory refresh --run-id "$RALLY_RUN_ID"\''
+                                },
+                            }
+                        ]
+                    },
+                }
+            )
+            + "\n"
+        )
+        result_drafts = parser.consume_stdout_line(
+            json.dumps(
+                {
+                    "type": "user",
+                    "session_id": "claude-session-2",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_memory_1",
+                                "content": "Refreshed scoped memory index. Indexed 1 new, 2 updated, 3 unchanged, 0 removed.\n",
+                            }
+                        ]
+                    },
+                }
+            )
+            + "\n"
+        )
+
+        self.assertEqual(start_drafts[0].code, "MEM")
+        self.assertEqual(start_drafts[0].message, "Refresh memory.")
+        self.assertEqual(start_drafts[0].data["trace_class"], "memory")
+        self.assertEqual(result_drafts[0].code, "MEM OK")
+        self.assertEqual(result_drafts[0].message, "Refreshed scoped memory index.")
+        self.assertEqual(
+            result_drafts[0].data["detail_lines"],
+            ["Indexed 1 new, 2 updated, 3 unchanged, 0 removed."],
+        )
+
     def test_extract_structured_output_prefers_result_event(self) -> None:
         stdout_text = "\n".join(
             [

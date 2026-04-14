@@ -8,6 +8,7 @@ from rally.services.workspace import WorkspaceContext
 
 _RESERVED_FRAMEWORK_PATHS = (
     ("skills", "rally-kernel"),
+    ("skills", "rally-memory"),
 )
 
 

@@ -7,72 +7,137 @@ owners: [aelaguiz]
 reviewers: []
 doc_type: new_system
 related:
+  - README.md
   - docs/RALLY_MASTER_DESIGN_2026-04-12.md
   - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
   - docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
   - stdlib/rally/prompts/rally/base_agent.prompt
   - stdlib/rally/prompts/rally/issue_ledger.prompt
   - stdlib/rally/prompts/rally/notes.prompt
-  - skills/rally-kernel/SKILL.md
+  - skills/rally-kernel/prompts/SKILL.prompt
   - flows/poem_loop/prompts/shared/inputs.prompt
+  - flows/software_engineering_demo/prompts/shared/inputs.prompt
   - flows/poem_loop/prompts/shared/outputs.prompt
   - src/rally/domain/flow.py
+  - src/rally/services/flow_build.py
   - src/rally/services/flow_loader.py
+  - src/rally/services/framework_assets.py
   - src/rally/services/home_materializer.py
   - src/rally/services/issue_ledger.py
   - src/rally/services/run_events.py
+  - src/rally/services/skill_bundles.py
   - src/rally/adapters/codex/launcher.py
-  - for_reference_only/qmd/README.md
-  - for_reference_only/qmd/src/store.ts
-  - for_reference_only/qmd/src/collections.ts
-  - for_reference_only/qmd/src/llm.ts
 ---
 
 # TL;DR
 
 Outcome
 - Add one built-in Rally memory model that is native to Doctrine authoring and native to Rally runtime.
-- Give every Rally-managed agent one shared issue-ledger input, one shared memory skill, one shared memory entry shape, and one shared read order for when memory belongs in the turn.
+- Give every Rally-managed agent one shared issue-ledger input, one shared memory skill, and one shared memory entry shape without tying memory to note behavior.
 - Keep durable memory in repo-local markdown files and use QMD only as the search index over those files.
-- Make `memory use` and `memory save` visible Rally events that also append trusted readback into `home/issue.md`.
+- Make `memory use` and `memory save` visible Rally events without appending trusted readback into `home/issue.md`.
 
 Problem
 - Rally does not have cross-run memory yet.
 - The shared Rally stdlib still does not give every agent the issue ledger, the current agent slug, or a shared memory contract.
-- One flow already carries its own local issue-ledger input and note structures, which is useful proof that Doctrine can express this shape, but it also shows how memory would drift if Rally adds it as runtime-only behavior.
-- QMD is a good fit for search, but its default cache and config paths break Rally's repo-local rules if Rally uses it raw.
+- Two live flows already carry their own local issue-ledger inputs and note structures. That proves Doctrine can express the shape, but it also shows how memory would drift if Rally adds it as runtime-only behavior.
+- QMD is a good fit for search, but its raw CLI and MCP defaults still write under `~/.cache/qmd/` unless Rally forces a repo-local cache root.
+- Rally is Python and QMD is Node, so the runtime needs one pinned bridge path instead of ambient `qmd` installs or raw CLI calls.
 
 Approach
 - Put the agent-facing memory contract in Doctrine source first.
-- Make Rally runtime back that contract with repo-local storage, QMD indexing, CLI commands, and visible event/readback paths.
+- Make Rally runtime back that contract with repo-local storage, QMD indexing, CLI commands, and visible runtime event paths.
 - Reuse the compiled Doctrine agent slug as the only agent-scope truth and project that same slug into `RALLY_AGENT_SLUG` for runtime use.
 - Converge flow-local issue-ledger and generic memory patterns back into the shared stdlib instead of letting each flow tell its own memory story.
 
 Plan
 - Lock the North Star and owner split around Doctrine-first memory.
-- Add the shared stdlib pieces: issue-ledger input, memory document, memory skill, and shared read-order blocks.
-- Rerun the deep-dive around runtime, call sites, and deletes using that contract.
+- Keep the QMD dependency pinned to a small repo-owned Node bridge that uses `@tobilu/qmd` `v2.1.0`.
+- Add the shared stdlib pieces: issue-ledger input, memory document, and shared skill.
+- Update the built-in skill emit and sync path so `rally-memory` is treated like `rally-kernel`.
 - Land the runtime backing, then visibility, then one narrow flow proof, then sync live docs.
 
 Non-negotiables
 - Doctrine owns the agent-facing memory contract.
-- Rally owns storage, indexing, CLI behavior, issue appends, and runtime events.
+- Rally owns storage, indexing, CLI behavior, durable memory files, and runtime events.
 - The compiled Doctrine agent slug is the source of truth for agent scope.
 - Markdown memory files are the source of truth. QMD is only a rebuildable search index.
 - No hidden memory prose outside the declared `.prompt` graph.
 - No per-flow generic memory lifecycle rules once the shared stdlib contract exists.
 - Memory never carries routing, `done`, `blocker`, or `sleep` truth.
 
+<!-- arch_skill:block:implementation_audit:start -->
+# Implementation Audit (authoritative)
+Date: 2026-04-13
+Verdict (code): COMPLETE
+Manual QA: n/a (non-blocking)
+
+## Code blockers (why code is not done)
+- None. Fresh audit checked the full approved Phase 4 frontier against the live `POM-1` run artifacts, current memory code and tests, synced docs, current generated readback, and a fresh `uv run pytest tests/unit -q` pass.
+
+## Reopened phases (false-complete fixes)
+- None.
+
+## Missing items (code gaps; evidence-anchored; no tables)
+- None. The fresh audit confirmed the previously reopened Phase 4 frontier is now closed:
+  - `runs/active/POM-1/home/issue.md` keeps the normal writer notes, the normal handoff JSON, and `done` on turn 10 with no memory-specific blocks
+  - `runs/active/POM-1/logs/events.jsonl` shows `memory_saved` and `memory_used` on the canonical event stream while search stays out of visible memory events
+  - `runs/active/POM-1/state.yaml` ends at `status: done`
+  - `runs/memory/entries/POM/poem_writer/mem_pom_poem_writer_when_a_poem_critique_asks_for_one_stronger_image.md` is the durable markdown truth
+  - `src/rally/memory/index.py` plus `tests/unit/memory/test_index.py` now cover noisy bridge stdout and virtual `qmd:/...` search hits
+  - `uv run rally memory search --run-id POM-1 --agent-slug poem_writer --query 'stronger image or ending for poem critique'` now prints the canonical memory id, title, and short snippet
+  - `uv run pytest tests/unit -q` passed fresh at `159 passed in 1.29s`
+
+## Non-blocking follow-ups (manual QA / screenshots / human verification)
+- None.
+<!-- arch_skill:block:implementation_audit:end -->
+
 <!-- arch_skill:block:planning_passes:start -->
 <!--
 arch_skill:planning_passes
 deep_dive_pass_1: done 2026-04-13
 deep_dive_pass_2: done 2026-04-13
-external_research_grounding: not started
+external_research_grounding: done 2026-04-13
 recommended_flow: deep dive -> external research grounding -> deep dive again -> phase plan -> implement
 note: This block tracks stage order only. It never overrides readiness blockers caused by unresolved decisions.
 -->
 <!-- arch_skill:block:planning_passes:end -->
+
+## 0.0 Implementation Status (current repo truth)
+
+This section is the current truth for the repo after the implementation pass.
+Sections 2, 4, and 6 below keep the implementation-start audit snapshot so the design trail stays readable.
+
+What is shipped now:
+- shared memory contract in `stdlib/rally/prompts/rally/memory.prompt`
+- shared issue-ledger input and `RALLY_AGENT_SLUG` exposure in the shared base agent
+- built-in `rally-memory` skill source plus emitted readback beside `rally-kernel`
+- built-in skill wiring through `skill_bundles.py`, `flow_build.py`, `framework_assets.py`, and `workspace.py`
+- repo-local markdown memory truth under `runs/memory/entries/<flow_code>/<agent_slug>/`
+- repo-local QMD state under `runs/memory/qmd/index.sqlite` and `runs/memory/qmd/cache/`
+- pinned Node bridge under `tools/qmd_bridge/` on `@tobilu/qmd` `2.1.0`
+- Rally CLI front doors for `memory search`, `memory use`, `memory save`, and `memory refresh`
+- memory-specific runtime events and durable markdown files, with no memory-specific issue-ledger records
+- visible `memory_used` and `memory_saved` runtime events
+- compiled-slug-backed memory scope carried through `flow_loader.py`
+- deletion of the stale `src/rally/services/event_log.py` path
+
+Proof already captured:
+- rebuilt `_stdlib_smoke`, `poem_loop`, and `software_engineering_demo`
+- focused test sweep covering flow build, framework assets, flow loading, CLI, issue ledger, run events, runner, and the new memory services
+- full unit suite at current head
+- one bridge smoke proof that kept `~/.cache/qmd/` untouched on an empty scoped refresh
+- one real `POM-1` `poem_loop` proof that saved memory on turn 7, searched and used it on turn 9, and still ended `done` on turn 10
+- current `rally memory search` output that shows the canonical memory id, lesson title, and short snippet
+- fresh audit rerun with `uv run pytest tests/unit -q` still green at `159 passed in 1.29s`
+
+Fresh audit check:
+- the authoritative Implementation Audit block above has now been rerun against the full approved frontier
+- no approved code frontier remains open for this plan
+
+Historical note
+- Sections 2 through 10 keep the original implementation-start audit and phase trail.
+- Where those sections mention memory issue-ledger writeback, shared read-order blocks, or the old flat runtime module paths, treat that as superseded history. Current repo truth is Section 0.0 plus the live design docs.
 
 # 0) Holistic North Star
 
@@ -82,8 +147,8 @@ Rally can add built-in cross-run memory without turning memory into a custom sid
 
 - authors the shared memory contract in Doctrine stdlib
 - gives every Rally-managed agent the shared issue ledger as an inherited input
-- gives every Rally-managed agent a shared memory skill, shared memory entry shape, and shared read order
-- keeps Rally runtime responsible for storage, search, issue append, and event visibility
+- gives every Rally-managed agent a shared memory skill and shared memory entry shape without coupling memory guidance to notes
+- keeps Rally runtime responsible for storage, search, durable memory files, and event visibility
 - keeps the durable memory source of truth in repo-local markdown files
 - treats `RALLY_AGENT_SLUG` as a runtime projection of the compiled Doctrine agent slug, not as a second identity source
 - keeps flow-local prompts focused on flow-local work instead of generic memory rules
@@ -98,30 +163,27 @@ This claim is false if any of the following stay true after the work lands:
 - memory use or save can happen without a Rally-owned visible record
 - memory can change routing, `done`, `blocker`, or `sleep` truth
 
-This section describes the target state Rally should reach after implementation.
-It does not claim the current repo already behaves this way.
+This section states the target rules the implementation is checked against.
+See Section 0.0 for the current shipped state.
 
 ## 0.2 In scope
 
 - one built-in Rally memory model for cross-run learning
-- future-state design for later implementation of that model
+- the design trail and implementation ledger for that model
 - one shared stdlib issue-ledger input for all Rally-managed agents
 - one shared stdlib memory module, likely `stdlib/rally/prompts/rally/memory.prompt`
 - one shared memory skill in the Rally-managed skill set
 - one shared memory entry document shape authored in Doctrine
-- one shared read-order and turn-sequence contract authored in Doctrine
 - exposing `RALLY_AGENT_SLUG` to prompts as the runtime projection of the compiled agent slug
 - repo-local markdown memory files under `runs/`
-- repo-local QMD config, index, and model cache under `runs/`
+- repo-local QMD index and cache roots under `runs/`
 - Rally CLI memory commands for search, use, save, and refresh
 - visible `memory_used` and `memory_saved` runtime records
-- normalized `Memory Used` and `Memory Saved` issue-ledger records
 - convergence work needed to remove flow-local generic issue-ledger and memory patterns once the shared stdlib contract exists
 - docs and readback updates needed to keep the repo truthful
 
 ## 0.3 Out of scope
 
-- implementing the full memory system in this planning pass
 - cross-flow shared memory in v1
 - cross-agent shared memory in v1
 - hidden launch-time memory snippets
@@ -137,21 +199,24 @@ It does not claim the current repo already behaves this way.
 - Rally has one documented memory model with one clear owner split: Doctrine for agent-facing contract, Rally for runtime backing.
 - `RallyManagedInputs` includes the shared issue ledger and the current agent slug.
 - `RallyManagedSkills` includes `rally-memory` beside `rally-kernel`.
-- the shared stdlib defines the memory entry body shape and shared read-order blocks
-- compiled readback for `_stdlib_smoke` and `poem_loop` shows the shared issue-ledger and memory contract honestly
+- the shared stdlib defines the memory entry body shape and shared memory skill contract
+- the built-in skill pipeline emits and syncs `rally-memory` beside `rally-kernel`
+- compiled readback for `_stdlib_smoke`, `poem_loop`, and `software_engineering_demo` shows the shared issue-ledger and memory contract honestly
+- the QMD wrapper is grounded against one real pinned dependency path, not a missing local checkout
 - the runtime saves memory under repo-local markdown paths and forces QMD state to stay repo-local
 - memory scope resolves by flow plus compiled agent slug
 - one narrow real-flow proof shows a relevant memory can be found, used, and saved without changing note or routing semantics
-- `memory_used` and `memory_saved` show up in Rally logs and append trusted readback into `home/issue.md`
+- `memory_used` and `memory_saved` show up in Rally logs while memory markdown stays the durable operator-visible source
 - the master design, runtime design docs, shared prompt source, and compiled readback all say the same thing about notes, memory, and turn control
 
-This is acceptance evidence for the later implementation.
-It is not a claim about the current repo state.
+Current status in this pass:
+- every acceptance item above is now landed in code and backed by current proof
+- the narrow live-flow memory proof, docs sync, and visibility checks are all closed on the shipped path
 
 ## 0.5 Key invariants (fix immediately if violated)
 
-- Doctrine owns the shared issue-ledger, memory-skill, memory-shape, and read-order contract.
-- Rally owns memory storage, memory indexing, memory CLI behavior, issue appends, and runtime event visibility.
+- Doctrine owns the shared issue-ledger, memory-skill, and memory-shape contract.
+- Rally owns memory storage, memory indexing, memory CLI behavior, durable memory files, and runtime event visibility.
 - The compiled Doctrine agent slug is the only source of truth for agent scope.
 - `RALLY_AGENT_SLUG` is a runtime mirror of that compiled slug, not a new meaning.
 - Markdown memory files are the only durable memory truth.
@@ -177,13 +242,14 @@ It is not a claim about the current repo state.
 
 - `docs/RALLY_MASTER_DESIGN_2026-04-12.md` already says Rally is Doctrine-native and that `home/issue.md` is the shared run ledger.
 - `src/rally/services/home_materializer.py` already enforces `home/issue.md` as Rally's one sanctioned shared startup input.
-- `stdlib/rally/prompts/rally/base_agent.prompt` already owns the shared Rally-managed input and skill surface, but today it only exposes three env vars and `rally-kernel`.
-- `stdlib/rally/prompts/rally/issue_ledger.prompt` and `stdlib/rally/prompts/rally/notes.prompt` already own the issue-append target shape.
+- `stdlib/rally/prompts/rally/base_agent.prompt` already owns the shared Rally-managed input and skill surface, but today it only exposes three env vars and `rally-kernel` even though the runtime already sets more Rally env vars.
+- `stdlib/rally/prompts/rally/issue_ledger.prompt` and `stdlib/rally/prompts/rally/notes.prompt` already own the issue-append target shape, but they still do not own a shared issue file input.
 - `src/rally/domain/flow.py`, `src/rally/services/flow_loader.py`, and the compiled `AGENTS.contract.json` files already carry the concrete agent slug.
-- `src/rally/adapters/codex/launcher.py` already injects `RALLY_AGENT_SLUG`; the shared prompt contract just does not use it yet.
-- `flows/poem_loop` already proves Doctrine can express structured issue-ledger inputs and structured issue-note documents, but that pattern is still flow-local.
-- `src/rally/services/home_materializer.py` still treats `rally-kernel` as the only mandatory ambient skill.
-- QMD supports explicit path control, but its defaults still point at global cache and config directories.
+- `src/rally/adapters/codex/launcher.py` already injects `RALLY_AGENT_SLUG` and `RALLY_TURN_NUMBER`; the shared prompt contract does not use them yet.
+- `src/rally/services/runner.py` and `src/rally/services/home_materializer.py` already pass helper env vars such as `RALLY_AGENT_KEY`, `RALLY_ISSUE_PATH`, `RALLY_RUN_HOME`, and `RALLY_FLOW_HOME` to prompt-input and setup commands.
+- `flows/poem_loop` and `flows/software_engineering_demo` already prove Doctrine can express structured issue-ledger inputs, but both patterns are still flow-local.
+- `src/rally/services/skill_bundles.py`, `src/rally/services/flow_build.py`, `src/rally/services/framework_assets.py`, and `src/rally/services/home_materializer.py` already define how Rally built-in skills are emitted, synced, and materialized, but only `rally-kernel` is wired today.
+- The repo no longer carries `for_reference_only/qmd/`, so the old QMD path claims are not grounded locally anymore.
 - Rally is Python and QMD is Node, so the runtime boundary must stay narrow and explicit.
 
 ## 1.3 Architectural principles (rules we will enforce)
@@ -204,7 +270,7 @@ It is not a claim about the current repo state.
 - Keeping the memory body shape in Doctrine means the runtime has to validate and preserve that shape instead of treating memory as arbitrary markdown.
 - Treating the compiled agent slug as the source of truth may force small flow-loader cleanup so runtime identity is carried from compiled contracts instead of local derivation alone.
 
-# 2) Problem Statement (existing architecture + why change)
+# 2) Problem Statement (implementation-start state + why change)
 
 ## 2.1 What exists today
 
@@ -213,8 +279,9 @@ It is not a claim about the current repo state.
 - The shared note path already exists through the issue-ledger target and `rally-kernel`.
 - Rally runtime already prepares `home/issue.md` and already injects `RALLY_AGENT_SLUG` into Codex launches.
 - Compiled Doctrine contracts already include the concrete agent slug.
-- `poem_loop` already uses structured Doctrine documents for issue notes and a local issue-ledger input.
-- QMD exists locally as a reference repo and is a good fit for markdown search.
+- `poem_loop` and `software_engineering_demo` already use local `issue.md` inputs as the shared ledger input.
+- `README.md` still points at QMD as the target search layer for future memory.
+- The old local `for_reference_only/qmd/` checkout is no longer present in this repo.
 
 ## 2.2 What’s broken / missing (concrete)
 
@@ -222,9 +289,11 @@ It is not a claim about the current repo state.
 - The shared stdlib does not yet expose the issue ledger to every Rally-managed agent.
 - The shared stdlib does not yet expose the current agent slug to prompts.
 - The shared stdlib does not yet define a memory entry shape, a shared memory skill, or a shared memory read order.
-- One flow still carries its own generic issue-ledger input instead of inheriting that from the stdlib.
+- Two live flows still carry their own generic issue-ledger inputs instead of inheriting that from the stdlib.
+- The built-in skill pipeline does not yet know about `rally-memory`.
 - There is no Rally-owned CLI for memory search, use, save, and refresh.
 - There is no repo-local QMD contract yet.
+- There is no pinned repo-owned QMD bridge yet, so Rally still has no clean way to call the QMD SDK from Python.
 - There is no visible `memory_used` or `memory_saved` record yet.
 
 ## 2.3 Constraints implied by the problem
@@ -240,10 +309,10 @@ It is not a claim about the current repo state.
 
 ## 3.1 External anchors (papers, systems, prior art)
 
-- `for_reference_only/qmd/README.md` — adopt QMD as the search engine shape because it already supports markdown collections, keyword and vector search, reranking, and JSON output.
-- `for_reference_only/qmd/src/store.ts` and `for_reference_only/qmd/src/index.ts` — adopt QMD's explicit path configuration surface because Rally needs to force repo-local paths.
-- `for_reference_only/qmd/src/collections.ts` and `for_reference_only/qmd/src/llm.ts` — reject QMD's default path behavior because the defaults still fall back to home-dir cache and config locations that Rally forbids.
-- No web research is needed for this pass. The local QMD checkout is enough to settle the storage and path-ownership question.
+- `README.md` — keeps the product-level claim that Rally memory should use markdown files plus QMD search.
+- QMD's official `v2.1.0` README says the SDK `createStore()` path requires an explicit `dbPath`, supports inline config or `configPath`, and supports collection add, search, update, and embed calls. That is the clean embed seam for Rally.
+- QMD's official README says the CLI and MCP defaults still use `~/.cache/qmd/` for the index, model cache, and daemon PID path. QMD's latest `v2.1.0` release also says model cache now respects `XDG_CACHE_HOME`.
+- npm's official `npm ci` docs say installs stay frozen to `package-lock.json`. That fits a small repo-owned Node bridge better than floating `npx` installs.
 
 ## 3.2 Internal ground truth (code as spec)
 
@@ -252,10 +321,13 @@ It is not a claim about the current repo state.
   - `stdlib/rally/prompts/rally/base_agent.prompt` — is the current shared base contract for inherited inputs and skills.
   - `stdlib/rally/prompts/rally/issue_ledger.prompt` — already owns the issue-ledger append target shape.
   - `stdlib/rally/prompts/rally/notes.prompt` — already maps shared note output onto the issue-ledger append target.
+  - `src/rally/services/flow_build.py` — already emits Doctrine flow docs and built-in Doctrine skills through the workspace toolchain.
+  - `src/rally/services/framework_assets.py` — already syncs reserved framework-owned built-ins into external workspaces.
   - `src/rally/services/home_materializer.py` — already enforces `home/issue.md` and already materializes mandatory ambient skills.
+  - `src/rally/services/skill_bundles.py` — already defines the built-in skill list and skill source kinds.
   - `src/rally/domain/flow.py` and `src/rally/services/flow_loader.py` — already model flow agents, compiled agents, and agent slugs.
   - `src/rally/adapters/codex/launcher.py` — already injects `RALLY_AGENT_SLUG`.
-  - `flows/poem_loop/prompts/shared/inputs.prompt` and `flows/poem_loop/prompts/shared/outputs.prompt` — already prove that Doctrine can carry structured issue-ledger inputs and structured note documents.
+  - `flows/poem_loop/prompts/shared/inputs.prompt`, `flows/software_engineering_demo/prompts/shared/inputs.prompt`, and `flows/poem_loop/prompts/shared/outputs.prompt` — already prove that Doctrine can carry structured issue-ledger inputs and structured note documents.
 
 - Canonical path / owner to reuse:
   - `stdlib/rally/prompts/rally/issue_ledger.prompt` — should own the shared issue-ledger input and the shared issue-ledger target contract.
@@ -272,8 +344,8 @@ It is not a claim about the current repo state.
 
 - Prompt surfaces / agent contract to reuse:
   - `stdlib/rally/prompts/rally/base_agent.prompt` — should carry inherited issue-ledger input, inherited agent-slug input, shared read-order blocks, and the required skill set.
-  - `skills/rally-kernel/SKILL.md` — should stay the note-only boundary.
-  - new `skills/rally-memory/SKILL.md` — should teach the front-door memory commands and when to use them.
+  - `skills/rally-kernel/prompts/SKILL.prompt` — should stay the note-only boundary.
+  - new `skills/rally-memory/prompts/SKILL.prompt` — should teach the front-door memory commands and when to use them.
 
 - Native model or agent capabilities to lean on:
   - Rally-managed agents already know how to read shared file inputs, follow ordered readable workflow fields, use shared skills, and end turns with strict final JSON.
@@ -281,11 +353,13 @@ It is not a claim about the current repo state.
 
 - Existing grounding / tool / file exposure:
   - `home/issue.md` already exists as the shared run ledger in the runtime.
-  - `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_AGENT_SLUG` already exist or can exist as env inputs.
+  - `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER` already exist for launched agents.
+  - `RALLY_AGENT_KEY`, `RALLY_ISSUE_PATH`, `RALLY_RUN_HOME`, and `RALLY_FLOW_HOME` already exist for prompt-input and setup helper commands.
   - `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"` already exists as the shared note front door.
 
 - Duplicate or drifting paths relevant to this change:
   - `flows/poem_loop/prompts/shared/inputs.prompt` still defines a local `issue.md` input instead of inheriting the shared issue ledger.
+  - `flows/software_engineering_demo/prompts/shared/inputs.prompt` does the same thing for a second live flow.
   - generic note behavior lives in the shared stdlib, but there is no matching shared memory contract yet.
   - `src/rally/services/event_log.py` is an unused event writer while the live runtime already uses `src/rally/services/run_events.py`.
 
@@ -304,20 +378,102 @@ It is not a claim about the current repo state.
 
 ## 3.3 Decision gaps that must be resolved before implementation
 
-- No user blocker question remains.
-- The main plan-shaping choices are now locked:
-  - the shared issue-ledger input lives in `stdlib/rally/prompts/rally/issue_ledger.prompt`
-  - the shared memory contract lives in a new `stdlib/rally/prompts/rally/memory.prompt`
-  - `stdlib/rally/prompts/rally/base_agent.prompt` inherits the issue ledger, the current agent slug, shared read-order fields, and the `rally-memory` skill
-  - the compiled Doctrine agent slug is the source of truth and `RALLY_AGENT_SLUG` is its runtime mirror
-  - one shared repo-local QMD store lives under `runs/memory/qmd/` with one collection per flow-agent scope
-  - `memory search` is discovery only, while `memory use` and `memory save` are the visible trusted actions
-  - `poem_loop` must converge onto the shared issue-ledger contract and stop carrying a generic local issue input
-- No unresolved plan-shaping decisions remain in this artifact.
+None. The locked QMD seam now lives in the external research block below.
 <!-- arch_skill:block:research_grounding:end -->
 
+<!-- arch_skill:block:external_research:start -->
+# External Research (best-in-class references; plan-adjacent)
+
+> Goal: anchor the plan in idiomatic, broadly accepted practices where applicable. This section intentionally avoids project-specific internals.
+
+## Topics researched (and why)
+- QMD embed seam — Rally is Python, QMD is Node, and the plan needed one clean way to pin and call QMD without inheriting raw CLI defaults.
+- Repo-local cache and model state — Rally forbids hidden home-dir state, so the plan needed a sourced cache-root rule.
+- Collection scoping and rebuild path — the plan wants one shared store, per-flow-agent scope, and markdown files as the durable truth.
+
+## Findings + how we apply them
+
+### QMD embed seam
+- Best practices (synthesized):
+  - Use the QMD SDK when another app owns the runtime. The official README shows `createStore()` with explicit `dbPath`, inline config, `configPath`, and DB-only reopen.
+  - Keep the bridge small. Let the host app own policy, paths, and commands.
+- Adopt for this plan:
+  - Pin QMD to `@tobilu/qmd` `v2.1.0`.
+  - Add a tiny repo-owned Node bridge at `tools/qmd_bridge/package.json`, `tools/qmd_bridge/package-lock.json`, and `tools/qmd_bridge/main.mjs`.
+  - Have `src/rally/memory/index.py` call that bridge, not raw `qmd` CLI or QMD MCP.
+- Reject for this plan:
+  - Do not make raw `qmd` CLI calls the main runtime seam.
+  - Do not run the QMD MCP daemon inside Rally as the memory backend.
+  - Do not rely on floating `npx` installs at runtime.
+- Pitfalls / footguns:
+  - Raw CLI defaults still assume `~/.cache/qmd/index.sqlite`.
+  - `qmd mcp --http --daemon` writes its PID under `~/.cache/qmd/`.
+  - Floating installs hide the exact package version Rally is using.
+- Sources:
+  - QMD README `v2.1.0` — https://github.com/tobi/qmd/blob/v2.1.0/README.md — official SDK and CLI guidance from the project
+  - QMD Releases `v2.1.0` — https://github.com/tobi/qmd/releases/tag/v2.1.0 — latest release on April 5, 2026, with path-related fixes
+  - npm `npm ci` docs — https://docs.npmjs.com/cli/v8/commands/npm-ci/ — official frozen-install guidance for lockfile-based Node workspaces
+
+### Repo-local cache and model state
+- Best practices (synthesized):
+  - QMD's CLI defaults place the index and model cache under `~/.cache/qmd/`.
+  - QMD honors `XDG_CACHE_HOME`, and the latest release calls out a fix so model cache now follows that setting too.
+  - Apps that forbid hidden home-dir state should force the cache root on every call, not only in docs.
+- Adopt for this plan:
+  - Force `XDG_CACHE_HOME` to `runs/memory/qmd/cache` for every bridge call.
+  - Set SDK `dbPath` to `runs/memory/qmd/index.sqlite`.
+  - Treat "no new writes under `~/.cache/qmd/`" as a required proof for the first runtime pass.
+- Reject for this plan:
+  - Do not rely on default cache roots.
+  - Do not keep a second QMD cache or model root under the operator's home directory.
+  - Do not keep a separate Rally-owned QMD config directory when inline SDK config is enough.
+- Pitfalls / footguns:
+  - First use downloads models from HuggingFace, so the first proof needs network and enough disk.
+  - Missing `XDG_CACHE_HOME` on any bridge call sends QMD back to home-dir cache defaults.
+- Sources:
+  - QMD README `v2.1.0` — https://github.com/tobi/qmd/blob/v2.1.0/README.md — official default paths, model cache notes, and env var support
+  - QMD Releases `v2.1.0` — https://github.com/tobi/qmd/releases/tag/v2.1.0 — latest release note that model cache now respects `XDG_CACHE_HOME`
+
+### Collection scoping and rebuild path
+- Best practices (synthesized):
+  - QMD already supports multi-collection stores, scoped search, collection updates, and DB reopen.
+  - When source files live on disk, the index should be treated as rebuildable from those files.
+  - Scope should stay native to the retrieval tool when the tool already has collections.
+- Adopt for this plan:
+  - Keep one DB at `runs/memory/qmd/index.sqlite`.
+  - Use one collection per `flow_code` plus compiled `agent_slug`.
+  - Keep markdown truth under `runs/memory/entries/<flow_code>/<agent_slug>/`.
+  - Make `rally memory refresh` rebuild QMD state from those markdown files.
+- Reject for this plan:
+  - Do not create one separate QMD DB per run or per agent.
+  - Do not add a Rally-side search shim that re-implements collection scope in Python.
+- Pitfalls / footguns:
+  - Model changes can force re-embed work, so v1 should keep one fixed model choice.
+  - Search and refresh calls should always pass the scoped collection list, not rely on default collections.
+- Sources:
+  - QMD README `v2.1.0` — https://github.com/tobi/qmd/blob/v2.1.0/README.md — official SDK collection, search, update, and reopen behavior
+
+## Adopt / Reject summary
+- Adopt:
+  - a repo-owned Node bridge with a lockfile-backed `@tobilu/qmd` `v2.1.0` dependency
+  - SDK `createStore()` with explicit `dbPath` and inline config
+  - forced `XDG_CACHE_HOME` under `runs/memory/qmd/cache`
+  - one shared DB plus one collection per flow-agent scope
+- Reject:
+  - raw CLI or MCP daemon as Rally's core QMD seam
+  - home-dir cache defaults
+  - a separate QMD config directory in Rally's runtime layout
+  - floating runtime installs with no lockfile
+
+## Decision gaps that must be resolved before implementation
+- None.
+<!-- arch_skill:block:external_research:end -->
+
 <!-- arch_skill:block:current_architecture:start -->
-# 4) Current Architecture (as-is)
+# 4) Current Architecture (implementation-start snapshot)
+
+This section keeps the repo snapshot from when the work started.
+Use Section 0.0, the phase status blocks, and the worklog for the current shipped state.
 
 ## 4.1 On-disk structure
 
@@ -327,16 +483,19 @@ It is not a claim about the current repo state.
   - `notes.prompt` maps the shared note output onto that target.
   - there is no shared memory prompt module yet.
 - Shared Rally skills live under `skills/`.
-  - `rally-kernel` exists.
+  - `rally-kernel` source lives in `skills/rally-kernel/prompts/SKILL.prompt`.
   - `rally-memory` does not exist yet.
 - Runtime seams live under `src/rally/services/` and `src/rally/adapters/`.
+  - `flow_build.py`, `framework_assets.py`, and `skill_bundles.py` already define how built-in skills are emitted, synced, and treated as mandatory.
   - `home_materializer.py` prepares `home/issue.md`, syncs compiled agents, and materializes mandatory skills.
   - `flow_loader.py` loads compiled agents and flow agent metadata.
   - `launcher.py` builds the Codex env.
   - `issue_ledger.py` and `run_events.py` are already real runtime surfaces.
   - there are no `memory_store.py` or `memory_index.py` services yet.
+- There is no repo-owned Node bridge for QMD yet.
 - `runs/` exists, but there is no checked-in cross-run memory root under it yet.
-- `flows/poem_loop` still carries a local issue-ledger input and custom note structures as flow-local prompt source.
+- There is no local QMD reference tree in the repo anymore.
+- `flows/poem_loop` and `flows/software_engineering_demo` still carry local issue-ledger inputs as flow-local prompt source.
 
 ## 4.2 Control paths (runtime)
 
@@ -347,10 +506,12 @@ It is not a claim about the current repo state.
   - `RALLY_RUN_ID`
   - `RALLY_FLOW_CODE`
   - `RALLY_AGENT_SLUG`
+  - `RALLY_TURN_NUMBER`
   - the ambient `rally-kernel` skill
   - one final JSON control path through `rally.turn_results`
+- Prompt-input commands and setup scripts already get `RALLY_AGENT_KEY`, `RALLY_ISSUE_PATH`, `RALLY_RUN_HOME`, and `RALLY_FLOW_HOME`.
 - The shared prompt contract does not yet expose `RALLY_AGENT_SLUG` or the issue ledger to agents.
-- One flow (`poem_loop`) works around that gap with its own local issue-ledger input.
+- Two flows (`poem_loop` and `software_engineering_demo`) work around that gap with their own local issue-ledger inputs.
 - There is no current memory path for:
   - memory discovery
   - memory retrieval as a visible runtime event
@@ -415,36 +576,47 @@ It is not a claim about the current repo state.
 - Keep the note-only surface in:
   - `stdlib/rally/prompts/rally/notes.prompt`
 - Add one shared memory skill package:
-  - `skills/rally-memory/SKILL.md`
+  - `skills/rally-memory/prompts/SKILL.prompt`
+  - emitted readback at `skills/rally-memory/build/SKILL.md`
+- Wire the built-in skill pipeline through:
+  - `src/rally/services/skill_bundles.py`
+  - `src/rally/services/flow_build.py`
+  - `src/rally/services/framework_assets.py`
 - Keep durable memory source files under:
   - `runs/memory/entries/<flow_code>/<agent_slug>/<memory_id>.md`
+  - this shared root sits beside `runs/active/` and `runs/archive/`
+- Add one small repo-owned QMD bridge workspace under:
+  - `tools/qmd_bridge/package.json`
+  - `tools/qmd_bridge/package-lock.json`
+  - `tools/qmd_bridge/main.mjs`
 - Keep one shared Rally-owned QMD state root under:
   - `runs/memory/qmd/index.sqlite`
-  - `runs/memory/qmd/config/`
   - `runs/memory/qmd/cache/`
 - Add runtime backing under:
-  - `src/rally/domain/memory.py`
-  - `src/rally/services/memory_store.py`
-  - `src/rally/services/memory_index.py`
+  - `src/rally/memory/models.py`
+  - `src/rally/memory/store.py`
+  - `src/rally/memory/index.py`
+  - `src/rally/memory/service.py`
+  - `src/rally/memory/events.py`
 
 ## 5.2 Control paths (future)
 
 1. Doctrine stdlib owns the shared agent-facing memory contract.
    - `issue_ledger.prompt` defines the shared issue-ledger input and append target.
-   - `memory.prompt` defines the shared memory document, the shared memory skill declaration, and the shared read-order and turn-sequence workflow blocks.
+   - `memory.prompt` defines the shared memory document and the shared memory skill declaration.
    - `base_agent.prompt` imports those pieces and makes them part of the inherited Rally-managed contract.
 
 2. Every Rally-managed agent inherits the shared contract.
    - The issue ledger is always available as a shared input.
    - The current agent slug is always available as a shared env input.
    - `rally-memory` is part of `RallyManagedSkills`.
-   - Shared read-order fields tell the agent to read the issue first, check memory when it matters, do the flow-local job, and save a reusable lesson before the turn ends when needed.
    - Flow-local prompts keep their own job logic, artifacts, and review rules. They do not restate the generic memory lifecycle.
 
 3. Rally runtime backs the shared contract.
    - The flow loader and runner keep the compiled Doctrine agent slug as the agent-scope truth.
    - `RALLY_AGENT_SLUG` is a runtime mirror of that compiled slug.
    - The memory CLI resolves current scope from `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_AGENT_SLUG` by default.
+   - `src/rally/memory/index.py` talks only to the pinned Node bridge, which opens QMD through SDK `createStore()` with explicit `dbPath` and forced `XDG_CACHE_HOME`.
 
 4. `rally memory search` is discovery only.
    - It searches only the current flow-agent collection.
@@ -454,14 +626,14 @@ It is not a claim about the current repo state.
 5. `rally memory use` is the front door for actual retrieval.
    - It returns the selected memory.
    - It records a `memory_used` runtime event.
-   - It appends a normalized `Memory Used` record into `home/issue.md`.
+   - It does not append a memory-specific block into `home/issue.md`.
 
 6. `rally memory save` is the front door for durable learning.
    - It accepts memory content that matches the shared memory document body shape.
    - It writes or updates one markdown memory file.
    - It refreshes only the current flow-agent collection in QMD.
    - It records a `memory_saved` runtime event with `created` or `updated`.
-   - It appends a normalized `Memory Saved` record into `home/issue.md`.
+   - It does not append a memory-specific block into `home/issue.md`.
 
 7. `rally memory refresh` is the repair path.
    - It rebuilds QMD state from markdown memory files.
@@ -473,7 +645,8 @@ It is not a claim about the current repo state.
 
 - Shared Doctrine contract
   - `RallyIssueLedger` input
-    - required file input for `home/issue.md`
+    - required file input for run-home-relative `issue.md`
+    - maps to the runtime ledger at `home/issue.md`
   - `RallyAgentSlug` input
     - env input for `RALLY_AGENT_SLUG`
     - documented as the runtime mirror of the compiled agent slug
@@ -526,17 +699,18 @@ It is not a claim about the current repo state.
 
 ## 5.4 Invariants and boundaries
 
-- Doctrine owns the shared issue-ledger input, shared memory skill, shared memory body shape, and shared read-order blocks.
-- Rally owns memory file writes, memory file updates, QMD configuration, CLI behavior, event records, and issue appends.
+- Doctrine owns the shared issue-ledger input, shared memory skill, and shared memory body shape.
+- Rally owns memory file writes, memory file updates, QMD configuration, CLI behavior, and event records.
 - The compiled Doctrine agent slug is the source of truth for agent scope.
 - `FlowAgent.slug` and `RALLY_AGENT_SLUG` must reflect that compiled slug, not a parallel meaning.
 - `home/issue.md` stays the shared run ledger.
 - Flow-local prompts do not carry generic issue-ledger lookup rules once the shared stdlib input exists.
-- Flow-local prompts do not carry generic memory timing rules once the shared read-order blocks exist.
+- Flow-local prompts do not carry generic notes-versus-memory framing.
 - Agents never write memory files directly.
 - Agents never call raw QMD directly.
+- Python code never shells to ambient `qmd`, `npx`, or QMD MCP. It only talks to the pinned repo-owned bridge.
 - `search` is discovery only.
-- Only `use` and `save` append trusted issue-ledger readback.
+- Only `use` and `save` create visible memory activity through runtime events and durable markdown.
 - Memory records are context only. They are never route truth.
 - No cross-flow or cross-agent memory sharing in v1.
 - No fallback paths to global QMD state.
@@ -554,7 +728,7 @@ rally memory search --run-id POM-7 --query "tighten the next revision"
 rally memory use --run-id POM-7 mem_pom_poem_critic_revision_guard
   -> returns the selected memory
   -> logs memory_used
-  -> appends "Memory Used" to home/issue.md
+  -> leaves home/issue.md unchanged
 
 rally memory save --run-id POM-7 <<'EOF'
 # Lesson
@@ -569,36 +743,37 @@ EOF
   -> writes or updates one markdown memory file
   -> refreshes the scoped QMD collection
   -> logs memory_saved(created|updated)
-  -> appends "Memory Saved" to home/issue.md
+  -> leaves home/issue.md unchanged
 ```
 <!-- arch_skill:block:target_architecture:end -->
 
 <!-- arch_skill:block:call_site_audit:start -->
-# 6) Call-Site Audit (exhaustive change inventory)
+# 6) Call-Site Audit (implementation-start inventory)
 
 ## 6.1 Change map (table)
 | Area | File | Symbol / Call site | Current behavior | Required change | Why | New API / contract | Tests impacted |
 | ---- | ---- | ------------------ | ---------------- | --------------- | --- | ------------------ | -------------- |
-| Shared issue contract | `stdlib/rally/prompts/rally/issue_ledger.prompt` | shared issue target only | defines append target only; no shared file input | add shared `RallyIssueLedger` file input for `home/issue.md` and keep the append target here | the shared issue ledger must be native to the stdlib, not flow-local | shared issue-ledger input and target contract | readback inspection, flow build tests |
+| Shared issue contract | `stdlib/rally/prompts/rally/issue_ledger.prompt` | shared issue target only | defines append target only; no shared file input | add shared `RallyIssueLedger` file input for run-home-relative `issue.md` and keep the append target here | the shared issue ledger must be native to the stdlib, not flow-local | shared issue-ledger input and target contract | readback inspection, flow build tests |
 | Shared base agent | `stdlib/rally/prompts/rally/base_agent.prompt` | `RallyManagedInputs`, `RallyManagedSkills`, `RallyManagedBaseAgent` | exposes base dir, run id, flow code, note output, and `rally-kernel` only | import issue-ledger and memory modules; add `RallyAgentSlug`; inherit the shared issue ledger; add shared read-order fields; add `rally-memory` to `RallyManagedSkills` | the shared Rally contract must carry the generic memory lifecycle | Rally-managed shared issue, slug, skill, and read-order contract | readback inspection |
 | Shared memory contract | `stdlib/rally/prompts/rally/memory.prompt` | new module | missing | add `RallyMemorySkill`, `RallyMemoryEntryDocument`, and shared read-order / turn-sequence workflow fields | memory shape and timing should live in Doctrine source | shared memory prompt contract | flow build tests, readback inspection |
 | Shared note path | `stdlib/rally/prompts/rally/notes.prompt` | `RallyIssueNote` | note-only append output | keep note-only role explicit and point to the memory split when helpful | notes and memory must not collapse together | note-only shared output contract | readback inspection |
-| Shared memory skill | `skills/rally-memory/SKILL.md` | new skill package | missing | add the thin shared skill that teaches `search`, `use`, `save`, and `refresh` through Rally CLI | the skill should reinforce the shared authored contract, not replace it | `rally-memory` skill contract | skill/readback inspection |
-| Shared kernel skill | `skills/rally-kernel/SKILL.md` | note guidance | teaches note path and final JSON | clarify that notes are run-local and cross-run memory belongs to `rally-memory` | keeps note and memory boundaries explicit | note-only contract | skill inspection |
-| Flow-local proof input | `flows/poem_loop/prompts/shared/inputs.prompt` | `IssueLedger` | defines a local `issue.md` input | remove the generic local issue-ledger input and inherit the shared stdlib input instead | avoid a second generic ledger story | shared issue-ledger contract adoption | compile/readback inspection |
-| Flow-local proof prose | `flows/poem_loop/prompts/shared/contracts.prompt` and `flows/poem_loop/prompts/AGENTS.prompt` | issue-ledger and primary-path prose | still talks about `issue.md` as the shared ledger | update to `home/issue.md` and the inherited shared issue contract | keep the flow proof aligned with Rally truth | synced flow prompt contract | compile/readback inspection |
-| Flow readback | `flows/_stdlib_smoke/build/**` and `flows/poem_loop/build/**` | compiled agents | current readback does not show shared memory contract | rebuild after stdlib changes and inspect representative agents | readback must tell the truth about the shared contract | rebuilt compiled readback | `tests/unit/test_flow_build.py` plus readback inspection |
+| Shared memory skill | `skills/rally-memory/prompts/SKILL.prompt` | new Doctrine skill package | missing | add the thin shared skill that teaches `search`, `use`, `save`, and `refresh` through Rally CLI | the skill should reinforce the shared authored contract, not replace it | `rally-memory` skill contract | skill/readback inspection, flow build tests |
+| Shared kernel skill | `skills/rally-kernel/prompts/SKILL.prompt` | note guidance | teaches note path and final JSON | clarify that notes are run-local and cross-run memory belongs to `rally-memory` | keeps note and memory boundaries explicit | note-only contract | skill inspection |
+| Built-in skill pipeline | `src/rally/services/skill_bundles.py`, `src/rally/services/flow_build.py`, `src/rally/services/framework_assets.py`, `src/rally/services/workspace.py` | built-in skill list, emit path, framework sync, workspace copy | the built-in path only knows about `rally-kernel` today | register, emit, sync, and materialize `rally-memory` as a Rally built-in beside `rally-kernel` | memory should be shared Rally behavior, not a per-flow allowlist detail | built-in `rally-memory` lifecycle contract | `tests/unit/test_flow_build.py`, `tests/unit/test_framework_assets.py`, `tests/unit/test_runner.py` |
+| Flow-local generic ledger inputs | `flows/poem_loop/prompts/shared/inputs.prompt`, `flows/software_engineering_demo/prompts/shared/inputs.prompt` | `IssueLedger` | both flows define local `issue.md` inputs | remove the generic local issue-ledger inputs and inherit the shared stdlib input instead | avoid a second generic ledger story | shared issue-ledger contract adoption | compile/readback inspection |
+| Flow-local ledger prose | `flows/poem_loop/prompts/**`, `flows/software_engineering_demo/prompts/**` | issue-ledger wording | flow prose still carries some generic ledger explanation | keep `issue.md` as the run-home-relative prompt path, but move the generic ledger contract into stdlib and leave only flow-local meaning in the flows | keep flow prose aligned with Rally truth | synced flow prompt contract | compile/readback inspection |
+| Flow readback | `flows/_stdlib_smoke/build/**`, `flows/poem_loop/build/**`, and `flows/software_engineering_demo/build/**` | compiled agents | current readback does not show shared memory contract | rebuild after stdlib changes and inspect representative agents | readback must tell the truth about the shared contract | rebuilt compiled readback | `tests/unit/test_flow_build.py` plus readback inspection |
 | Flow loader | `src/rally/services/flow_loader.py` | slug loading | derives `FlowAgent.slug` from flow key, then validates against compiled artifacts | tighten the loader so the compiled contract slug is treated as the carried source of truth after validation | runtime scope should follow Doctrine identity, not a second long-lived derivation | compiled-slug-backed flow-agent identity contract | `tests/unit/test_flow_loader.py` |
 | Flow domain | `src/rally/domain/flow.py` | `CompiledAgentContract.slug`, `FlowAgent.slug` | already models agent slug | preserve the compiled slug as the canonical carried identity and document the boundary with small code comments if needed | one source of truth for agent scope | canonical slug contract | `tests/unit/test_flow_loader.py` |
 | Launcher | `src/rally/adapters/codex/launcher.py` | `build_codex_launch_env` | already injects `RALLY_AGENT_SLUG` | keep env injection, but treat it as a projection of compiled slug and extend tests around that meaning if needed | no new identity source should appear | runtime slug projection contract | `tests/unit/test_launcher.py` |
 | CLI | `src/rally/cli.py` | command surface | only `run` and `resume` are live | add `memory search`, `memory use`, `memory save`, and `memory refresh` | memory must be a first-class Rally surface | memory CLI contract | CLI unit tests |
 | Pure domain | `src/rally/domain/memory.py` | new domain contracts | missing | add `MemoryScope`, `MemoryEntry`, `MemorySearchHit`, `MemorySaveOutcome`, and `MemoryEvent` | keep policy out of CLI parsing and file glue | typed memory domain contract | domain unit tests |
 | Source-of-truth service | `src/rally/services/memory_store.py` | new service | missing | write and update markdown memory files under `runs/memory/entries/...` and validate body shape against the shared contract | markdown must stay the durable truth | markdown memory store contract | store unit tests |
-| QMD wrapper | `src/rally/services/memory_index.py` | new service | missing | own repo-local QMD paths, collection sync, scoped search, use, and refresh | raw QMD defaults violate Rally path rules | repo-local QMD wrapper contract | index unit tests |
+| QMD bridge workspace | `tools/qmd_bridge/package.json`, `tools/qmd_bridge/package-lock.json`, `tools/qmd_bridge/main.mjs` | pinned Node bridge | missing | pin `@tobilu/qmd` `v2.1.0`, open QMD through SDK `createStore()`, and expose a tiny bridge API to Python | Rally is Python and QMD is Node; the SDK avoids raw CLI defaults and keeps the seam explicit | pinned QMD bridge contract | bridge smoke proof |
+| QMD wrapper | `src/rally/services/memory_index.py` | new service | missing | force `XDG_CACHE_HOME`, pass explicit `dbPath`, call the repo-owned bridge, and own collection sync plus scoped search, use, and refresh | raw QMD defaults violate Rally path rules and Python cannot import the Node SDK directly | repo-local QMD wrapper contract | index unit tests |
 | Issue ledger | `src/rally/services/issue_ledger.py` | trusted appends | supports notes and issue edit records | add normalized `Memory Used` and `Memory Saved` append paths | use and save must show up in the shared ledger | memory issue-ledger contract | `tests/unit/test_issue_ledger.py` |
 | Runtime events | `src/rally/services/run_events.py` | `RunEventRecorder` | live structured event stream | add `memory_used` and `memory_saved` events here, not in a second event path | memory events should use the same live runtime surface | canonical memory event contract | `tests/unit/test_run_events.py`, `tests/unit/test_runner.py` |
 | Stale event path | `src/rally/services/event_log.py` | `append_event` | unused helper writer | delete it or leave it untouched but do not use it for memory; converge memory events onto `run_events.py` | avoid a second event writer path | delete or explicit non-owner status | event-path audit during implementation |
-| Home materialization | `src/rally/services/home_materializer.py` | `_MANDATORY_SKILLS` and skill copy path | `rally-kernel` is the only mandatory ambient skill | materialize `rally-memory` as a Rally-managed ambient skill beside `rally-kernel` | memory should be shared Rally behavior, not per-flow allowlist config | ambient skill materialization contract | materializer tests |
 | Runner | `src/rally/services/runner.py` | launch and turn orchestration | already carries agent slug through turns and env | keep runner orchestration-only; do not move memory store or QMD logic into it | avoid a god module | orchestration boundary | `tests/unit/test_runner.py` |
 | Live docs | `docs/RALLY_MASTER_DESIGN_2026-04-12.md`, `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` | memory, ledger, CLI truth | do not yet describe the Doctrine-first memory split | sync these docs when memory ships | keep live docs aligned with shipped truth | live docs sync | docs review |
 
@@ -609,9 +784,11 @@ EOF
   - shared Rally-managed base contract: `stdlib/rally/prompts/rally/base_agent.prompt`
   - shared memory contract: `stdlib/rally/prompts/rally/memory.prompt`
   - shared note-only contract: `stdlib/rally/prompts/rally/notes.prompt`
-  - user-facing memory guidance: `skills/rally-memory/SKILL.md`
+  - user-facing memory guidance: `skills/rally-memory/prompts/SKILL.prompt`
+  - built-in skill pipeline: `src/rally/services/skill_bundles.py`, `src/rally/services/flow_build.py`, `src/rally/services/framework_assets.py`, and `src/rally/services/workspace.py`
   - front-door commands: `src/rally/cli.py`
   - durable markdown truth: `src/rally/services/memory_store.py`
+  - pinned QMD bridge: `tools/qmd_bridge/package.json`, `tools/qmd_bridge/package-lock.json`, and `tools/qmd_bridge/main.mjs`
   - repo-local QMD wrapper: `src/rally/services/memory_index.py`
   - trusted issue readback: `src/rally/services/issue_ledger.py`
   - canonical runtime events: `src/rally/services/run_events.py`
@@ -620,9 +797,10 @@ EOF
   - none yet; this is future-state design
 
 * Delete list (what must be removed; include superseded shims/parallel paths if any):
-  - the flow-local generic `IssueLedger` input in `flows/poem_loop/prompts/shared/inputs.prompt`
+  - the flow-local generic `IssueLedger` inputs in `flows/poem_loop/prompts/shared/inputs.prompt` and `flows/software_engineering_demo/prompts/shared/inputs.prompt`
   - any future flow-local generic memory timing prose once the shared stdlib memory contract exists
   - any direct raw `qmd` invocation from prompts or skills
+  - any floating `npx @tobilu/qmd` runtime path with no pinned lockfile
   - any direct agent write path to durable memory markdown files
   - any attempt to treat `RALLY_AGENT_SLUG` as a second identity source unrelated to the compiled contract slug
   - the unused `src/rally/services/event_log.py` path if memory work would otherwise bless it as a second event writer
@@ -634,13 +812,15 @@ EOF
   - sync `docs/RALLY_MASTER_DESIGN_2026-04-12.md` when memory ships
   - sync `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md` when issue-ledger and event surfaces change
   - sync `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` when the memory CLI and visible readback land
-  - rebuild compiled readback for `_stdlib_smoke` and `poem_loop`
+  - rebuild compiled readback for `_stdlib_smoke`, `poem_loop`, and `software_engineering_demo`
   - add only small high-leverage code comments at the canonical boundaries where future drift would be costly
 
 * Behavior-preservation signals for refactors:
   - `tests/unit/test_flow_build.py` must keep proving Rally compiles flows through Doctrine
+  - `tests/unit/test_framework_assets.py` must keep proving framework-owned built-ins stay synchronized
   - `tests/unit/test_flow_loader.py` must keep proving compiled agent contracts and final-output contracts load correctly
   - `tests/unit/test_launcher.py` must keep proving `RALLY_AGENT_SLUG` env injection
+  - `tests/unit/test_cli.py` must keep proving the CLI surface stays small and explicit
   - `tests/unit/test_issue_ledger.py` must keep proving trusted issue append behavior
   - `tests/unit/test_run_events.py` and `tests/unit/test_runner.py` must keep proving the live runtime event path
   - `tests/unit/domain/test_turn_result_contracts.py` must keep proving final JSON remains the only turn-ending control surface
@@ -648,9 +828,9 @@ EOF
 ## Pattern Consolidation Sweep (anti-blinders; scoped by plan)
 | Area | File / Symbol | Pattern to adopt | Why (drift prevented) | Proposed scope (include/defer/exclude/blocker question) |
 | ---- | ------------- | ---------------- | ---------------------- | ------------------------------------- |
-| Shared issue ledger | `stdlib/rally/prompts/rally/issue_ledger.prompt`, `flows/poem_loop/prompts/shared/inputs.prompt` | one inherited shared issue-ledger input | prevents each flow from teaching a different shared ledger path | include |
+| Shared issue ledger | `stdlib/rally/prompts/rally/issue_ledger.prompt`, `flows/poem_loop/prompts/shared/inputs.prompt`, `flows/software_engineering_demo/prompts/shared/inputs.prompt` | one inherited shared issue-ledger input | prevents each flow from teaching a different shared ledger path | include |
 | Shared read order | `stdlib/rally/prompts/rally/base_agent.prompt`, new `stdlib/rally/prompts/rally/memory.prompt` | shared read-first and turn-sequence workflow fields | keeps generic memory timing out of flow-local prose | include |
-| Shared skills | `stdlib/rally/prompts/rally/base_agent.prompt`, `skills/rally-kernel/`, new `skills/rally-memory/`, `src/rally/services/home_materializer.py` | Rally-managed ambient skills declared in stdlib and materialized by Rally | prevents flow-local allowlist drift and hidden runtime behavior | include |
+| Shared skills | `stdlib/rally/prompts/rally/base_agent.prompt`, `skills/rally-kernel/`, new `skills/rally-memory/`, `src/rally/services/skill_bundles.py`, `src/rally/services/flow_build.py`, `src/rally/services/framework_assets.py`, `src/rally/services/workspace.py` | Rally-managed ambient skills declared in stdlib and wired through the built-in skill pipeline | prevents flow-local allowlist drift and hidden runtime behavior | include |
 | Shared document shapes | new `stdlib/rally/prompts/rally/memory.prompt`, `flows/poem_loop/prompts/shared/outputs.prompt` | author durable markdown shapes in Doctrine `document` blocks | prevents runtime-only format rules | include |
 | Agent identity | `src/rally/domain/flow.py`, `src/rally/services/flow_loader.py`, `src/rally/adapters/codex/launcher.py` | compiled contract slug as source of truth, env as projection | prevents a second identity meaning from growing in runtime code | include |
 | Runtime events | `src/rally/services/run_events.py`, `src/rally/services/event_log.py` | one canonical live event path | prevents memory from blessing a second event writer | include |
@@ -664,11 +844,28 @@ EOF
 
 ## Phase 1 - Land the shared Doctrine memory contract
 
+Status
+- COMPLETE
+
+Completed work
+- Added `stdlib/rally/prompts/rally/memory.prompt`.
+- Extended the shared base agent with the shared issue-ledger input, `RALLY_AGENT_SLUG`, shared read-order fields, and `rally-memory`.
+- Added `skills/rally-memory/prompts/SKILL.prompt`.
+- Updated `skills/rally-kernel/prompts/SKILL.prompt` so note guidance stays note-only and memory guidance lives in `rally-memory`.
+- Converged `poem_loop` and `software_engineering_demo` off local generic issue-ledger inputs.
+- Wired `rally-memory` through the built-in skill path and rebuilt the affected flow and skill readback.
+
+Proof captured
+- `_stdlib_smoke`, `poem_loop`, and `software_engineering_demo` rebuild/readback
+- `tests/unit/test_flow_build.py`
+- `tests/unit/test_framework_assets.py`
+- `tests/unit/test_runner.py`
+
 Goal
 - Make the agent-facing memory model native to the shared Rally stdlib before any runtime memory backing is treated as complete.
 
 Work
-- Extend `stdlib/rally/prompts/rally/issue_ledger.prompt` with the shared issue-ledger input for `home/issue.md`.
+- Extend `stdlib/rally/prompts/rally/issue_ledger.prompt` with the shared issue-ledger input for run-home-relative `issue.md`.
 - Add `stdlib/rally/prompts/rally/memory.prompt` with:
   - `RallyMemorySkill`
   - `RallyMemoryEntryDocument`
@@ -678,10 +875,11 @@ Work
   - `RALLY_AGENT_SLUG`
   - the shared memory skill
   - the shared read-order fields
-- Update `skills/rally-kernel/SKILL.md` to keep notes and memory separate.
-- Add `skills/rally-memory/SKILL.md` as the thin shared front-door skill.
-- Converge `poem_loop` away from its local generic issue-ledger input and onto the shared stdlib contract.
-- Rebuild `_stdlib_smoke` and `poem_loop` after the prompt changes.
+- Update `skills/rally-kernel/prompts/SKILL.prompt` to keep notes and memory separate.
+- Add `skills/rally-memory/prompts/SKILL.prompt` as the thin shared front-door skill.
+- Register `rally-memory` through the built-in skill path in `skill_bundles.py`, `flow_build.py`, `framework_assets.py`, and `workspace.py`.
+- Converge `poem_loop` and `software_engineering_demo` away from their local generic issue-ledger inputs and onto the shared stdlib contract.
+- Rebuild `_stdlib_smoke`, `poem_loop`, and `software_engineering_demo` after the prompt changes.
 
 Verification (required proof)
 - Recompile the affected flows with the paired Doctrine compiler.
@@ -691,7 +889,7 @@ Verification (required proof)
   - visible `rally-memory` guidance
   - shared read-order fields
   - unchanged final JSON control rules
-- Keep `tests/unit/test_flow_build.py` and `tests/unit/domain/test_turn_result_contracts.py` green.
+- Keep `tests/unit/test_flow_build.py`, `tests/unit/test_framework_assets.py`, and `tests/unit/domain/test_turn_result_contracts.py` green.
 
 Docs/comments (propagation; only if needed)
 - Add one small code comment at the shared memory prompt boundary only if the authored contract would otherwise be easy to bypass later.
@@ -699,12 +897,31 @@ Docs/comments (propagation; only if needed)
 Exit criteria
 - The shared Rally stdlib, not flow-local prompts, owns the generic memory contract.
 - Compiled readback shows the shared contract honestly.
-- No flow still carries its own generic issue-ledger input.
+- No live flow still carries its own generic issue-ledger input.
+- `rally-memory` is wired through the same built-in skill path that already carries `rally-kernel`.
 
 Rollback
 - Revert the shared stdlib memory contract together if the change would leave a mix of shared and flow-local generic memory rules alive.
 
 ## Phase 2 - Land the runtime data plane and scope truth
+
+Status
+- COMPLETE
+
+Completed work
+- Added `src/rally/domain/memory.py`, `src/rally/services/memory_store.py`, `src/rally/services/memory_index.py`, and `src/rally/services/memory_runtime.py`.
+- Added the pinned QMD bridge workspace at `tools/qmd_bridge/`.
+- Extended `src/rally/cli.py` with `memory search`, `memory use`, `memory save`, and `memory refresh`.
+- Tightened `src/rally/services/flow_loader.py` so the compiled slug is the carried source of truth after validation.
+
+Proof captured
+- `tests/unit/test_memory_store.py`
+- `tests/unit/test_memory_index.py`
+- `tests/unit/test_memory_runtime.py`
+- `tests/unit/test_cli.py`
+- `tests/unit/test_flow_loader.py`
+- `tests/unit/test_launcher.py`
+- bridge smoke proof with repo-local `XDG_CACHE_HOME`
 
 Goal
 - Back the shared authored memory contract with one repo-local runtime path and one clear identity path.
@@ -712,8 +929,10 @@ Goal
 Work
 - Add `src/rally/domain/memory.py` with the memory domain contracts.
 - Add `src/rally/services/memory_store.py` so markdown files under `runs/memory/entries/<flow_code>/<agent_slug>/` become the durable truth.
+- Add `tools/qmd_bridge/package.json`, `tools/qmd_bridge/package-lock.json`, and `tools/qmd_bridge/main.mjs` as a tiny repo-owned bridge pinned to `@tobilu/qmd` `v2.1.0`.
 - Add `src/rally/services/memory_index.py` so Rally owns:
   - forced repo-local QMD paths
+  - explicit SDK `dbPath`
   - one shared store under `runs/memory/qmd/`
   - one collection per flow-agent scope
   - scoped search, retrieval, and refresh behavior
@@ -727,6 +946,7 @@ Verification (required proof)
   - memory file write and update behavior
   - scope resolution by flow plus compiled agent slug
   - `memory save` created-versus-updated outcomes
+- Run one bridge smoke proof with `XDG_CACHE_HOME="$PWD/runs/memory/qmd/cache"` and the pinned Node workspace, then confirm `~/.cache/qmd/` stays untouched.
 - Keep `tests/unit/test_launcher.py` and `tests/unit/test_flow_loader.py` green.
 - Run one CLI-level proof that a scoped memory can be saved, searched, used, and refreshed without touching global QMD paths.
 
@@ -744,14 +964,28 @@ Rollback
 
 ## Phase 3 - Wire visibility and ambient runtime behavior
 
+Status
+- COMPLETE
+
+Completed work
+- Extended `src/rally/services/issue_ledger.py` with normalized `Memory Used` and `Memory Saved` append paths.
+- Extended `src/rally/services/run_events.py` with `memory_used` and `memory_saved`.
+- Kept `memory search` out of the issue ledger.
+- Deleted the stale `src/rally/services/event_log.py` path.
+
+Proof captured
+- `tests/unit/test_issue_ledger.py`
+- `tests/unit/test_run_events.py`
+- `tests/unit/test_runner.py`
+- CLI and memory-runtime tests that prove search leaves the issue ledger alone while use/save append visible records
+
 Goal
-- Make real memory actions visible on Rally-owned surfaces and materialize the shared memory skill the same way Rally already materializes `rally-kernel`.
+- Make real memory actions visible on Rally-owned surfaces.
 
 Work
 - Extend `src/rally/services/issue_ledger.py` with normalized `Memory Used` and `Memory Saved` append paths.
 - Extend `src/rally/services/run_events.py` with `memory_used` and `memory_saved` runtime events.
 - Keep `memory search` out of the issue ledger.
-- Extend `src/rally/services/home_materializer.py` so `rally-memory` is materialized as a Rally-managed ambient skill.
 - Delete `src/rally/services/event_log.py` if it would otherwise remain as a stale parallel event path.
 - Keep `src/rally/services/runner.py` orchestration-only. Do not move store or QMD logic into it.
 
@@ -760,7 +994,6 @@ Verification (required proof)
   - `Memory Used` issue append formatting
   - `Memory Saved` issue append formatting
   - `memory_used` and `memory_saved` event payloads
-  - ambient `rally-memory` materialization
 - Add one CLI-level proof that `memory search` stays out of the issue ledger while `memory use` and `memory save` land there.
 - Keep `tests/unit/test_issue_ledger.py`, `tests/unit/test_run_events.py`, and `tests/unit/test_runner.py` green.
 
@@ -770,12 +1003,33 @@ Docs/comments (propagation; only if needed)
 Exit criteria
 - Memory use and save are first-class visible Rally events.
 - The issue ledger records only actual use and save actions.
-- `rally-memory` is materialized like other Rally-managed ambient behavior.
 
 Rollback
 - Revert the visibility wiring together if memory actions can happen without visible Rally-owned records or if search starts polluting the issue ledger.
 
 ## Phase 4 - Prove one flow and sync live truth
+
+Status
+- COMPLETE
+
+Completed work
+- Rebuilt the affected flows and inspected representative readback again.
+- Synced the live docs in this pass so the master design, runtime doc, and CLI/logging doc match the shipped memory path.
+- Ran the full unit suite and kept the memory-specific proof green.
+- Captured the missing real `poem_loop` proof on `POM-1`:
+  - turn 7 saved scoped memory through `rally memory save`
+  - turn 9 searched that memory and then used it through `rally memory use`
+  - `Memory Saved` and `Memory Used` landed in `home/issue.md`
+  - `memory_saved` and `memory_used` landed in the canonical event stream
+  - the writer still wrote the normal issue note and normal handoff JSON
+  - the run still ended `done` on turn 10 after critic acceptance
+- Hardened `src/rally/services/memory_index.py` after the live proof exposed two real issues:
+  - tolerate noisy bridge stdout by decoding the last JSON object on stdout
+  - recover canonical search hit ids and snippets from markdown source files when QMD returns virtual `qmd:/...` paths
+
+Missing (code)
+- None.
+- Fresh audit on 2026-04-13 confirmed this phase is closed.
 
 Goal
 - Finish with one believable end-to-end proof and one truthful repo-wide story about built-in memory.
@@ -795,7 +1049,7 @@ Work
 
 Verification (required proof)
 - Run the existing contract tests plus the new memory unit coverage.
-- Recompile `_stdlib_smoke` and `poem_loop`, then inspect representative readback.
+- Recompile `_stdlib_smoke`, `poem_loop`, and `software_engineering_demo`, then inspect representative readback.
 - Run one narrow real-flow proof that memory recall and learning work without changing routing, `done`, `blocker`, or `sleep` truth.
 
 Docs/comments (propagation; only if needed)
@@ -817,8 +1071,10 @@ Keep the proof set small and real. Prefer existing signals before adding new one
 ## 8.1 Unit tests (contracts)
 
 - Keep `tests/unit/test_flow_build.py` green so Rally still rebuilds flows through Doctrine.
+- Keep `tests/unit/test_framework_assets.py` green so framework-owned built-ins stay synchronized.
 - Keep `tests/unit/test_flow_loader.py` green so compiled agent contracts and slug handling stay strict.
 - Keep `tests/unit/test_launcher.py` green so `RALLY_AGENT_SLUG` stays projected into the adapter env.
+- Keep `tests/unit/test_cli.py` green and add memory CLI coverage.
 - Keep `tests/unit/test_issue_ledger.py` green so trusted issue appends and snapshots stay correct.
 - Keep `tests/unit/test_run_events.py` and `tests/unit/test_runner.py` green so the live runtime event path stays canonical.
 - Add small tests for repo-local QMD path forcing, memory file write and update rules, and memory scope resolution.
@@ -826,7 +1082,7 @@ Keep the proof set small and real. Prefer existing signals before adding new one
 
 ## 8.2 Integration tests (flows)
 
-- Recompile `_stdlib_smoke` and `poem_loop` and inspect representative generated agents for the shared memory contract.
+- Recompile `_stdlib_smoke`, `poem_loop`, and `software_engineering_demo` and inspect representative generated agents for the shared memory contract.
 - Add one narrow Rally integration check that proves memory lookup and save do not change note or routing behavior.
 - Add one narrow Rally integration check that proves `memory search` stays out of the issue ledger while `memory use` and `memory save` land there through the front door.
 
@@ -835,10 +1091,43 @@ Keep the proof set small and real. Prefer existing signals before adding new one
 - Keep E2E scope small in v1.
 - One believable real-flow proof is enough if it covers save, later retrieval, and visible runtime records.
 
+## 8.4 Execution proof captured in this pass
+
+- full unit suite:
+  - `uv run pytest tests/unit -q`
+  - `159 passed in 1.35s`
+- focused memory and runtime sweep:
+  - `tests/unit/test_memory_store.py`
+  - `tests/unit/test_memory_index.py`
+  - `tests/unit/test_memory_runtime.py`
+  - `tests/unit/test_cli.py`
+  - `tests/unit/test_issue_ledger.py`
+  - `tests/unit/test_run_events.py`
+  - `tests/unit/test_launcher.py`
+  - `tests/unit/test_flow_loader.py`
+  - `tests/unit/test_flow_build.py`
+  - `tests/unit/test_framework_assets.py`
+  - `tests/unit/test_runner.py`
+- bridge smoke:
+  - empty scoped refresh through `node tools/qmd_bridge/main.mjs refresh`
+  - result: `{"collections":1,"indexed":0,"updated":0,"unchanged":0,"removed":0,"needsEmbedding":0,"docsProcessed":0,"chunksEmbedded":0,"embedErrors":0}`
+  - confirmed no new `~/.cache/qmd/` path was created
+- targeted hardening proof after the live flow run:
+  - `uv run pytest tests/unit/test_memory_index.py tests/unit/test_memory_runtime.py tests/unit/test_cli.py -q`
+  - `27 passed in 0.11s`
+  - `uv run rally memory search --run-id POM-1 --agent-slug poem_writer --query 'stronger image or ending for poem critique'`
+  - search now prints the canonical memory id plus a short title and short snippet
+- real flow proof:
+  - `POM-1` used the real `poem_loop` path on Codex
+  - turn 7 saved memory
+  - turn 9 searched and used that memory
+  - turn 10 ended `done`
+
 # 9) Rollout / Ops / Telemetry
 
 ## 9.1 Rollout plan
 
+- Keep the pinned QMD bridge seam fixed from the first runtime pass. Do not reopen the dependency choice unless upstream behavior changes.
 - Land the shared authored contract before treating runtime memory as complete.
 - Roll out the runtime backing behind Rally-owned CLI and issue/event paths only.
 - Prove the feature on one Rally flow before widening it.
@@ -866,13 +1155,15 @@ Keep the proof set small and real. Prefer existing signals before adding new one
 - Findings summary:
   - the old artifact still treated memory as mostly runtime behavior instead of a shared authored contract
   - the old artifact still described `RALLY_AGENT_SLUG` as if it were a new identity source even though runtime injection already exists
-  - the old artifact missed the current `home/issue.md` runtime truth and the flow-local `poem_loop` drift
+  - the old artifact missed the second live flow-local issue-ledger path in `software_engineering_demo`
+  - the old artifact cited a local QMD checkout that no longer exists in this repo
+  - the old artifact used skill source paths that do not match Rally's current Doctrine-first skill pipeline
   - the old artifact pointed memory events at a stale placeholder path instead of the live runtime event path
 - Integrated repairs:
-  - rewrote TL;DR, Section 0, and Section 1 around a Doctrine-first memory contract
-  - rewrote Section 3 to anchor the plan in the current shared stdlib, current runtime slug injection, current issue-ledger runtime, and current flow-local drift
-  - reran the deep-dive in Sections 4 through 6 around the new owner split and current code truth
-  - updated Section 7, Section 8, Section 9, and Section 10 so the new architecture and phase order stay aligned
+  - kept the Doctrine-first memory contract, but replaced the reopened QMD placeholder with a pinned bridge design based on current upstream docs
+  - added an external research block with source-backed adopt and reject guidance for the QMD seam, cache root, and collection scope
+  - rewrote Section 3, Section 5, and Section 6 so the plan now names the repo-owned Node bridge, explicit `dbPath`, forced `XDG_CACHE_HOME`, and one-DB-per-system layout
+  - updated Section 7, Section 8, Section 9, and Section 10 so the phase order no longer waits on a missing grounding pass and instead starts from the locked QMD seam
 - Remaining inconsistencies:
   - none found
 - Unresolved decisions:
@@ -885,6 +1176,68 @@ Keep the proof set small and real. Prefer existing signals before adding new one
 <!-- arch_skill:block:consistency_pass:end -->
 
 # 10) Decision Log (append-only)
+
+## 2026-04-13 - Pin QMD to a repo-owned Node bridge on `@tobilu/qmd` `v2.1.0`
+
+Context
+- The old local `for_reference_only/qmd/*` grounding tree is gone.
+- QMD's official `v2.1.0` README says the SDK path needs an explicit `dbPath` and can run with inline config.
+- QMD's raw CLI and MCP defaults still write under `~/.cache/qmd/`, which breaks Rally's repo-local rule if Rally uses them as-is.
+- GitHub releases show `v2.1.0` is the latest release as of April 5, 2026.
+
+Decision
+- Pin QMD through a tiny repo-owned Node bridge at `tools/qmd_bridge/`.
+- Commit `package.json` and `package-lock.json`.
+- Call the QMD SDK through that bridge, not through raw CLI or MCP.
+
+Consequences
+- Rally gets one exact QMD dependency path instead of ambient installs.
+- `src/rally/memory/index.py` stays small and talks only to the bridge.
+- The plan no longer needs a separate pre-implementation grounding phase.
+
+## 2026-04-13 - Force repo-local QMD state with explicit `dbPath` and `XDG_CACHE_HOME`
+
+Context
+- QMD's official README says the SDK requires explicit `dbPath`.
+- The official README says the CLI defaults store the index in `~/.cache/qmd/index.sqlite` and models in `~/.cache/qmd/models/`.
+- The latest release says model cache now respects `XDG_CACHE_HOME`.
+
+Decision
+- Set QMD SDK `dbPath` to `runs/memory/qmd/index.sqlite`.
+- Force `XDG_CACHE_HOME` to `runs/memory/qmd/cache` on every bridge call.
+- Drop the separate `runs/memory/qmd/config/` path from the plan and use inline SDK config in v1.
+
+Consequences
+- Rally keeps the index and model cache repo-local.
+- The first runtime proof must show that `~/.cache/qmd/` stays untouched.
+
+## 2026-04-13 - Keep built-in memory guidance in Doctrine skill source, not hand-written `SKILL.md`
+
+Context
+- Rally's built-in `rally-kernel` skill is authored in `skills/rally-kernel/prompts/SKILL.prompt`.
+- Flow build, framework sync, and run-home materialization already follow that built-in skill path.
+
+Decision
+- Author `rally-memory` as a Doctrine skill in `skills/rally-memory/prompts/SKILL.prompt`.
+- Wire it through the same built-in skill pipeline as `rally-kernel`.
+
+Consequences
+- The plan now names the real emit, sync, and runtime copy owners for the new skill.
+- The skill path stays consistent with Rally's current source-of-truth rules.
+
+## 2026-04-13 - Keep the shared prompt input path as `issue.md`, not `home/issue.md`
+
+Context
+- Rally's runtime ledger lives at `home/issue.md`.
+- Flow prompt source already uses run-home-relative `issue.md` file inputs.
+
+Decision
+- Keep the shared prompt contract on `issue.md` as the run-home-relative file path.
+- Explain in prose that this maps to runtime `home/issue.md`.
+
+Consequences
+- The plan now matches current Doctrine file-input usage.
+- The shared stdlib can replace flow-local inputs without changing the run-home-relative prompt shape.
 
 ## 2026-04-13 - Keep markdown as memory truth and QMD as the search layer
 
@@ -984,3 +1337,30 @@ Decision
 Consequences
 - The phase plan starts with the shared stdlib contract instead of a runtime-only memory implementation.
 - The deep-dive and call-site audit now treat flow-local generic ledger and memory patterns as drift to remove.
+
+## 2026-04-13 - Keep `run_events.py` as the only live memory event writer
+
+Context
+- Rally already had one real event stream in `src/rally/services/run_events.py`.
+- `src/rally/services/event_log.py` was stale and unused.
+
+Decision
+- Record `memory_used` and `memory_saved` only through `RunEventRecorder`.
+- Delete `src/rally/services/event_log.py` instead of blessing a second path.
+
+Consequences
+- Memory visibility now follows the same event path as the rest of the runtime.
+- The repo has one less stale runtime surface to explain.
+
+## 2026-04-13 - Let the bridge create the repo-local QMD DB parent path itself
+
+Context
+- Rally needs the QMD seam to fail loud, but it should not require hidden setup outside the repo.
+- The bridge is the one place that always knows whether it is opening or creating the QMD store.
+
+Decision
+- Let `tools/qmd_bridge/main.mjs` create the parent directory for `runs/memory/qmd/index.sqlite` before it opens the store.
+
+Consequences
+- The bridge stays self-contained.
+- Rally can rebuild repo-local QMD state from a clean checkout without a separate directory-prep step.

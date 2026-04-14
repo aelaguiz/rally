@@ -7,8 +7,6 @@ input IssueLedger: "Issue Ledger"
     shape: MarkdownDocument
     requirement: Required
     "Use `home:issue.md` as the only shared human and agent context path."
-
-
 input PoemDraftFile: "Poem Draft File"
     source: File
         path: "home:artifacts/poem.md"

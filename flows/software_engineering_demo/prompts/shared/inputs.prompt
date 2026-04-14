@@ -4,8 +4,6 @@ input IssueLedger: "Issue Ledger"
     shape: MarkdownDocument
     requirement: Required
     "Use `home:issue.md` as the one shared human and agent ledger."
-
-
 input DemoRepoRoot: "Demo Repo Root"
     source: File
         path: "home:repos/demo_repo"

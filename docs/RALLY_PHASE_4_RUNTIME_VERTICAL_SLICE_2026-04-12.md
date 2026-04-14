@@ -40,6 +40,15 @@ Rally can now:
 - drive authored flows to real handoff, done, blocker, or sleep states through
   one shared run model
 
+The current repo also ships the first built-in Rally memory slice on top of
+that shared runtime:
+
+- shared Doctrine memory contract
+- repo-local markdown memory truth
+- repo-local QMD state
+- Rally memory CLI
+- visible memory runtime events
+
 Use `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` for the focused command and
 logging contract.
 
@@ -77,7 +86,17 @@ What is real today:
 - chained multi-turn execution across handoffs
 - per-flow `runtime.max_command_turns`
 - `home/issue.md` plus `issue_history/`
+- the opening brief lives in `home/issue.md`, not a shared sidecar brief file
 - `rally issue note --field key=value`
+- shared issue-ledger input and shared `rally-memory` guidance in the Rally stdlib
+- `rally memory search`
+- `rally memory use`
+- `rally memory save`
+- `rally memory refresh`
+- durable memory markdown under `runs/memory/entries/<flow_code>/<agent_slug>/`
+- repo-local QMD state under `runs/memory/qmd/index.sqlite` and `runs/memory/qmd/cache/`
+- a pinned QMD bridge under `tools/qmd_bridge/`
+- first-class memory rows for `search`, `use`, `save`, and `refresh` in the canonical runtime event stream
 - `logs/events.jsonl`
 - `logs/agents/<agent>.jsonl`
 - `logs/rendered.log`
@@ -101,10 +120,13 @@ What is still outside Phase 4:
 # Stable Rules
 
 - Notes are context only.
+- Memory is context only.
 - Notes may carry flat string header fields for stable labels.
 - Final JSON is the only turn-ending control path.
 - Many turns use the shared five-key Rally turn result.
 - Review-native turns may use control-ready Doctrine review JSON instead.
+- all four memory commands are visible Rally events.
+- agent-run memory commands should render as memory rows, not generic shell rows.
 - `AGENTS.md` is injected instruction readback only.
 - `AGENTS.contract.json` is the compiler-owned metadata file Rally loads.
 - There is no separate handoff artifact.
@@ -129,6 +151,7 @@ The current checked-in runtime surface is:
   - validates flow codes, `runtime.max_command_turns`,
     `runtime.prompt_input_command`, `runtime.guarded_git_repos`, and the shared
     turn-result schema
+  - carries the compiled slug forward as the source-of-truth agent identity after validation
 - `src/rally/services/skill_bundles.py`
   - resolves markdown skill roots from `SKILL.md`
   - resolves Doctrine skill roots from `prompts/SKILL.prompt`
@@ -138,7 +161,22 @@ The current checked-in runtime surface is:
   - ships real `resume`
   - ships `resume --edit`
   - ships `resume --restart`
-  - ships `issue note`
+  - ships `issue note`, including repeatable `--field key=value`
+  - ships `memory search`, `memory use`, `memory save`, and `memory refresh`
+  - stamps `- Turn: \`N\`` on in-turn notes automatically when Rally launched that turn
+- `src/rally/memory/models.py`
+  - defines `MemoryScope`, `MemoryEntry`, `MemorySearchHit`, `MemorySaveResult`, and `MemoryRefreshResult`
+- `src/rally/memory/store.py`
+  - keeps markdown under `runs/memory/entries/...` as the durable memory truth
+- `src/rally/memory/index.py`
+  - forces repo-local QMD paths
+  - talks only to the pinned Node bridge
+  - owns scoped refresh and search behavior
+- `src/rally/memory/service.py`
+  - resolves scope from run state and env
+  - keeps memory CLI behavior thin and Rally-owned
+- `src/rally/memory/events.py`
+  - writes memory-specific runtime events through the shared run-event path
 - `src/rally/services/run_store.py`
   - allocates run ids
   - writes `run.yaml` and `state.yaml`
@@ -162,7 +200,16 @@ The current checked-in runtime surface is:
   - snapshots the full issue log after each append
 - `src/rally/services/run_events.py`
   - writes canonical run events
+  - fans memory activity through first-class memory rows for all four memory commands
   - fans them out to whole-run logs, agent logs, and the rendered transcript
+- `tools/qmd_bridge/`
+  - pins `@tobilu/qmd` `2.1.0`
+  - opens QMD through the SDK with explicit `dbPath`
+  - keeps the Python/Node seam narrow and explicit
+- `src/rally/terminal/display.py`
+  - renders the live color stream on a TTY
+  - shows a richer startup summary with run, flow, model, thinking level, adapter, and agent facts
+  - falls back to plain text when needed
 - `src/rally/services/final_response_loader.py`
   - reads one final JSON object from `last_message.json`
   - parses either the shared Rally turn result or review-native control-ready
@@ -184,9 +231,17 @@ The current checked-in runtime surface is:
   - parses Claude stream-json events
   - extracts final JSON from `structured_output`, `result.result`, assistant
     text JSON, or `StructuredOutput` tool payloads
+- `src/rally/adapters/codex/event_stream.py`
+  - normalizes Codex JSONL into Rally event records
+- `src/rally/adapters/codex/launcher.py`
+  - builds `CODEX_HOME`, `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`
+  - writes one adapter launch proof file per turn
+- `src/rally/adapters/codex/session_store.py`
+  - saves one session id per agent
+  - writes per-turn `exec.jsonl`, `stderr.log`, and `last_message.json`
 - `src/rally/services/runner.py`
   - rebuilds the current flow under the flow lock before loading compiled
-    agents
+  agents
   - wires run creation, resume, runtime prompt-input injection, adapter
     launch, guarded-repo checks, result handling, state writes, and
     issue/event logging
@@ -264,9 +319,15 @@ The current core proof set is:
 - `tests/unit/test_codex_event_stream.py`
 - `tests/unit/test_claude_code_event_stream.py`
 - `tests/unit/test_claude_code_launcher.py`
+- `tests/unit/memory/test_store.py`
+- `tests/unit/memory/test_index.py`
+- `tests/unit/memory/test_service.py`
+- `tests/unit/memory/test_events.py`
 - `tests/unit/test_software_engineering_demo_prompt_inputs.py`
-- `uv run pytest tests/unit -q` with `155 passed`
+- `uv run pytest tests/unit -q`
+- one bridge smoke proof that confirmed an empty scoped refresh does not create `~/.cache/qmd/`
 - one earlier live end-to-end `poem_loop` run on Codex
+- one later live `poem_loop` proof on Codex that saved memory on turn 7, searched and used it on turn 9, and still reached `done` on turn 10
 - one live blank-repo `software_engineering_demo` run on Codex that reached
   `done`
 - one live carry-forward `software_engineering_demo` run on Codex that reached

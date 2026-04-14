@@ -20,6 +20,7 @@ class FlowBuildTests(unittest.TestCase):
             (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally'\n", encoding="utf-8")
             self._write_flow_file(repo_root=repo_root, allowed_skills=())
             self._write_markdown_skill(repo_root=repo_root, skill_name="rally-kernel")
+            self._write_markdown_skill(repo_root=repo_root, skill_name="rally-memory")
             calls: list[dict[str, object]] = []
 
             def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -59,6 +60,7 @@ class FlowBuildTests(unittest.TestCase):
             self._write_doctrine_skill(repo_root=repo_root, skill_name="demo-git")
             self._write_markdown_skill(repo_root=repo_root, skill_name="repo-search")
             self._write_doctrine_skill(repo_root=repo_root, skill_name="rally-kernel")
+            self._write_doctrine_skill(repo_root=repo_root, skill_name="rally-memory")
             calls: list[dict[str, object]] = []
 
             def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -96,6 +98,8 @@ class FlowBuildTests(unittest.TestCase):
                     "demo-git",
                     "--target",
                     "rally-kernel",
+                    "--target",
+                    "rally-memory",
                 ],
             )
 
@@ -108,6 +112,7 @@ class FlowBuildTests(unittest.TestCase):
             (repo_root / "pyproject.toml").write_text("[project]\nname = 'workspace'\n", encoding="utf-8")
             self._write_flow_file(repo_root=repo_root, allowed_skills=())
             self._write_framework_builtin_skill(framework_root=framework_root, skill_name="rally-kernel")
+            self._write_framework_builtin_skill(framework_root=framework_root, skill_name="rally-memory")
             (framework_root / "stdlib" / "rally").mkdir(parents=True)
             calls: list[dict[str, object]] = []
 
@@ -143,6 +148,7 @@ class FlowBuildTests(unittest.TestCase):
             (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally'\n", encoding="utf-8")
             self._write_flow_file(repo_root=repo_root, allowed_skills=())
             self._write_markdown_skill(repo_root=repo_root, skill_name="rally-kernel")
+            self._write_markdown_skill(repo_root=repo_root, skill_name="rally-memory")
 
             def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
                 del kwargs
@@ -167,6 +173,7 @@ class FlowBuildTests(unittest.TestCase):
             (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally'\n", encoding="utf-8")
             self._write_flow_file(repo_root=repo_root, allowed_skills=())
             self._write_markdown_skill(repo_root=repo_root, skill_name="rally-kernel")
+            self._write_markdown_skill(repo_root=repo_root, skill_name="rally-memory")
             self._write_doctrine_skill(repo_root=repo_root, skill_name="rally-kernel")
 
             with self.assertRaisesRegex(RallyConfigError, "must define exactly one source kind"):
@@ -179,6 +186,7 @@ class FlowBuildTests(unittest.TestCase):
             (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally'\n", encoding="utf-8")
             self._write_flow_file(repo_root=repo_root, allowed_skills=())
             (repo_root / "skills" / "rally-kernel").mkdir(parents=True)
+            self._write_markdown_skill(repo_root=repo_root, skill_name="rally-memory")
 
             with self.assertRaisesRegex(RallyConfigError, "must define either"):
                 ensure_flow_assets_built(workspace=self._workspace(repo_root), flow_name="demo")
@@ -190,6 +198,7 @@ class FlowBuildTests(unittest.TestCase):
             (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally'\n", encoding="utf-8")
             self._write_flow_file(repo_root=repo_root, allowed_skills=())
             self._write_markdown_skill(repo_root=repo_root, skill_name="rally-kernel")
+            self._write_markdown_skill(repo_root=repo_root, skill_name="rally-memory")
 
             prompt_root = repo_root / "flows" / "demo" / "prompts"
             prompt_root.mkdir(parents=True, exist_ok=True)
@@ -214,6 +223,7 @@ class FlowBuildTests(unittest.TestCase):
             (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally'\n", encoding="utf-8")
             self._write_flow_file(repo_root=repo_root, allowed_skills=())
             self._write_markdown_skill(repo_root=repo_root, skill_name="rally-kernel")
+            self._write_markdown_skill(repo_root=repo_root, skill_name="rally-memory")
 
             prompt_root = repo_root / "flows" / "demo" / "prompts"
             prompt_root.mkdir(parents=True, exist_ok=True)
