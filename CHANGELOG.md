@@ -31,6 +31,14 @@ Use this section for work that is not public yet.
 - Reworked `publish.yml` to read package metadata first and use the same
   environment names and project URLs for TestPyPI and PyPI publishes.
 
+### Fixed
+- Switched Rally's public Doctrine dependency to
+  `doctrine-agents>=1.0.2,<2`, which matches the first clean renamed-package
+  Doctrine release on PyPI.
+- Removed the package-proof path that preinstalled Doctrine from git before
+  installing Rally, so `make verify-package`, `make verify`, and CI now prove
+  clean consumer installs.
+
 When you cut a public release:
 
 1. Copy the release entry template below.

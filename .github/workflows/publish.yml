@@ -63,7 +63,6 @@ jobs:
       contents: write
     env:
       CHECKOUT_REF: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
-      RALLY_TEST_DOCTRINE_SOURCE: git+https://github.com/aelaguiz/doctrine.git@v1.0.1
     steps:
       - name: Check out Rally
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -71,14 +70,6 @@ jobs:
           persist-credentials: false
           ref: ${{ env.CHECKOUT_REF }}
           path: rally
-
-      - name: Check out Doctrine floor
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: aelaguiz/doctrine
-          ref: v1.0.1
-          persist-credentials: false
-          path: doctrine
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0

@@ -3,15 +3,15 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
-import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
 import tomllib
 
-
-PUBLIC_DOCTRINE_INSTALL_TARGET = "git+https://github.com/aelaguiz/doctrine.git@v1.0.1"
+_SUPPORTED_DOCTRINE_PACKAGE_NAMES = frozenset({"doctrine", "doctrine-agents"})
+_DEPENDENCY_NAME_RE = re.compile(r"^\s*(?P<name>[A-Za-z0-9_.-]+)")
 
 
 @dataclass(frozen=True)
@@ -88,6 +88,29 @@ def load_package_release_metadata(repo_root: Path) -> PackageReleaseMetadata:
     )
 
 
+def load_doctrine_dependency_line(repo_root: Path) -> str:
+    pyproject_path = repo_root / "pyproject.toml"
+    raw = _load_pyproject(pyproject_path)
+    project = raw.get("project")
+    if not isinstance(project, dict):
+        raise RuntimeError("`pyproject.toml` must contain a `[project]` table.")
+
+    dependencies = project.get("dependencies")
+    if not isinstance(dependencies, list):
+        raise RuntimeError("`[project].dependencies` must be a list of strings.")
+
+    matching_lines = [
+        requirement.strip()
+        for requirement in dependencies
+        if isinstance(requirement, str) and _dependency_name(requirement) in _SUPPORTED_DOCTRINE_PACKAGE_NAMES
+    ]
+    if len(matching_lines) != 1:
+        raise RuntimeError(
+            "Expected exactly one Doctrine dependency line under `[project].dependencies`."
+        )
+    return matching_lines[0]
+
+
 def resolve_distribution_artifact(*, dist_dir: Path, artifact_type: str) -> Path:
     if artifact_type == "wheel":
         matches = sorted(dist_dir.glob("*.whl"))
@@ -119,7 +142,6 @@ def smoke_test_distribution(
         rally_path = _venv_rally(venv_root)
 
         _run([sys.executable, "-m", "venv", str(venv_root)], cwd=repo_root)
-        _run([str(python_path), "-m", "pip", "install", _doctrine_install_target()], cwd=repo_root)
         _run([str(python_path), "-m", "pip", "install", str(artifact_path)], cwd=repo_root)
 
         help_result = _run([str(rally_path), "--help"], cwd=temp_root)
@@ -154,15 +176,6 @@ def write_github_outputs(*, metadata: PackageReleaseMetadata, output_path: Path)
         f"testpypi_project_url={metadata.testpypi_project_url}",
     ]
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def _doctrine_install_target() -> str:
-    explicit_target = os.environ.get("RALLY_TEST_DOCTRINE_SOURCE")
-    if explicit_target:
-        return explicit_target
-    return PUBLIC_DOCTRINE_INSTALL_TARGET
-
-
 def _venv_python(venv_root: Path) -> Path:
     if sys.platform == "win32":
         return venv_root / "Scripts" / "python.exe"
@@ -188,6 +201,22 @@ def _run(command: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
     if not detail:
         detail = f"Command exited with status {completed.returncode}."
     raise RuntimeError(f"Command failed: {' '.join(command)}\n{detail}")
+
+
+def _load_pyproject(pyproject_path: Path) -> dict[object, object]:
+    try:
+        return tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"`{pyproject_path}` is missing.") from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise RuntimeError(f"`{pyproject_path}` is not valid TOML.") from exc
+
+
+def _dependency_name(requirement: str) -> str | None:
+    match = _DEPENDENCY_NAME_RE.match(requirement)
+    if match is None:
+        return None
+    return match.group("name")
 
 
 def _require_string(raw: dict[object, object], *, key: str, table_name: str) -> str:

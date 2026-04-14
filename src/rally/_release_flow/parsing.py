@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 import tomllib
 
-from rally._package_release import load_package_release_metadata
+from rally._package_release import load_doctrine_dependency_line, load_package_release_metadata
 from rally._release_flow.common import release_error, run_checked
 from rally._release_flow.models import (
     CHANGELOG_SECTION_RE,
@@ -96,6 +96,7 @@ def load_doctrine_floor(repo_root: Path) -> str:
 
 def load_doctrine_package_line(repo_root: Path) -> str:
     versioning_path = repo_root / "docs" / "VERSIONING.md"
+    pyproject_path = repo_root / "pyproject.toml"
     text = _read_text(
         versioning_path,
         code="E531",
@@ -110,7 +111,24 @@ def load_doctrine_package_line(repo_root: Path) -> str:
             "`docs/VERSIONING.md` must contain one `Current supported Doctrine package line:` line.",
             location=versioning_path,
         )
-    return _strip_optional_backticks(match.group("value"))
+    package_line = _strip_optional_backticks(match.group("value"))
+    try:
+        pyproject_package_line = load_doctrine_dependency_line(repo_root)
+    except RuntimeError as exc:
+        raise release_error(
+            "E531",
+            "Missing Doctrine package line",
+            str(exc),
+            location=pyproject_path,
+        ) from exc
+    if package_line != pyproject_package_line:
+        raise release_error(
+            "E531",
+            "Missing Doctrine package line",
+            "`docs/VERSIONING.md` and `pyproject.toml` must agree on the supported Doctrine package line.",
+            location=versioning_path,
+        )
+    return package_line
 
 
 def load_package_metadata_version(repo_root: Path) -> str:

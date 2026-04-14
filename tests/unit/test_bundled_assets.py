@@ -33,7 +33,23 @@ class BundledAssetsTests(unittest.TestCase):
             self.assertTrue((workspace_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertTrue((workspace_root / "skills" / "rally-memory" / "SKILL.md").is_file())
 
-    def test_ensure_workspace_builtins_synced_skips_rally_source_workspace(self) -> None:
+    def test_ensure_workspace_builtins_synced_skips_current_rally_source_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_root = Path(temp_dir).resolve() / "workspace"
+            workspace_root.mkdir(parents=True)
+            pyproject_path = workspace_root / "pyproject.toml"
+            pyproject_path.write_text("[project]\nname = 'rally-agents'\n", encoding="utf-8")
+
+            copied = ensure_workspace_builtins_synced(
+                workspace_root=workspace_root,
+                pyproject_path=pyproject_path,
+            )
+
+            self.assertEqual(copied, [])
+            self.assertFalse((workspace_root / "stdlib").exists())
+            self.assertFalse((workspace_root / "skills").exists())
+
+    def test_ensure_workspace_builtins_synced_skips_legacy_rally_source_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace_root = Path(temp_dir).resolve() / "workspace"
             workspace_root.mkdir(parents=True)

@@ -7,8 +7,8 @@ Current public Rally release version: v0.1.0
 Current Rally package version: 0.1.0
 Current workspace manifest version: 1
 Current compiled agent contract version: 1
-Current minimum Doctrine release: v1.0.1
-Current supported Doctrine package line: doctrine>=1.0.1,<2
+Current minimum Doctrine release: v1.0.2
+Current supported Doctrine package line: doctrine-agents>=1.0.2,<2
 
 ## The Version Lines
 
@@ -216,8 +216,8 @@ forget the others. Trusted Publishing matches those values exactly.
 ## Doctrine Compatibility
 
 - Rally depends on one explicit minimum Doctrine public release. Today that
-  floor is `v1.0.1`.
-- Rally's public package metadata must keep `doctrine>=1.0.1,<2` until the
+  floor is `v1.0.2`.
+- Rally's public package metadata must keep `doctrine-agents>=1.0.2,<2` until the
   compatibility policy changes in the same release.
 - If the Doctrine floor changes, update all of these together:
   - `pyproject.toml`
@@ -225,6 +225,12 @@ forget the others. Trusted Publishing matches those values exactly.
   - `CHANGELOG.md`
   - `README.md`
   - `tests/integration/test_packaged_install.py`
+- `make verify-package` must prove clean wheel and sdist installs from fresh
+  temp environments with no manual Doctrine preinstall.
+- `make verify` must keep Rally's richer host-workspace packaged-install proof
+  green on top of that clean-install smoke.
+- If an older env or lockfile still points at package `doctrine`, refresh it
+  to `doctrine-agents>=1.0.2,<2`.
 - Rally's release version is not Doctrine's release version and not Doctrine's
   language version.
 

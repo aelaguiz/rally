@@ -4,7 +4,6 @@ UV ?= uv
 PYTHON ?= python
 
 UV_RUN := $(UV) run $(PYTHON)
-DOCTRINE_SOURCE ?= git+https://github.com/aelaguiz/doctrine.git@v1.0.1
 
 .PHONY: help setup test tests build-dist verify-package-wheel verify-package-sdist verify-package verify check release-prepare release-tag release-draft release-publish
 
@@ -35,14 +34,14 @@ build-dist:
 	$(UV) build
 
 verify-package-wheel: build-dist
-	RALLY_TEST_DOCTRINE_SOURCE=$(DOCTRINE_SOURCE) $(UV_RUN) -m rally._package_release smoke --artifact-type wheel
+	$(UV_RUN) -m rally._package_release smoke --artifact-type wheel
 
 verify-package-sdist: build-dist
-	RALLY_TEST_DOCTRINE_SOURCE=$(DOCTRINE_SOURCE) $(UV_RUN) -m rally._package_release smoke --artifact-type sdist
+	$(UV_RUN) -m rally._package_release smoke --artifact-type sdist
 
 verify-package: build-dist
-	RALLY_TEST_DOCTRINE_SOURCE=$(DOCTRINE_SOURCE) $(UV_RUN) -m rally._package_release smoke --artifact-type wheel
-	RALLY_TEST_DOCTRINE_SOURCE=$(DOCTRINE_SOURCE) $(UV_RUN) -m rally._package_release smoke --artifact-type sdist
+	$(UV_RUN) -m rally._package_release smoke --artifact-type wheel
+	$(UV_RUN) -m rally._package_release smoke --artifact-type sdist
 
 verify:
 	$(UV) run python tools/sync_bundled_assets.py --check
@@ -50,7 +49,7 @@ verify:
 	$(UV) run pytest tests/unit/test_release_flow.py -q
 	$(UV) run pytest tests/unit -q
 	$(MAKE) verify-package
-	RALLY_TEST_DOCTRINE_SOURCE=$(DOCTRINE_SOURCE) $(UV) run pytest tests/integration/test_packaged_install.py -q
+	$(UV) run pytest tests/integration/test_packaged_install.py -q
 
 check: verify
 

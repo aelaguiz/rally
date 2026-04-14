@@ -108,6 +108,39 @@ class CliTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("--restart", stderr.getvalue())
 
+    def test_workspace_sync_command_prints_synced_paths(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.sync_workspace_builtins",
+            return_value=SimpleNamespace(
+                message="Synced Rally built-ins into `/tmp/repo`: `stdlib/rally`, `skills/rally-kernel`, `skills/rally-memory`."
+            ),
+        ) as sync_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["workspace", "sync"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Synced Rally built-ins into `/tmp/repo`", stdout.getvalue())
+        self.assertEqual(sync_mock.call_args.kwargs["workspace"], workspace)
+
+    def test_workspace_sync_command_prints_source_workspace_noop_message(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.sync_workspace_builtins",
+            return_value=SimpleNamespace(
+                message="Workspace `/tmp/repo` already owns Rally built-ins. Nothing to sync."
+            ),
+        ):
+            with redirect_stdout(stdout):
+                exit_code = main(["workspace", "sync"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("already owns Rally built-ins", stdout.getvalue())
+
     def test_issue_note_reads_stdin(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()

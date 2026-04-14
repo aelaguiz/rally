@@ -32,7 +32,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "doctrine>=1.0.1,<2",
+    "doctrine-agents>=1.0.2,<2",
     "PyYAML>=6.0.3,<7",
     "rich>=15.0.0,<16",
 ]
@@ -108,7 +108,7 @@ rally = [
 ]
 
 [tool.uv.sources]
-doctrine = { git = "https://github.com/aelaguiz/doctrine.git", tag = "v1.0.1" }
+doctrine-agents = { git = "https://github.com/aelaguiz/doctrine.git", tag = "v1.0.2" }
 
 [dependency-groups]
 dev = [

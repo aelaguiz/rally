@@ -11,9 +11,9 @@ import yaml
 
 from rally.domain.rooted_path import HOME_ROOT, PathRoot, parse_rooted_path
 from rally.errors import RallyConfigError
-from rally.services.bundled_assets import ensure_workspace_builtins_synced
 from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
 from rally.services.workspace import WorkspaceContext, workspace_context_from_root
+from rally.services.workspace_sync import sync_workspace_builtins
 
 BuildSubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -51,10 +51,7 @@ def ensure_flow_assets_built(
     if not config_path.is_file():
         raise RallyConfigError(f"Rally workspace pyproject is missing: `{config_path}`.")
 
-    ensure_workspace_builtins_synced(
-        workspace_root=workspace_context.workspace_root,
-        pyproject_path=workspace_context.pyproject_path,
-    )
+    sync_workspace_builtins(workspace=workspace_context)
     skill_names = _load_flow_skill_names(repo_root=repo_root, flow_name=flow_name)
     _validate_prompt_rooted_paths(
         workspace=workspace_context,

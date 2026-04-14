@@ -13,6 +13,7 @@ from rally.memory.service import refresh_memory, save_memory, search_memory, use
 from rally.services.issue_ledger import append_issue_note
 from rally.services.runner import resume_run, run_flow
 from rally.services.workspace import resolve_workspace
+from rally.services.workspace_sync import sync_workspace_builtins
 from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display
 
 
@@ -56,6 +57,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Archive this run, restore the original issue, and start a fresh run.",
     )
     resume_parser.set_defaults(func=_resume_command)
+
+    workspace_parser = subparsers.add_parser("workspace", help="Work with the Rally workspace.")
+    workspace_subparsers = workspace_parser.add_subparsers(dest="workspace_command", required=True)
+
+    workspace_sync_parser = workspace_subparsers.add_parser(
+        "sync",
+        help="Sync Rally-owned built-ins into this workspace.",
+    )
+    workspace_sync_parser.set_defaults(func=_workspace_sync_command)
 
     issue_parser = subparsers.add_parser("issue", help="Work with a Rally issue log.")
     issue_subparsers = issue_parser.add_subparsers(dest="issue_command", required=True)
@@ -126,6 +136,14 @@ def _resume_command(args: argparse.Namespace) -> int:
         ),
         display_factory=_build_display_factory(sys.stdout),
     )
+    print(result.message)
+    return 0
+
+
+def _workspace_sync_command(args: argparse.Namespace) -> int:
+    del args
+    workspace = resolve_workspace()
+    result = sync_workspace_builtins(workspace=workspace)
     print(result.message)
     return 0
 

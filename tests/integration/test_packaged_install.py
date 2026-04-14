@@ -1,43 +1,49 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
+import tarfile
 import tempfile
 import textwrap
 import unittest
 import zipfile
 from pathlib import Path
 
-from rally._package_release import load_package_release_metadata
+from rally._package_release import load_doctrine_dependency_line, load_package_release_metadata
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PUBLIC_DOCTRINE_INSTALL_TARGET = "git+https://github.com/aelaguiz/doctrine.git@v1.0.1"
+EXPECTED_DOCTRINE_PACKAGE_LINE = load_doctrine_dependency_line(REPO_ROOT)
 
 
 class PackagedInstallTests(unittest.TestCase):
     def test_built_wheel_runs_installed_cli_and_keeps_emit_support_files_in_host_repo(self) -> None:
+        self._assert_packaged_artifact_runtime("wheel")
+
+    def test_built_sdist_runs_installed_cli_and_keeps_emit_support_files_in_host_repo(self) -> None:
+        self._assert_packaged_artifact_runtime("sdist")
+
+    def _assert_packaged_artifact_runtime(self, artifact_type: str) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir).resolve()
             host_root = temp_root / "host"
             venv_root = temp_root / "venv"
-            wheel_path = self._latest_wheel()
+            artifact_path = self._latest_artifact(artifact_type)
 
-            metadata_text = self._wheel_metadata_text(wheel_path)
-            self.assertIn("Requires-Dist: doctrine<2,>=1.0.1", metadata_text)
+            metadata_text = self._artifact_metadata_text(artifact_path=artifact_path, artifact_type=artifact_type)
+            self.assertIn(self._expected_doctrine_metadata_line(), metadata_text)
 
             self._create_venv(venv_root)
             python_bin = self._venv_python(venv_root)
             rally_bin = self._venv_rally(venv_root)
-            self._run([str(python_bin), "-m", "pip", "install", self._doctrine_install_target()])
-            self._run([str(python_bin), "-m", "pip", "install", str(wheel_path)])
+            self._run([str(python_bin), "-m", "pip", "install", str(artifact_path)])
 
             help_result = self._run([str(rally_bin), "--help"], cwd=temp_root)
             self.assertIn("usage: rally", help_result.stdout)
             self.assertIn("run", help_result.stdout)
             self.assertIn("resume", help_result.stdout)
+            self.assertIn("workspace", help_result.stdout)
 
             self._write_host_workspace(host_root)
 
@@ -53,20 +59,9 @@ class PackagedInstallTests(unittest.TestCase):
             )
             self.assertNotEqual(version_result.stdout.strip(), "0.0.0")
 
-            run_result = self._run([str(rally_bin), "run", "demo"], cwd=host_root, check=False)
-            self.assertEqual(run_result.returncode, 2)
-            self.assertIn("waiting for `", run_result.stderr)
-            self.assertIn("home/issue.md", run_result.stderr)
-            self.assertIn("rally resume DMO-1", run_result.stderr)
-
-            run_dir = host_root / "runs" / "active" / "DMO-1"
-            self.assertTrue((run_dir / "run.yaml").is_file())
-            self.assertTrue((run_dir / "state.yaml").is_file())
-            self.assertTrue((run_dir / "logs" / "rendered.log").is_file())
-            self.assertIn("status: pending", (run_dir / "state.yaml").read_text(encoding="utf-8"))
-            rendered_log = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
-            self.assertIn("Prepared run home shell", rendered_log)
-            self.assertIn("waiting for `home/issue.md`", rendered_log)
+            sync_result = self._run([str(rally_bin), "workspace", "sync"], cwd=host_root)
+            self.assertIn("Synced Rally built-ins into", sync_result.stdout)
+            self.assertFalse((host_root / "runs" / "active").exists())
 
             self.assertTrue((host_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").is_file())
             self.assertTrue((host_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
@@ -99,30 +94,56 @@ class PackagedInstallTests(unittest.TestCase):
             )
             self.assertNotIn("../rally/", contract_path.read_text(encoding="utf-8"))
 
-    def _latest_wheel(self) -> Path:
+            run_result = self._run([str(rally_bin), "run", "demo"], cwd=host_root, check=False)
+            self.assertEqual(run_result.returncode, 2)
+            self.assertIn("waiting for `", run_result.stderr)
+            self.assertIn("home/issue.md", run_result.stderr)
+            self.assertIn("rally resume DMO-1", run_result.stderr)
+
+            run_dir = host_root / "runs" / "active" / "DMO-1"
+            self.assertTrue((run_dir / "run.yaml").is_file())
+            self.assertTrue((run_dir / "state.yaml").is_file())
+            self.assertTrue((run_dir / "logs" / "rendered.log").is_file())
+            self.assertIn("status: pending", (run_dir / "state.yaml").read_text(encoding="utf-8"))
+            rendered_log = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+            self.assertIn("Prepared run home shell", rendered_log)
+            self.assertIn("waiting for `home/issue.md`", rendered_log)
+
+    def _latest_artifact(self, artifact_type: str) -> Path:
         metadata = load_package_release_metadata(REPO_ROOT)
         wheel_prefix = metadata.distribution_name.replace("-", "_")
-        wheels = sorted(
-            REPO_ROOT.glob(f"dist/{wheel_prefix}-*.whl"),
-            key=lambda path: path.stat().st_mtime,
-        )
-        if not wheels:
-            self.fail("No Rally wheel found under dist/. Build Rally before running the packaged-install proof.")
-        return wheels[-1]
+        if artifact_type == "wheel":
+            artifacts = sorted(
+                REPO_ROOT.glob(f"dist/{wheel_prefix}-*.whl"),
+                key=lambda path: path.stat().st_mtime,
+            )
+        elif artifact_type == "sdist":
+            artifacts = sorted(
+                REPO_ROOT.glob(f"dist/{wheel_prefix}-*.tar.gz"),
+                key=lambda path: path.stat().st_mtime,
+            )
+        else:
+            self.fail(f"Unsupported artifact type `{artifact_type}`.")
+        if not artifacts:
+            self.fail(f"No Rally {artifact_type} artifact found under dist/. Build Rally before running the packaged-install proof.")
+        return artifacts[-1]
 
-    def _wheel_metadata_text(self, wheel_path: Path) -> str:
-        with zipfile.ZipFile(wheel_path) as archive:
-            metadata_name = next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
-            return archive.read(metadata_name).decode("utf-8")
+    def _artifact_metadata_text(self, *, artifact_path: Path, artifact_type: str) -> str:
+        if artifact_type == "wheel":
+            with zipfile.ZipFile(artifact_path) as archive:
+                metadata_name = next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
+                return archive.read(metadata_name).decode("utf-8")
+        if artifact_type == "sdist":
+            with tarfile.open(artifact_path, "r:gz") as archive:
+                metadata_name = next(member.name for member in archive.getmembers() if member.name.endswith("/PKG-INFO"))
+                metadata_file = archive.extractfile(metadata_name)
+                if metadata_file is None:
+                    self.fail(f"Could not read `{metadata_name}` from `{artifact_path}`.")
+                return metadata_file.read().decode("utf-8")
+        self.fail(f"Unsupported artifact type `{artifact_type}`.")
 
     def _create_venv(self, venv_root: Path) -> None:
         self._run([sys.executable, "-m", "venv", str(venv_root)])
-
-    def _doctrine_install_target(self) -> str:
-        explicit_target = os.environ.get("RALLY_TEST_DOCTRINE_SOURCE")
-        if explicit_target:
-            return explicit_target
-        return PUBLIC_DOCTRINE_INSTALL_TARGET
 
     def _venv_python(self, venv_root: Path) -> Path:
         if sys.platform == "win32":
@@ -136,6 +157,11 @@ class PackagedInstallTests(unittest.TestCase):
 
     def _run_python(self, *, python_bin: Path, cwd: Path, source: str) -> subprocess.CompletedProcess[str]:
         return self._run([str(python_bin), "-c", source], cwd=cwd)
+
+    def _expected_doctrine_metadata_line(self) -> str:
+        package_name, remainder = EXPECTED_DOCTRINE_PACKAGE_LINE.split(">=", 1)
+        lower_bound, upper_bound = remainder.split(",<", 1)
+        return f"Requires-Dist: {package_name}<{upper_bound},>={lower_bound}"
 
     def _run(
         self,
