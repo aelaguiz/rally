@@ -11,7 +11,20 @@ Run these first:
 ```bash
 git status --short
 rg --files flows stdlib skills mcps docs
+```
+
+Rally expects the Doctrine repo beside it at `../doctrine`. If it is missing, clone it first:
+
+```bash
+gh repo clone aelaguiz/doctrine ../doctrine
+```
+
+Then sync, build the checked-in readback, and run the unit tests:
+
+```bash
 uv sync --dev
+uv run python -m doctrine.emit_docs --pyproject pyproject.toml --target _stdlib_smoke --target poem_loop --target software_engineering_demo
+uv run python -m doctrine.emit_skill --pyproject pyproject.toml --target rally-kernel --target rally-memory --target demo-git
 uv run pytest tests/unit -q
 ```
 
@@ -40,15 +53,14 @@ Pick the smallest proof that matches the change:
 - runtime change: prove it through `uv run rally ...` or the owning unit tests
 - fixture repo change: run that fixture repo's tests from that repo root
 
+## Questions, bugs, and proposals
+
+- Use GitHub Discussions for questions and design talk.
+- Use GitHub Issues for bugs and scoped feature requests.
+
 ## Before you call work done
 
 - Run `uv run pytest tests/unit -q`.
 - Say what changed.
 - Say what you checked.
 - Say what is still blocked or not yet proved.
-
-## Read next
-
-- `AGENTS.md`
-- `README.md`
-- `docs/RALLY_MASTER_DESIGN_2026-04-12.md`

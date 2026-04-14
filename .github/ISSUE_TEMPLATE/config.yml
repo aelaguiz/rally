@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and design discussion
+    url: https://github.com/aelaguiz/rally/discussions
+    about: Use Discussions for setup help, design questions, and open-ended feedback.
+  - name: Start with the runtime docs
+    url: https://github.com/aelaguiz/rally/blob/main/docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
+    about: Read the current CLI and runtime behavior before opening a usage question.
