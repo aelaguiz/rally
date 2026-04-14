@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rally-agents"
-version = "0.1.0"
+version = "0.1.1"
 description = "Program complex multi-agent workflows with a typed DSL, a CLI-first runtime, and repo-local run state."
 readme = "README.md"
 license = "MIT"
@@ -106,9 +106,6 @@ rally = [
     "_bundled/**/__pycache__/*",
     "_bundled/**/*.pyc",
 ]
-
-[tool.uv.sources]
-doctrine-agents = { git = "https://github.com/aelaguiz/doctrine.git", tag = "v1.0.2" }
 
 [dependency-groups]
 dev = [

@@ -6,39 +6,6 @@ evergreen policy guide.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
-
-Use this section for work that is not public yet.
-
-### Added
-- Added repo-owned release helpers under `src/rally/release_flow.py` and
-  `src/rally/_release_flow/**`.
-- Added `Makefile` targets for `release-prepare`, `release-tag`,
-  `release-draft`, and `release-publish`.
-- Added repo-owned package release metadata under `src/rally/_package_release.py`.
-- Added `Makefile` targets for `build-dist` and `verify-package`.
-- Added split GitHub workflows for PR checks, dependency review, scorecards,
-  and release publishing.
-- Added public `SUPPORT.md` and `SECURITY.md` files.
-
-### Changed
-- Switched Rally package version truth to explicit `[project].version` in
-  `pyproject.toml`.
-- Moved package-index environment names under `[tool.rally.package]` so the
-  workflow, release helper, and docs all read one package-publish owner path.
-- Rewrote Rally's versioning and release docs around the Doctrine-style public
-  release model.
-- Reworked `publish.yml` to read package metadata first and use the same
-  environment names and project URLs for TestPyPI and PyPI publishes.
-
-### Fixed
-- Switched Rally's public Doctrine dependency to
-  `doctrine-agents>=1.0.2,<2`, which matches the first clean renamed-package
-  Doctrine release on PyPI.
-- Removed the package-proof path that preinstalled Doctrine from git before
-  installing Rally, so `make verify-package`, `make verify`, and CI now prove
-  clean consumer installs.
-
 When you cut a public release:
 
 1. Copy the release entry template below.
@@ -83,6 +50,42 @@ Support-surface version changes: none
 ### YANKED
 - Use this only when a bad public release was superseded later.
 ```
+
+## Unreleased
+
+Use this section for work that is not public yet.
+
+## v0.1.1 - 2026-04-14
+
+Release kind: Non-breaking
+Release channel: stable
+Release version: v0.1.1
+Affected surfaces: external host-workspace bootstrap, Rally package metadata, and clean package install proof.
+Who must act: users who install Rally from package indexes and maintainers who cut Rally releases.
+Who does not need to act: users staying on a source checkout and users who already work from unreleased repo commits.
+Upgrade steps: Install `rally-agents` v0.1.1. Refresh lockfiles or dependency pins that still mention the old `doctrine` distribution name. The Rally CLI stays `rally`.
+Verification: make verify
+Support-surface version changes: workspace manifest 1 (unchanged); compiled contract version 1 (unchanged); minimum Doctrine release v1.0.2 (unchanged)
+
+### Added
+- Added `rally workspace sync` so a host repo can sync Rally-owned built-ins
+  into `stdlib/rally/`, `skills/rally-kernel/`, and `skills/rally-memory/`
+  before the first `rally run` or manual `doctrine.emit_docs`.
+
+### Changed
+- Updated the external host-repo setup story and Rally design docs to use
+  `rally workspace sync` as the front door for host-local built-ins.
+- Removed Rally's own `[tool.uv.sources]` override for Doctrine so Rally
+  resolves the public `doctrine-agents` release by default and sibling repos
+  can choose their own local editable Doctrine source cleanly.
+
+### Fixed
+- Switched Rally's public Doctrine dependency to
+  `doctrine-agents>=1.0.2,<2`, which matches the first clean renamed-package
+  Doctrine release on PyPI.
+- Removed the package-proof path that preinstalled Doctrine from git before
+  installing Rally, so `make verify-package`, `make verify`, and CI now prove
+  clean consumer installs.
 
 ## v0.1.0 - 2026-04-14
 
