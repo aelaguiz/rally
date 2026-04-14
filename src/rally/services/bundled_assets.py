@@ -87,6 +87,9 @@ def _build_expected_bundle(*, repo_root: Path, expected_root: Path) -> None:
         '"""Bundled Rally-owned built-ins shipped inside the installable package."""\n',
         encoding="utf-8",
     )
+    # Skill bundles are authored as Doctrine source and emitted build output is
+    # ignored in git, so clean-checkout verification has to emit the expected
+    # package tree from source before it compares src/rally/_bundled.
     emit_targets = _load_emit_targets(repo_root=repo_root)
     for spec in _BUNDLE_SPECS:
         target = expected_root / spec.bundled_relative

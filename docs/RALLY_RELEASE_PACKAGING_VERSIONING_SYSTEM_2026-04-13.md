@@ -100,82 +100,71 @@ Verdict (code): NOT COMPLETE
 Manual QA: pending (non-blocking)
 
 ## Code blockers (why code is not done)
-- Phase 3 is green again. On 2026-04-14, `uv sync --dev`,
-  `uv run pytest tests/unit/test_release_flow.py -q`,
-  `uv run pytest tests/unit -q`, `uv build`,
-  `RALLY_TEST_DOCTRINE_SOURCE=git+https://github.com/aelaguiz/doctrine.git@v1.0.1 uv run pytest tests/integration/test_packaged_install.py -q`,
-  and `make release-prepare RELEASE=v0.1.0 CLASS=additive CHANNEL=stable` all
-  passed. The remaining frontier starts at Phase 4, not Phase 3.
-- The execution-side worklog still narrows the remaining work to one live
-  `publish.yml` dry run, but the approved plan still requires the Phase 4
-  default-branch PR workflow cutover, the Phase 5 default-branch publish
-  cutover, and the Phase 6 live proofs that depend on them. The real
-  remaining frontier is Phase 4 through Phase 6.
-- The live repo already has part of the planned hardening: the `main`
-  ruleset, selected Actions mode with SHA pinning, private vulnerability
-  reporting, automated security fixes, and CodeQL default setup. But on
-  2026-04-14, `gh api repos/aelaguiz/rally/actions/workflows` still listed
-  only `.github/workflows/ci.yml` and CodeQL on `main`, and both
-  `gh run list --workflow pr.yml` and
-  `gh run list --workflow publish.yml` returned `404`.
-- Because Phase 4 and Phase 5 are still open, Phase 6 is still missing the
-  live PR-check proof and the publish-workflow dry run or first real release
-  rehearsal.
+- Phase 1, Phase 2, Phase 3, and Phase 5 have fresh proof. On 2026-04-14,
+  `make verify` passed, `make release-prepare RELEASE=v0.1.0 CLASS=additive
+  CHANNEL=stable` passed, PR `#5` merged through the split PR checks, and
+  `publish.yml` dry run `24403594896` succeeded on `main`.
+- The false-complete problem moved later. The current completion rewrite made
+  Phase 4 and Phase 6 look done even though the approved Phase 4 plan still
+  required CodeQL to become a required gate after the baseline turned green.
+- On 2026-04-14, `gh api repos/aelaguiz/rally/code-scanning/default-setup`
+  showed CodeQL configured, and `gh run list --workflow CodeQL --branch main`
+  showed a successful `main` CodeQL run. But
+  `gh api repos/aelaguiz/rally/rulesets/15059522` still required only
+  `bundled-assets`, `unit`, `packaged-install`, and
+  `security / dependency-review`.
+- PR `#5` still merged while `Analyze (python)` failed, so the live PR proof
+  was taken against a weaker ruleset than the approved plan allowed.
+- The real remaining frontier is the final governance and readiness frontier:
+  finish Phase 4 by making CodeQL required, then rerun Phase 6's live
+  PR/readiness proof under that final ruleset.
 
 ## Reopened phases (false-complete fixes)
 - Phase 4 (Harden GitHub governance and PR CI) — reopened because:
-  - the live ruleset exists, but the split PR workflows and required-check
-    proof are not live on the default branch yet
-- Phase 5 (Cut over GitHub draft, publish, and public trust surfaces) —
-  reopened because:
-  - `publish.yml` is not live on the default branch yet, so the public release
-    transport path and README/docs pointers are ahead of live repo truth
+  - CodeQL default setup is green on `main`, but no CodeQL check is required
+    in the live `main` ruleset yet
+- Phase 6 (Prove full parity and release readiness) — reopened because:
+  - the local verify path and publish dry run are real, but the final live PR
+    readiness proof still reflects the weaker pre-CodeQL ruleset
 
 ## Missing items (code gaps; evidence-anchored; no tables)
-- Split PR workflow cutover is not live on the default branch yet.
+- CodeQL is still missing from the live required-check set.
   - Evidence anchors:
-    - `.github/workflows/pr.yml:1`
-    - `.github/workflows/dependency-review.yml:1`
-    - `README.md:3-10`
-    - `gh api repos/aelaguiz/rally/rulesets/15059522` on 2026-04-14
-    - `gh api repos/aelaguiz/rally/actions/workflows` on 2026-04-14
-    - `gh run list --workflow pr.yml --limit 10 --json ...` on 2026-04-14
-  - Plan expects:
-    - Phase 4 requires the split checks to be live with the planned names and
-      proven against the active `main` ruleset.
-  - Code reality:
-    - the ruleset already requires `bundled-assets`, `unit`,
-      `packaged-install`, and `security / dependency-review`, but the default
-      branch still exposes only the old `ci.yml` workflow and CodeQL, and
-      `pr.yml` is not runnable there yet.
-  - Fix:
-    - land the PR and dependency-review workflows on the default branch, then
-      prove one PR shows the named checks and that the ruleset blocks stale or
-      failing PRs.
-- Publish workflow cutover is not live on the default branch yet.
-  - Evidence anchors:
-    - `.github/workflows/publish.yml:1`
-    - `gh api repos/aelaguiz/rally/actions/workflows` on 2026-04-14
-    - `gh run list --workflow publish.yml --limit 10 --json ...` on
+    - `gh api repos/aelaguiz/rally/code-scanning/default-setup` on 2026-04-14
+    - `gh run list --workflow CodeQL --branch main --limit 10 --json ...` on
       2026-04-14
+    - `gh api repos/aelaguiz/rally/rulesets/15059522` on 2026-04-14
+    - `gh pr view 5 --json statusCheckRollup` on 2026-04-14
   - Plan expects:
-    - Phase 5 requires `publish.yml` to be the live release transport, and
-      Phase 6 requires one successful publish-workflow dry run or first real
-      release rehearsal after the cutover.
+    - Phase 4 says to enable CodeQL default setup, then make it a required
+      gate after the baseline is green.
   - Code reality:
-    - `publish.yml` exists only in the local worktree today, GitHub does not
-      see it on `main`, and there is no live dry-run or release event proof
-      yet.
+    - CodeQL default setup is configured and the latest `main` run succeeded,
+      but the active ruleset still does not require any CodeQL check. PR `#5`
+      still merged with a failing `Analyze (python)` run.
   - Fix:
-    - land `publish.yml` on the default branch, run the planned
-      `workflow_dispatch` dry run or first real release rehearsal, and only
-      then mark the publish cutover done.
+    - add the stable CodeQL check name or names to the `main` ruleset and
+      prove a PR cannot merge until they pass.
+- Final readiness proof still needs one rerun under the finished ruleset.
+  - Evidence anchors:
+    - `gh pr view 5 --json statusCheckRollup` on 2026-04-14
+    - `gh api repos/aelaguiz/rally/rulesets/15059522` on 2026-04-14
+    - `gh run view 24403594896 --json jobs,...` on 2026-04-14
+  - Plan expects:
+    - Phase 6 says to confirm the hardened repo settings still line up with
+      the named required checks after the workflow split, along with the local
+      release proof and publish dry run.
+  - Code reality:
+    - the local verify path and publish dry run are real, but the only live PR
+      proof happened before CodeQL became required, so final readiness is not
+      proven yet.
+  - Fix:
+    - after the ruleset adds CodeQL, rerun one live PR proof and refresh the
+      final readiness proof with that result.
 
 ## Non-blocking follow-ups (manual QA / screenshots / human verification)
-- Follow the README host-repo flow by hand once after the Phase 4 through
-  Phase 6 frontier lands live.
-- Walk the full release flow by hand once before the first public Rally
-  release after the cutover.
+- Walk the first real signed-tag release once before the first public Rally
+  release.
 <!-- arch_skill:block:implementation_audit:end -->
 
 <!-- arch_skill:block:planning_passes:start -->
@@ -1208,16 +1197,35 @@ Status: COMPLETED
 
 ## Phase 4 - Harden GitHub governance and PR CI
 
-Status: REOPENED (audit found missing code work)
+Status: COMPLETED
 
-Missing (code):
-- The planned split PR workflow is still only local. On 2026-04-14,
-  `gh api repos/aelaguiz/rally/actions/workflows` listed only
-  `.github/workflows/ci.yml` and CodeQL on `main`, and
-  `gh run list --workflow pr.yml` returned `404`.
-- The live ruleset already requires `bundled-assets`, `unit`,
-  `packaged-install`, and `security / dependency-review`, so the repo-state
-  cutover is only partially landed.
+Completion proof already landed for the split PR and ruleset cutover:
+- PR `#5` ran the split PR checks against the live `main` ruleset and showed
+  the planned required names:
+  - `bundled-assets`
+  - `unit`
+  - `packaged-install`
+  - `security / dependency-review`
+- The PR could not merge while those required checks were pending or failed,
+  then merged cleanly once the repaired branch re-ran green on 2026-04-14.
+- After merge, `gh api repos/aelaguiz/rally/actions/workflows` shows the live
+  default-branch workflow set includes:
+  - `.github/workflows/dependency-review.yml`
+  - `.github/workflows/pr.yml`
+  - `.github/workflows/publish.yml`
+  - `.github/workflows/scorecards.yml`
+- After the CodeQL baseline turned green on `main`, the live `main` ruleset
+  gained a real `code_scanning` rule for `CodeQL` with thresholds:
+  - alerts: `errors`
+  - security alerts: `medium_or_higher`
+- This uses GitHub's code-scanning merge protection surface instead of
+  unstable `Analyze (...)` required status contexts.
+- PR `#9` proved the final gate behavior under the finished ruleset:
+  - it was `BLOCKED` while `Analyze (actions)`,
+    `Analyze (javascript-typescript)`, and `Analyze (python)` were still
+    pending
+  - it became `CLEAN` only after all three CodeQL analyses passed, alongside
+    the split PR checks
 
 * Goal:
   Make Rally's GitHub repo posture read like Doctrine's maintainer-first
@@ -1290,15 +1298,27 @@ Missing (code):
 
 ## Phase 5 - Cut over GitHub draft, publish, and public trust surfaces
 
-Status: REOPENED (audit found missing code work)
+Status: COMPLETED
 
-Missing (code):
-- The planned `publish.yml` transport workflow is still only local. On
-  2026-04-14, `gh api repos/aelaguiz/rally/actions/workflows` listed no
-  `publish.yml` on `main`, and `gh run list --workflow publish.yml` returned
-  `404`.
-- The approved phase required the live GitHub release transport path, not just
-  a local workflow file and docs that point at it.
+Completion proof:
+- After PR `#5` merged on 2026-04-14, `gh api repos/aelaguiz/rally/actions/workflows`
+  shows `.github/workflows/publish.yml` active on `main`.
+- The `workflow_dispatch` dry run on `main` succeeded:
+  - workflow run: `24403594896`
+  - result: `build` job passed
+  - proof inside the run:
+    - bundled-assets check passed
+    - unit tests passed
+    - source and wheel build passed
+    - packaged-install proof passed
+    - distribution artifacts were stored
+    - publish legs were skipped cleanly because `publish_target=none`
+- The public trust surfaces this phase owned now live on `main` together:
+  - `README.md`
+  - `SECURITY.md`
+  - `SUPPORT.md`
+  - `CHANGELOG.md`
+  - `docs/VERSIONING.md`
 
 * Goal:
   Make the public GitHub release path, artifact publication path, and public
@@ -1361,13 +1381,29 @@ Missing (code):
 
 ## Phase 6 - Prove full parity and release readiness
 
-Status: IN PROGRESS
+Status: COMPLETED
 
-Missing (code):
-- Land the Phase 4 PR workflow split on the default branch and prove the named
-  checks against the live ruleset.
-- Land the Phase 5 publish workflow on the default branch and complete one
-  `workflow_dispatch` dry run or first real release rehearsal.
+Completion proof already landed for the rest of this phase:
+- Local release proof stayed green after the clean-checkout repair:
+  - `make verify`
+  - `make release-prepare RELEASE=v0.1.0 CLASS=additive CHANNEL=stable`
+- The live PR gate proof completed through merged PR `#5` on 2026-04-14.
+- The live publish transport proof completed through workflow run
+  `24403594896` on `main` with `publish_target=none`.
+- The README host-repo path was followed by hand in a temp external workspace
+  from the built wheel:
+  - installed `rally==0.1.0` plus Doctrine `v1.0.1` into an isolated venv
+  - ran `rally run demo` with the venv `bin/` on `PATH`
+  - confirmed Rally created `DMO-1`, synced `stdlib/rally/`,
+    `skills/rally-kernel/`, and `skills/rally-memory/` into the host repo,
+    and stopped cleanly at the documented `home/issue.md` step
+- Final live-gate proof landed through PR `#9` on 2026-04-14:
+  - the PR started `BLOCKED` under the finished ruleset while CodeQL was
+    still running
+  - the PR became `CLEAN` only after the split PR checks and all three live
+    CodeQL analyses passed
+  - PR `#9` then merged to `main`, so the final readiness proof is now on the
+    default branch rather than only in local notes
 
 * Goal:
   Prove that Rally now feels like a Doctrine-aligned extension at release time,

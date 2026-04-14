@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import tomllib
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -1138,15 +1139,107 @@ class RunnerTests(unittest.TestCase):
             config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
             self.assertIn("project_doc_max_bytes = 2048", config_text)
             self.assertIn('[mcp_servers."fixture-repo"]', config_text)
-            self.assertIn('command = ["uv", "run", "fixture-repo"]', config_text)
+            self.assertIn('command = "uv"', config_text)
             self.assertIn(
-                f'args = ["--repo", "{run_dir / "home" / "repos" / "demo_repo"}"]',
+                f'args = ["run", "fixture-repo", "--repo", "{run_dir / "home" / "repos" / "demo_repo"}"]',
                 config_text,
             )
             self.assertIn(
                 f'cwd = "{Path("/tmp/fixture-repo").resolve(strict=False)}"',
                 config_text,
             )
+            self.assertIn("required = true", config_text)
+
+    def test_resume_run_blocks_before_turn_when_required_codex_mcp_cannot_start(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            self._write_fixture_repo_mcp(repo_root=repo_root)
+
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_text = flow_text.replace("    allowed_mcps: []\n", "    allowed_mcps: [fixture-repo]\n")
+            flow_path.write_text(flow_text, encoding="utf-8")
+
+            (repo_root / "mcps" / "fixture-repo" / "server.toml").write_text(
+                textwrap.dedent(
+                    """\
+                    command = "missing-fixture-mcp"
+                    args = ["--repo", "home:repos/demo_repo"]
+                    cwd = "host:/tmp/fixture-repo"
+                    transport = "stdio"
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+            fake_run = _FakeCodexRun([])
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=fake_run,
+            )
+
+            state = load_run_state(run_dir=run_dir)
+            issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+
+            self.assertEqual(result.status, RunStatus.BLOCKED)
+            self.assertEqual(state.status, RunStatus.BLOCKED)
+            self.assertEqual(state.turn_index, 0)
+            self.assertEqual(state.current_agent_key, "01_scope_lead")
+            self.assertIn("fixture-repo", state.blocker_reason or "")
+            self.assertIn("command_startability", state.blocker_reason or "")
+            self.assertIn("missing-fixture-mcp", state.blocker_reason or "")
+            self.assertFalse((run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").exists())
+            self.assertIn("Rally Blocked", issue_text)
+            self.assertIn("MCP: `fixture-repo`", issue_text)
+            self.assertIn("Check: `command_startability`", issue_text)
+            self.assertIn("## Rally Blocked\n- Run ID: `DMO-1`\n- Time:", issue_text)
+            self.assertNotIn("## Rally Blocked\n- Run ID: `DMO-1`\n- Turn:", issue_text)
+            self.assertNotIn("Starting turn 1", rendered_text)
+            self.assertFalse(any(call["command"][:2] == ["codex", "exec"] for call in fake_run.calls))
+
+    def test_resume_run_blocks_before_turn_when_required_codex_mcp_is_not_logged_in(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            (repo_root / "mcps" / "issues-http").mkdir(parents=True)
+            (repo_root / "mcps" / "issues-http" / "server.toml").write_text(
+                'url = "https://example.com/issues"\n',
+                encoding="utf-8",
+            )
+
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_text = flow_text.replace("    allowed_mcps: []\n", "    allowed_mcps: [issues-http]\n")
+            flow_path.write_text(flow_text, encoding="utf-8")
+
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+            fake_run = _FakeCodexRun([])
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=fake_run,
+            )
+
+            state = load_run_state(run_dir=run_dir)
+            issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+
+            self.assertEqual(result.status, RunStatus.BLOCKED)
+            self.assertEqual(state.status, RunStatus.BLOCKED)
+            self.assertEqual(state.turn_index, 0)
+            self.assertIn("issues-http", state.blocker_reason or "")
+            self.assertIn("codex_auth_status", state.blocker_reason or "")
+            self.assertIn("not_logged_in", state.blocker_reason or "")
+            self.assertIn("MCP: `issues-http`", issue_text)
+            self.assertIn("Check: `codex_auth_status`", issue_text)
+            self.assertFalse(any(call["command"][:2] == ["codex", "exec"] for call in fake_run.calls))
 
     def test_resume_run_removes_stale_run_home_capabilities(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2641,9 +2734,10 @@ class RunnerTests(unittest.TestCase):
         (repo_root / "mcps" / "fixture-repo" / "server.toml").write_text(
             textwrap.dedent(
                 """\
-                command = ["uv", "run", "fixture-repo"]
-                args = ["--repo", "home:repos/demo_repo"]
+                command = "uv"
+                args = ["run", "fixture-repo", "--repo", "home:repos/demo_repo"]
                 cwd = "host:/tmp/fixture-repo"
+                transport = "stdio"
                 """
             ),
             encoding="utf-8",
@@ -2821,11 +2915,20 @@ class RunnerTests(unittest.TestCase):
 class _FakeCodexRun:
     def __init__(self, responses: list[dict[str, object]]) -> None:
         self._responses = responses
+        self._exec_calls = 0
         self.calls: list[dict[str, object]] = []
 
     def __call__(self, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        response = self._responses[len(self.calls)]
         self.calls.append({"command": command, "kwargs": kwargs})
+        if command[:3] == ["codex", "mcp", "list"]:
+            return self._handle_mcp_list(command=command, kwargs=kwargs)
+        if command[:3] == ["codex", "mcp", "get"]:
+            return self._handle_mcp_get(command=command, kwargs=kwargs)
+        if command[:2] != ["codex", "exec"]:
+            return self._handle_stdio_probe(command=command, kwargs=kwargs)
+
+        response = self._responses[self._exec_calls]
+        self._exec_calls += 1
 
         if bool(response.get("timeout")):
             raise subprocess.TimeoutExpired(
@@ -2853,6 +2956,113 @@ class _FakeCodexRun:
             stdout=stdout,
             stderr=str(response.get("stderr", "")),
         )
+
+    def _handle_mcp_list(
+        self,
+        *,
+        command: list[str],
+        kwargs: dict[str, object],
+    ) -> subprocess.CompletedProcess[str]:
+        payload = [
+            {
+                "name": name,
+                "enabled": bool(server.get("enabled", True)),
+                "disabled_reason": None,
+                "transport": self._render_transport(server),
+                "startup_timeout_sec": server.get("startup_timeout_sec"),
+                "tool_timeout_sec": server.get("tool_timeout_sec"),
+                "auth_status": self._auth_status_for(server),
+            }
+            for name, server in self._load_mcp_servers(kwargs).items()
+        ]
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    def _handle_mcp_get(
+        self,
+        *,
+        command: list[str],
+        kwargs: dict[str, object],
+    ) -> subprocess.CompletedProcess[str]:
+        server_name = command[3]
+        servers = self._load_mcp_servers(kwargs)
+        server = servers.get(server_name)
+        if server is None:
+            return subprocess.CompletedProcess(args=command, returncode=1, stdout="", stderr="server not found")
+        payload = {
+            "name": server_name,
+            "enabled": bool(server.get("enabled", True)),
+            "disabled_reason": None,
+            "transport": self._render_transport(server),
+            "enabled_tools": server.get("enabled_tools"),
+            "disabled_tools": server.get("disabled_tools"),
+            "startup_timeout_sec": server.get("startup_timeout_sec"),
+            "tool_timeout_sec": server.get("tool_timeout_sec"),
+        }
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    def _handle_stdio_probe(
+        self,
+        *,
+        command: list[str],
+        kwargs: dict[str, object],
+    ) -> subprocess.CompletedProcess[str]:
+        executable = command[0]
+        if executable.startswith("missing-"):
+            raise FileNotFoundError(executable)
+        raise subprocess.TimeoutExpired(cmd=command, timeout=float(kwargs["timeout"]))
+
+    def _load_mcp_servers(self, kwargs: dict[str, object]) -> dict[str, dict[str, object]]:
+        env = kwargs.get("env")
+        assert isinstance(env, dict)
+        codex_home = Path(str(env["CODEX_HOME"]))
+        config = tomllib.loads((codex_home / "config.toml").read_text(encoding="utf-8"))
+        servers = config.get("mcp_servers")
+        if not isinstance(servers, dict):
+            return {}
+        return {
+            str(name): server
+            for name, server in servers.items()
+            if isinstance(name, str) and isinstance(server, dict)
+        }
+
+    @staticmethod
+    def _auth_status_for(server: dict[str, object]) -> str:
+        if isinstance(server.get("url"), str):
+            return "not_logged_in"
+        return "unsupported"
+
+    @staticmethod
+    def _render_transport(server: dict[str, object]) -> dict[str, object]:
+        if isinstance(server.get("url"), str):
+            return {
+                "type": "streamable_http",
+                "url": server["url"],
+                "bearer_token_env_var": server.get("bearer_token_env_var"),
+                "http_headers": server.get("http_headers"),
+                "env_http_headers": server.get("env_http_headers"),
+            }
+        raw_args = server.get("args")
+        args = raw_args if isinstance(raw_args, list) else []
+        raw_env_vars = server.get("env_vars")
+        env_vars = raw_env_vars if isinstance(raw_env_vars, list) else []
+        return {
+            "type": "stdio",
+            "command": server.get("command"),
+            "args": args,
+            "env": server.get("env"),
+            "env_vars": env_vars,
+            "cwd": server.get("cwd"),
+        }
 
 
 class _DirtyGuardedRepoCodexRun(_FakeCodexRun):
