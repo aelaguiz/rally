@@ -9,9 +9,11 @@
 [Doctrine](https://github.com/aelaguiz/doctrine) · [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
 [Design](docs/RALLY_MASTER_DESIGN_2026-04-12.md) · [Versioning](docs/VERSIONING.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
 
-Run coding-agent workflows from plain repo files.
+Build strong, stable coding-agent workflows from plain repo files.
 
-Rally is a filesystem-first agent harness for multi-agent coding workflows. You author the flow in Doctrine, Rally materializes a run home inside the repo, routes each turn from strict JSON, and leaves the full execution on disk instead of in a hidden control plane.
+Rally is the filesystem-first agent harness for coding-agent workflows you can inspect, recover, and trust. It keeps the run on disk inside the repo, routes each turn from strict JSON, and makes handoffs, blockers, artifacts, and stop reasons obvious instead of burying them in a hidden control plane.
+
+If you already care about agents and want stronger workflow discipline, Rally is the front door. Doctrine sits underneath as the code-like authoring layer that keeps those workflows structured instead of collapsing into markdown sprawl.
 
 > Flows are code. Runs are files.
 
@@ -23,19 +25,20 @@ Rally running the shipped `poem_loop` flow from the real CLI.
 
 ![Rally poem loop live demo](docs/assets/poem-loop-demo-run.png)
 
-## Why Rally is different
+Why teams reach for Rally:
 
+- strong, stable coding-agent workflows instead of workflow theater
 - run history lives under `runs/`
-- one active run per flow stays easy to reason about
 - turn control comes from strict JSON, not prose guessing
 - the operator can inspect `issue.md`, artifacts, logs, and sessions on disk
 - resume paths stay honest because the state is visible
+- Doctrine under the hood keeps the workflow authorable and maintainable like code
 
 ## Doctrine and Rally
 
-- Use Doctrine when you want to author and validate the flow.
-- Use Rally when you want to run that flow with repo-local state and strict turn routing.
-- Keep the split crisp: Doctrine is the authoring layer, Rally is the runtime layer.
+- Use Rally when you want to run a strong, stable workflow with repo-local state and strict turn routing.
+- Use Doctrine when you want to author and validate the workflow underneath it.
+- Keep the split crisp: Doctrine is how you author it. Rally is how you run it.
 
 ## What Rally is for
 
