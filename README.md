@@ -1,11 +1,13 @@
 # Rally
 
+[![CI](https://img.shields.io/github/actions/workflow/status/aelaguiz/rally/pr.yml?branch=main&label=pr)](https://github.com/aelaguiz/rally/actions/workflows/pr.yml)
+[![PyPI](https://img.shields.io/pypi/v/rally)](https://pypi.org/project/rally/)
+[![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-3776AB.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python 3.14%2B](https://img.shields.io/badge/python-3.14%2B-3776AB.svg)](pyproject.toml)
-[![CI](https://img.shields.io/github/actions/workflow/status/aelaguiz/rally/ci.yml?branch=main&label=ci)](https://github.com/aelaguiz/rally/actions/workflows/ci.yml)
-[![Doctrine-powered](https://img.shields.io/badge/authored%20with-Doctrine-6E56CF.svg)](https://github.com/aelaguiz/doctrine)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/aelaguiz/rally/badge)](https://scorecard.dev/viewer/?uri=github.com/aelaguiz/rally)
 
 [Doctrine](https://github.com/aelaguiz/doctrine) · [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
+[Design](docs/RALLY_MASTER_DESIGN_2026-04-12.md) · [Versioning](docs/VERSIONING.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
 
 Run coding-agent workflows from plain repo files.
 
@@ -45,16 +47,90 @@ Use Rally if you want:
 - workflows you can diff, test, and review like software
 - a harness that is small enough to inspect with normal developer tools
 
-## Quickstart
+## Install Rally
 
-Today Rally expects the Doctrine repo beside it at `../doctrine`. The quickstart below uses that real layout.
+Rally is an ordinary Python package with one CLI:
 
 ```bash
-gh repo clone aelaguiz/doctrine ../doctrine
+uv tool install rally
+rally --help
+```
+
+Rally requires Python 3.14 or newer and currently supports
+`doctrine>=1.0.1,<2`.
+
+If you want Rally inside a repo-local environment instead of a tool install:
+
+```bash
+uv add --dev rally
+uv run rally --help
+```
+
+Versioning and upgrade rules live in [docs/VERSIONING.md](docs/VERSIONING.md).
+Release history lives in [CHANGELOG.md](CHANGELOG.md).
+
+## Use Rally In Another Repo
+
+Your host repo is the Rally workspace. Add the fixed top-level folders:
+
+```text
+flows/
+skills/
+mcps/
+stdlib/
+runs/
+```
+
+Then add the workspace and emit config to `pyproject.toml`:
+
+```toml
+[project]
+name = "demo-host"
+version = "0.1.0"
+requires-python = ">=3.14"
+
+[tool.rally.workspace]
+version = 1
+
+[tool.doctrine.compile]
+additional_prompt_roots = ["stdlib/rally/prompts"]
+
+[tool.doctrine.emit]
+
+[[tool.doctrine.emit.targets]]
+name = "demo"
+entrypoint = "flows/demo/prompts/AGENTS.prompt"
+output_dir = "flows/demo/build/agents"
+```
+
+Author your flow under `flows/demo/`, then run it:
+
+```bash
+rally run demo
+```
+
+On the first build or run, Rally syncs its own built-ins into your workspace
+under `stdlib/rally/`, `skills/rally-kernel/`, and `skills/rally-memory/`.
+Do not point support files at `../rally/stdlib/...`. Rally copies the support
+files into the host workspace so Doctrine emit stays inside the project root.
+
+If Rally opens `home:issue.md`, write the issue there and resume:
+
+```bash
+rally resume DMO-1
+```
+
+## Work On Rally Itself
+
+If you are changing Rally, use a normal repo checkout:
+
+```bash
 git clone https://github.com/aelaguiz/rally.git
 cd rally
 uv sync --dev
 ```
+
+Run the smallest shipped demo:
 
 Build the checked-in flow and skill readback that Rally loads at runtime:
 
@@ -63,11 +139,13 @@ uv run python -m doctrine.emit_docs --pyproject pyproject.toml --target _stdlib_
 uv run python -m doctrine.emit_skill --pyproject pyproject.toml --target rally-kernel --target rally-memory --target demo-git
 ```
 
-Run the smallest end-to-end demo:
+Run the smallest shipped demo:
 
 ```bash
 uv run rally run poem_loop
 ```
+
+Run the unit tests:
 
 If you do not have an interactive editor configured, Rally will stop and tell you where the issue file lives. On a fresh repo, that path will be:
 
@@ -86,6 +164,19 @@ Run the unit tests any time with:
 ```bash
 uv run pytest tests/unit -q
 ```
+
+Cut a public release with the repo-owned flow:
+Cut a public release with the repo-owned flow:
+
+```bash
+make release-prepare RELEASE=v0.1.0 CLASS=additive CHANNEL=stable
+make release-tag RELEASE=v0.1.0 CHANNEL=stable
+make release-draft RELEASE=v0.1.0 CHANNEL=stable PREVIOUS_TAG=auto
+make release-publish RELEASE=v0.1.0
+```
+
+The full rules live in [docs/VERSIONING.md](docs/VERSIONING.md). The release
+history lives in [CHANGELOG.md](CHANGELOG.md).
 
 ## What ships today
 
@@ -115,11 +206,53 @@ Rally takes a different bet:
 
 If the story only works when the control plane is hidden, the runtime is not trustworthy enough yet.
 
-## Read next
+The key rule does not change: no hidden side doors, no second turn-ending path,
+and no drift between what the flow says and what the runtime does.
 
+## Open Source On Purpose
+
+Rally is MIT licensed. See [LICENSE](LICENSE).
+
+Open source matters here because trust is the product. You should be able to
+inspect:
+
+- what the agent saw
+- what files were current
+- why ownership changed
+- what ended the turn
+- what the runtime wrote to disk
+
+If that story depends on a hidden DB, a dashboard, or hand-wavy prompt magic,
+Rally failed its own pitch.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The short version:
+
+- use `uv`
+- keep prompt source in `.prompt`
+- do not hand-edit generated readback
+- prove the smallest real path for the change
+
+## Questions and contributions
+
+- Use [Discussions](https://github.com/aelaguiz/rally/discussions) for
+  questions and design talk.
+- Use [Issues](https://github.com/aelaguiz/rally/issues) for clear bugs or
+  scoped proposals.
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and proof commands.
+- See [SUPPORT.md](SUPPORT.md) for help paths and [SECURITY.md](SECURITY.md)
+  for private vulnerability reports.
+
+## Read Next
+
+- [docs/VERSIONING.md](docs/VERSIONING.md)
+- [CHANGELOG.md](CHANGELOG.md)
 - [docs/RALLY_MASTER_DESIGN_2026-04-12.md](docs/RALLY_MASTER_DESIGN_2026-04-12.md)
 - [docs/RALLY_CLI_AND_LOGGING_2026-04-13.md](docs/RALLY_CLI_AND_LOGGING_2026-04-13.md)
 - [docs/RALLY_QMD_AGENT_MEMORY_MODEL_2026-04-13.md](docs/RALLY_QMD_AGENT_MEMORY_MODEL_2026-04-13.md)
+- [SUPPORT.md](SUPPORT.md)
+- [SECURITY.md](SECURITY.md)
 - [docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md](docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md)
 - [Doctrine](https://github.com/aelaguiz/doctrine)
 - [CONTRIBUTING.md](CONTRIBUTING.md)

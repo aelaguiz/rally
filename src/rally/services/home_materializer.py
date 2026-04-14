@@ -17,7 +17,8 @@ from rally.services.issue_ledger import snapshot_issue_log
 from rally.services.run_events import RunEventRecorder
 from rally.services.run_store import find_run_dir
 from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
-from rally.services.workspace import WorkspaceContext, resolve_framework_root, workspace_context_from_root
+from rally.services.bundled_assets import ensure_workspace_builtins_synced
+from rally.services.workspace import WorkspaceContext, workspace_context_from_root
 
 _HOME_READY_MARKER = ".rally_home_ready"
 
@@ -62,6 +63,10 @@ def materialize_run_home(
         issue_path=issue_path,
         run_id=run_record.id,
         event_recorder=event_recorder,
+    )
+    ensure_workspace_builtins_synced(
+        workspace_root=workspace_context.workspace_root,
+        pyproject_path=workspace_context.pyproject_path,
     )
     _sync_compiled_agents(run_home=run_home, flow=flow)
     # Refresh each agent's stable skill view here. The runner activates one
@@ -352,12 +357,10 @@ def _copy_allowed_mcps(*, repo_root: Path, run_home: Path, flow: FlowDefinition)
 
 def _resolve_skill_sources(*, repo_root: Path, skill_names: tuple[str, ...]) -> dict[str, Path]:
     skill_sources: dict[str, Path] = {}
-    framework_root = resolve_framework_root()
     for skill_name in skill_names:
         bundle = resolve_skill_bundle_source(
             repo_root=repo_root,
             skill_name=skill_name,
-            framework_root=framework_root,
         )
         skill_sources[skill_name] = bundle.runtime_source_dir()
     return skill_sources

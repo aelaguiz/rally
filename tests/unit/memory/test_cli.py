@@ -109,7 +109,6 @@ class MemoryCliTests(unittest.TestCase):
         return workspace_context_from_root(
             repo_root,
             cli_bin=repo_root / "bin" / "rally",
-            framework_root=Path(__file__).resolve().parents[3],
         )
 
     def _memory_entry(self, repo_root: Path) -> MemoryEntry:

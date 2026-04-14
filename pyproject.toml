@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rally"
-version = "0.0.0"
+version = "0.1.0"
 description = "Program complex multi-agent workflows with a typed DSL, a CLI-first runtime, and repo-local run state."
 readme = "README.md"
 license = "MIT"
@@ -32,7 +32,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "doctrine",
+    "doctrine>=1.0.1,<2",
     "PyYAML>=6,<7",
     "rich>=14,<15",
 ]
@@ -40,8 +40,11 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/aelaguiz/rally"
 Documentation = "https://github.com/aelaguiz/rally/tree/main/docs"
+Changelog = "https://github.com/aelaguiz/rally/blob/main/CHANGELOG.md"
 Repository = "https://github.com/aelaguiz/rally"
 Issues = "https://github.com/aelaguiz/rally/issues"
+Discussions = "https://github.com/aelaguiz/rally/discussions"
+Security = "https://github.com/aelaguiz/rally/security/policy"
 
 [project.scripts]
 rally = "rally.cli:main"
@@ -90,8 +93,17 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+rally = ["_bundled/**/*"]
+
+[tool.setuptools.exclude-package-data]
+rally = [
+    "_bundled/**/__pycache__/*",
+    "_bundled/**/*.pyc",
+]
+
 [tool.uv.sources]
-doctrine = { path = "../doctrine", editable = true }
+doctrine = { git = "https://github.com/aelaguiz/doctrine.git", tag = "v1.0.1" }
 
 [dependency-groups]
 dev = [

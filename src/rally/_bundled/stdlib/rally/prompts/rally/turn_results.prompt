@@ -1,0 +1,28 @@
+json schema RallyTurnResultSchema: "Rally Turn Result Schema"
+    profile: OpenAIStructuredOutput
+    file: "schemas/rally_turn_result.schema.json"
+
+
+output shape RallyTurnResultJson: "Rally Turn Result JSON"
+    kind: JsonObject
+    schema: RallyTurnResultSchema
+    example_file: "examples/rally_turn_result.example.json"
+
+    explanation: "What `kind` Means"
+        "This is Rally's classic shared turn-result shape."
+        "Review-native turns may declare a different final JSON that Rally reads from compiled review metadata."
+        "`kind` tells Rally what to do next."
+        "Always send all five keys."
+        "Use `null` for fields that do not apply."
+        "If the final JSON includes `next_owner`, use the owner key, not the display name."
+        "Use keys like `change_engineer`."
+        "Use `handoff` with `next_owner`."
+        "Use `done` with `summary` to finish the run."
+        "Use `blocker` with `reason` to stop the run cleanly."
+        "Use `sleep` with `reason` and `sleep_duration_seconds` to pause the run and wake the same owner later."
+
+
+output RallyTurnResult: "Rally Turn Result"
+    target: TurnResponse
+    shape: RallyTurnResultJson
+    requirement: Required

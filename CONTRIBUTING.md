@@ -13,12 +13,6 @@ git status --short
 rg --files flows stdlib skills mcps docs
 ```
 
-Rally expects the Doctrine repo beside it at `../doctrine`. If it is missing, clone it first:
-
-```bash
-gh repo clone aelaguiz/doctrine ../doctrine
-```
-
 Then sync, build the checked-in readback, and run the unit tests:
 
 ```bash
@@ -67,3 +61,23 @@ Pick the smallest proof that matches the change:
 - Say what changed.
 - Say what you checked.
 - Say what is still blocked or not yet proved.
+
+## Release work
+
+Rally uses the repo-owned release flow:
+
+```bash
+make release-prepare RELEASE=v0.1.0 CLASS=additive CHANNEL=stable
+make release-tag RELEASE=v0.1.0 CHANNEL=stable
+make release-draft RELEASE=v0.1.0 CHANNEL=stable PREVIOUS_TAG=auto
+make release-publish RELEASE=v0.1.0
+```
+
+Release rules live in `docs/VERSIONING.md`.
+Release history lives in `CHANGELOG.md`.
+
+## Read next
+
+- `AGENTS.md`
+- `README.md`
+- `docs/RALLY_MASTER_DESIGN_2026-04-12.md`

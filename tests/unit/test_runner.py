@@ -15,6 +15,8 @@ from unittest.mock import patch
 
 from rally.domain.run import ResumeRequest, RunRequest, RunStatus
 from rally.errors import RallyConfigError, RallyUsageError
+from rally.services.flow_build import ensure_flow_assets_built as build_flow_assets
+from rally.services.bundled_assets import ensure_workspace_builtins_synced
 from rally.services.issue_editor import IssueEditorResult
 from rally.services.issue_ledger import ORIGINAL_ISSUE_END_MARKER
 from rally.services.run_store import archive_run, find_run_dir, load_run_state, write_run_state
@@ -241,14 +243,12 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("### Findings First", issue_text)
             self.assertIn("The poem is ready to keep as written.", issue_text)
 
-    def test_run_flow_uses_framework_builtin_skills_without_workspace_copies(self) -> None:
+    def test_run_flow_syncs_builtin_skills_into_workspace_when_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_demo_repo(repo_root=repo_root, copy_framework_builtins=False)
             self.assertFalse((repo_root / "skills" / "rally-kernel").exists())
             self.assertFalse((repo_root / "skills" / "rally-memory").exists())
-            framework_root = repo_root / "_framework"
-            self._write_framework_builtin_skills(framework_root=framework_root)
 
             def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
                 self.assertEqual(editor_command, ("vim",))
@@ -261,9 +261,6 @@ class RunnerTests(unittest.TestCase):
             ), patch(
                 "rally.services.home_materializer.edit_issue_file_in_editor",
                 side_effect=fake_edit_issue,
-            ), patch(
-                "rally.services.home_materializer.resolve_framework_root",
-                return_value=framework_root,
             ):
                 result = run_flow(
                     repo_root=repo_root,
@@ -286,8 +283,8 @@ class RunnerTests(unittest.TestCase):
 
             run_dir = find_run_dir(repo_root=repo_root, run_id="DMO-1")
             self.assertEqual(result.status, RunStatus.DONE)
-            self.assertFalse((repo_root / "skills" / "rally-kernel").exists())
-            self.assertFalse((repo_root / "skills" / "rally-memory").exists())
+            self.assertTrue((repo_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
+            self.assertTrue((repo_root / "skills" / "rally-memory" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
 
@@ -2655,9 +2652,40 @@ class RunnerTests(unittest.TestCase):
     def _write_poem_repo(self, *, repo_root: Path, copy_framework_builtins: bool = True) -> None:
         source_root = Path(__file__).resolve().parents[2]
         shutil.copytree(source_root / "flows" / "poem_loop", repo_root / "flows" / "poem_loop")
-        if copy_framework_builtins:
-            self._write_framework_builtin_skills(framework_root=repo_root)
         shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
+        self._write_poem_fixture_pyproject(repo_root=repo_root)
+        if copy_framework_builtins:
+            ensure_workspace_builtins_synced(
+                workspace_root=repo_root,
+                pyproject_path=repo_root / "pyproject.toml",
+            )
+        build_flow_assets(repo_root=repo_root, flow_name="poem_loop")
+
+    def _write_poem_fixture_pyproject(self, *, repo_root: Path) -> None:
+        (repo_root / "pyproject.toml").write_text(
+            "\n".join(
+                (
+                    "[project]",
+                    "name = 'poem-fixture'",
+                    "version = '0.0.0'",
+                    "",
+                    "[tool.rally.workspace]",
+                    "version = 1",
+                    "",
+                    "[tool.doctrine.compile]",
+                    'additional_prompt_roots = ["stdlib/rally/prompts"]',
+                    "",
+                    "[tool.doctrine.emit]",
+                    "",
+                    "[[tool.doctrine.emit.targets]]",
+                    'name = "poem_loop"',
+                    'entrypoint = "flows/poem_loop/prompts/AGENTS.prompt"',
+                    'output_dir = "flows/poem_loop/build/agents"',
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
 
     def _write_framework_builtin_skills(self, *, framework_root: Path) -> None:
         source_root = Path(__file__).resolve().parents[2]

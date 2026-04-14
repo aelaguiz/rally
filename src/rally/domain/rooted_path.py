@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import re
 from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -17,6 +19,7 @@ STDLIB_ROOT: PathRoot = "stdlib"
 
 PUBLIC_PATH_ROOTS = frozenset({HOME_ROOT, FLOW_ROOT, WORKSPACE_ROOT, HOST_ROOT})
 INTERNAL_PATH_ROOTS = frozenset({*PUBLIC_PATH_ROOTS, STDLIB_ROOT})
+_HOST_ENV_REF_RE = re.compile(r"^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})(?:/.*)?$")
 
 
 @dataclass(frozen=True)
@@ -81,11 +84,11 @@ def resolve_rooted_path(
     workspace_root: Path | None = None,
     flow_root: Path | None = None,
     run_home: Path | None = None,
-    framework_root: Path | None = None,
     context: str,
 ) -> Path:
     if rooted_path.root == HOST_ROOT:
-        return Path(rooted_path.path_text).expanduser().resolve(strict=False)
+        host_path = _expand_host_path(path_text=rooted_path.path_text, context=context)
+        return Path(host_path).expanduser().resolve(strict=False)
 
     if rooted_path.root == HOME_ROOT:
         return _resolve_under_root(
@@ -106,14 +109,6 @@ def resolve_rooted_path(
             context=context,
         )
     if rooted_path.root == STDLIB_ROOT:
-        if framework_root is not None:
-            return _resolve_under_root(
-                base_path=_require_base_path(framework_root, label="framework root", context=context)
-                / "stdlib"
-                / "rally",
-                rooted_path=rooted_path,
-                context=context,
-            )
         workspace_base = _require_base_path(workspace_root, label="workspace root", context=context)
         return _resolve_under_root(
             base_path=workspace_base / "stdlib" / "rally",
@@ -129,7 +124,6 @@ def expand_rooted_string(
     workspace_root: Path | None = None,
     flow_root: Path | None = None,
     run_home: Path | None = None,
-    framework_root: Path | None = None,
     allowed_roots: Collection[PathRoot] = INTERNAL_PATH_ROOTS,
     context: str,
     example: str = "home:issue.md",
@@ -148,7 +142,6 @@ def expand_rooted_string(
             workspace_root=workspace_root,
             flow_root=flow_root,
             run_home=run_home,
-            framework_root=framework_root,
             context=context,
         )
     )
@@ -160,7 +153,6 @@ def expand_rooted_value(
     workspace_root: Path | None = None,
     flow_root: Path | None = None,
     run_home: Path | None = None,
-    framework_root: Path | None = None,
     allowed_roots: Collection[PathRoot] = INTERNAL_PATH_ROOTS,
     context: str,
     example: str = "home:issue.md",
@@ -171,7 +163,6 @@ def expand_rooted_value(
             workspace_root=workspace_root,
             flow_root=flow_root,
             run_home=run_home,
-            framework_root=framework_root,
             allowed_roots=allowed_roots,
             context=context,
             example=example,
@@ -183,7 +174,6 @@ def expand_rooted_value(
                 workspace_root=workspace_root,
                 flow_root=flow_root,
                 run_home=run_home,
-                framework_root=framework_root,
                 allowed_roots=allowed_roots,
                 context=context,
                 example=example,
@@ -197,7 +187,6 @@ def expand_rooted_value(
                 workspace_root=workspace_root,
                 flow_root=flow_root,
                 run_home=run_home,
-                framework_root=framework_root,
                 allowed_roots=allowed_roots,
                 context=f"{context}.{key}",
                 example=example,
@@ -223,11 +212,24 @@ def _normalize_host_path(*, path_text: str, context: str) -> str:
     value = path_text.strip()
     if not value:
         raise RallyConfigError(f"{context} must name a host path after `host:`.")
+    if _HOST_ENV_REF_RE.match(value):
+        return value
     if value == "~" or value.startswith("~/"):
         return value
     if not Path(value).is_absolute():
         raise RallyConfigError(f"{context} must use an absolute path or `~/...` after `host:`.")
     return value
+
+
+def _expand_host_path(*, path_text: str, context: str) -> str:
+    expanded = os.path.expandvars(path_text).strip()
+    if not expanded:
+        raise RallyConfigError(f"{context} must resolve to a host path.")
+    if "$" in expanded:
+        raise RallyConfigError(
+            f"{context} references an unresolved env var in host path `{path_text}`."
+        )
+    return _normalize_host_path(path_text=expanded, context=context)
 
 
 def _resolve_under_root(*, base_path: Path, rooted_path: RootedPath, context: str) -> Path:

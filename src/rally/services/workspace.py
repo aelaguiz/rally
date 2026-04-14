@@ -22,7 +22,6 @@ class WorkspaceContext:
     stdlib_dir: Path
     runs_dir: Path
     cli_bin: Path
-    framework_root: Path
 
 
 def resolve_workspace(*, start_path: Path | None = None) -> WorkspaceContext:
@@ -47,7 +46,6 @@ def workspace_context_from_root(
     workspace_root: Path,
     *,
     cli_bin: Path | None = None,
-    framework_root: Path | None = None,
     require_manifest: bool = False,
 ) -> WorkspaceContext:
     workspace_root = workspace_root.resolve()
@@ -61,7 +59,6 @@ def workspace_context_from_root(
         )
 
     resolved_cli_bin = (cli_bin or resolve_rally_cli_bin()).resolve()
-    resolved_framework_root = (framework_root or resolve_framework_root()).resolve()
     layout_paths = {name: workspace_root / name for name in _WORKSPACE_PATH_NAMES}
     return WorkspaceContext(
         workspace_root=workspace_root,
@@ -72,7 +69,6 @@ def workspace_context_from_root(
         stdlib_dir=layout_paths["stdlib"],
         runs_dir=layout_paths["runs"],
         cli_bin=resolved_cli_bin,
-        framework_root=resolved_framework_root,
     )
 
 
@@ -92,18 +88,6 @@ def resolve_rally_cli_bin() -> Path:
     raise RallyConfigError(
         "Rally CLI executable is missing. Set `RALLY_CLI_BIN` or add `rally` to PATH."
     )
-
-
-def resolve_framework_root() -> Path:
-    module_path = Path(__file__).resolve()
-    for candidate in module_path.parents:
-        if _has_framework_assets(candidate):
-            return candidate
-    raise RallyConfigError(
-        "Rally built-in assets are missing from the installed framework. "
-        "Expected `stdlib/rally`, `skills/rally-kernel`, and `skills/rally-memory` under a Rally framework root."
-    )
-
 
 def _resolve_search_root(start_path: Path | None) -> Path:
     candidate = (start_path or Path.cwd()).expanduser().resolve()
@@ -139,11 +123,3 @@ def _load_pyproject(pyproject_path: Path) -> dict[str, object]:
         return tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise RallyConfigError(f"Workspace pyproject is not valid TOML: `{pyproject_path}`.") from exc
-
-
-def _has_framework_assets(candidate: Path) -> bool:
-    return (
-        (candidate / "stdlib" / "rally").is_dir()
-        and (candidate / "skills" / "rally-kernel").is_dir()
-        and (candidate / "skills" / "rally-memory").is_dir()
-    )

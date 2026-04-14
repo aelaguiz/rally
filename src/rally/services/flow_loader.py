@@ -34,7 +34,6 @@ from rally.domain.rooted_path import (
     resolve_rooted_path,
 )
 from rally.errors import RallyConfigError
-from rally.services.workspace import resolve_framework_root
 
 SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS = frozenset({1})
 
@@ -49,7 +48,6 @@ def load_flow_definition(
     *,
     repo_root: Path,
     flow_name: str,
-    framework_root: Path | None = None,
 ) -> FlowDefinition:
     flow_root, flow_file, payload = _load_flow_payload(repo_root=repo_root, flow_name=flow_name)
     _require_matching_flow_name(flow_name=flow_name, flow_file=flow_file, payload=payload)
@@ -59,7 +57,6 @@ def load_flow_definition(
     compiled_agents = _load_compiled_agents(
         repo_root=repo_root,
         build_agents_dir=build_agents_dir,
-        framework_root=framework_root,
     )
 
     agents_payload = _require_mapping(payload, "agents", context="flow.yaml")
@@ -113,7 +110,6 @@ def load_flow_definition(
             raw_value=prompt_input_command_raw,
             repo_root=repo_root,
             flow_root=flow_root,
-            framework_root=framework_root,
             context="runtime.prompt_input_command",
             allowed_roots={FLOW_ROOT},
             example="flow:setup/prompt_inputs.py",
@@ -133,7 +129,6 @@ def load_flow_definition(
             raw_value=setup_home_script_raw,
             repo_root=repo_root,
             flow_root=flow_root,
-            framework_root=framework_root,
             context="setup_home_script",
             allowed_roots={FLOW_ROOT},
             example="flow:setup/prepare_home.sh",
@@ -177,7 +172,6 @@ def _load_compiled_agents(
     *,
     repo_root: Path,
     build_agents_dir: Path,
-    framework_root: Path | None,
 ) -> dict[str, CompiledAgentContract]:
     if not build_agents_dir.is_dir():
         raise RallyConfigError(f"Compiled agent directory is missing: `{build_agents_dir}`.")
@@ -197,7 +191,6 @@ def _load_compiled_agents(
             agent_dir=agent_dir,
             markdown_path=markdown_path,
             contract_path=contract_path,
-            framework_root=framework_root,
         )
         if contract.slug in compiled_agents:
             raise RallyConfigError(
@@ -244,7 +237,6 @@ def _load_compiled_agent_contract(
     agent_dir: Path,
     markdown_path: Path,
     contract_path: Path,
-    framework_root: Path | None,
 ) -> CompiledAgentContract:
     payload = _load_json_mapping(contract_path)
     contract_version = _require_int(payload, "contract_version", context=str(contract_path))
@@ -270,7 +262,6 @@ def _load_compiled_agent_contract(
         raw_value=_require_string(final_output_payload, "schema_file", context=f"{contract_path} final_output"),
         repo_root=repo_root,
         flow_root=agent_dir.parents[2],
-        framework_root=framework_root,
         context=f"{contract_path} final_output.schema_file",
         allowed_roots={FLOW_ROOT, STDLIB_ROOT},
         example="flow:schemas/review.schema.json",
@@ -279,7 +270,6 @@ def _load_compiled_agent_contract(
         raw_value=_require_string(final_output_payload, "example_file", context=f"{contract_path} final_output"),
         repo_root=repo_root,
         flow_root=agent_dir.parents[2],
-        framework_root=framework_root,
         context=f"{contract_path} final_output.example_file",
         allowed_roots={FLOW_ROOT, STDLIB_ROOT},
         example="flow:examples/review.example.json",
@@ -683,7 +673,6 @@ def _resolve_rooted_existing_file(
     raw_value: str,
     repo_root: Path,
     flow_root: Path,
-    framework_root: Path | None,
     context: str,
     allowed_roots: set[PathRoot],
     example: str,
@@ -704,28 +693,8 @@ def _resolve_rooted_existing_file(
         rooted_path,
         workspace_root=repo_root,
         flow_root=flow_root,
-        framework_root=_stdlib_framework_root(
-            repo_root=repo_root,
-            rooted_path=rooted_path,
-            framework_root=framework_root,
-        ),
         context=context,
     )
     if not candidate.is_file():
         raise RallyConfigError(f"{context} does not exist: `{candidate}`.")
     return candidate
-
-
-def _stdlib_framework_root(
-    *,
-    repo_root: Path,
-    rooted_path: RootedPath,
-    framework_root: Path | None,
-) -> Path | None:
-    if rooted_path.root != STDLIB_ROOT:
-        return None
-    if (repo_root / "stdlib" / "rally").is_dir():
-        return None
-    if framework_root is not None:
-        return framework_root.resolve()
-    return resolve_framework_root()

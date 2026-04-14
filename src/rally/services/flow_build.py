@@ -11,6 +11,7 @@ import yaml
 
 from rally.domain.rooted_path import HOME_ROOT, PathRoot, parse_rooted_path
 from rally.errors import RallyConfigError
+from rally.services.bundled_assets import ensure_workspace_builtins_synced
 from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
 from rally.services.workspace import WorkspaceContext, workspace_context_from_root
 
@@ -50,6 +51,10 @@ def ensure_flow_assets_built(
     if not config_path.is_file():
         raise RallyConfigError(f"Rally workspace pyproject is missing: `{config_path}`.")
 
+    ensure_workspace_builtins_synced(
+        workspace_root=workspace_context.workspace_root,
+        pyproject_path=workspace_context.pyproject_path,
+    )
     skill_names = _load_flow_skill_names(repo_root=repo_root, flow_name=flow_name)
     _validate_prompt_rooted_paths(
         workspace=workspace_context,
@@ -75,6 +80,7 @@ def ensure_flow_assets_built(
         target_names=(flow_name,),
         failure_label=f"flow `{flow_name}`",
     )
+    _sync_role_soul_sidecars(workspace=workspace_context, flow_name=flow_name)
 
     if not doctrine_skill_targets:
         return
@@ -122,12 +128,11 @@ def _should_emit_skill_build(
     repo_root: Path,
     skill_name: str,
 ) -> bool:
-    if skill_name in MANDATORY_SKILL_NAMES and workspace.workspace_root != workspace.framework_root:
+    if skill_name in MANDATORY_SKILL_NAMES:
         return False
     bundle = resolve_skill_bundle_source(
         repo_root=repo_root,
         skill_name=skill_name,
-        framework_root=workspace.framework_root,
     )
     if bundle.kind != "doctrine":
         return False
@@ -170,6 +175,74 @@ def _run_doctrine_emit(
     raise RallyConfigError(f"Failed to rebuild {failure_label} with `{module_name}`: {detail}")
 
 
+def _sync_role_soul_sidecars(*, workspace: WorkspaceContext, flow_name: str) -> None:
+    roles_root = workspace.workspace_root / "flows" / flow_name / "prompts" / "roles"
+    build_agents_root = workspace.workspace_root / "flows" / flow_name / "build" / "agents"
+    expected_role_slugs: set[str] = set()
+
+    if roles_root.is_dir():
+        for role_dir in sorted(roles_root.iterdir()):
+            if not role_dir.is_dir():
+                continue
+            soul_prompt = role_dir / "SOUL.prompt"
+            if not soul_prompt.is_file():
+                continue
+            expected_role_slugs.add(role_dir.name)
+            rendered = _render_sidecar_prompt(
+                prompt_path=soul_prompt,
+                project_config_path=workspace.pyproject_path,
+                flow_name=flow_name,
+            )
+            target_dir = build_agents_root / role_dir.name
+            target_dir.mkdir(parents=True, exist_ok=True)
+            (target_dir / "SOUL.md").write_text(rendered, encoding="utf-8")
+
+    if not build_agents_root.is_dir():
+        return
+
+    for agent_dir in sorted(build_agents_root.iterdir()):
+        if not agent_dir.is_dir() or agent_dir.name in expected_role_slugs:
+            continue
+        for sidecar_name in ("SOUL.md", "SOUL.contract.json"):
+            sidecar_path = agent_dir / sidecar_name
+            if sidecar_path.is_file():
+                sidecar_path.unlink()
+
+
+def _render_sidecar_prompt(
+    *,
+    prompt_path: Path,
+    project_config_path: Path,
+    flow_name: str,
+) -> str:
+    try:
+        from doctrine.compiler import CompilationSession
+        from doctrine.diagnostics import DoctrineError
+        from doctrine.emit_common import root_concrete_agents
+        from doctrine.parser import parse_file
+        from doctrine.project_config import load_project_config
+        from doctrine.renderer import render_markdown
+    except ImportError as exc:
+        raise RallyConfigError(
+            f"Failed to import Doctrine while rendering role sidecars for flow `{flow_name}`: {exc}."
+        ) from exc
+
+    try:
+        prompt_file = parse_file(prompt_path)
+        agent_names = root_concrete_agents(prompt_file)
+        if len(agent_names) != 1:
+            raise RallyConfigError(
+                f"Role sidecar `{prompt_path}` must compile exactly one concrete agent, found {len(agent_names)}."
+            )
+        project_config = load_project_config(project_config_path)
+        session = CompilationSession(prompt_file, project_config=project_config)
+        compiled_agents = session.compile_agents(agent_names)
+    except DoctrineError as exc:
+        raise RallyConfigError(f"Failed to compile role sidecar `{prompt_path}`: {exc}") from exc
+
+    return render_markdown(compiled_agents[0])
+
+
 def _coerce_workspace(*, workspace: WorkspaceContext | None, repo_root: Path | None) -> WorkspaceContext:
     if workspace is not None and repo_root is not None:
         raise RallyConfigError("Pass either `workspace` or `repo_root`, not both.")
@@ -188,13 +261,12 @@ def _validate_prompt_rooted_paths(
 ) -> None:
     prompt_roots: list[Path] = [
         workspace.workspace_root / "flows" / flow_name / "prompts",
-        workspace.framework_root / "stdlib" / "rally" / "prompts",
+        workspace.workspace_root / "stdlib" / "rally" / "prompts",
     ]
     for skill_name in skill_names:
         bundle = resolve_skill_bundle_source(
             repo_root=workspace.workspace_root,
             skill_name=skill_name,
-            framework_root=workspace.framework_root,
         )
         if bundle.kind != "doctrine" or bundle.doctrine_entrypoint is None:
             continue
