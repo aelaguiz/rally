@@ -56,8 +56,10 @@ What it does today:
 - strips the starter prompt back out before saving the issue
 - still fails loud unless `home/issue.md` ends up with non-empty text
 - prepares the full run home only after `home/issue.md` is ready
-- refreshes `home/agents/`, `home/skills/`, `home/mcps/`, and adapter-owned
-  bootstrap files from current repo state before the next turn starts
+- refreshes `home/agents/`, `home/sessions/<agent>/skills/`, `home/mcps/`,
+  and adapter-owned bootstrap files from current repo state before the next
+  turn starts
+- activates the current agent's live `home/skills/` tree before that turn
 - runs flow setup only the first time the run home becomes ready
 - loads any flow-declared runtime prompt-input sections before each turn
 - blocks `handoff` or `done` when a flow-declared guarded git repo is missing,
@@ -107,8 +109,9 @@ What it does today:
 - reuses the saved adapter session id when one exists
 - opens the same live stream rules as `rally run`
 - keeps going across handoffs until Rally reaches a real stop point
-- refreshes `home/agents/`, `home/skills/`, `home/mcps/`, and adapter-owned
-  bootstrap files before the next turn starts
+- refreshes `home/agents/`, `home/sessions/<agent>/skills/`, `home/mcps/`,
+  and adapter-owned bootstrap files before the next turn starts
+- activates the current agent's live `home/skills/` tree before that turn
 - does not rerun flow setup after the run home is already ready
 - reloads any flow-declared runtime prompt-input sections before each turn
 - blocks `handoff` or `done` when a flow-declared guarded git repo is missing,

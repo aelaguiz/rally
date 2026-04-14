@@ -5,7 +5,6 @@ status: audit
 doc_type: technical_audit
 related:
   - docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md
-  - docs/RALLY_HERMES_ADAPTER_RUNTIME_GENERALIZATION_2026-04-13.md
   - docs/RALLY_HERMES_ADAPTER_AUDIT_2026-04-13.md
   - docs/RALLY_MASTER_DESIGN_2026-04-12.md
   - docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
@@ -119,10 +118,8 @@ Rally's current rules:
 - `src/rally/domain/run.py`
 - `src/rally/adapters/codex/launcher.py`
 - `src/rally/adapters/codex/event_stream.py`
-- `src/rally/adapters/codex/result_contract.py`
 - `src/rally/adapters/codex/session_store.py`
 - `docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md`
-- `docs/RALLY_HERMES_ADAPTER_RUNTIME_GENERALIZATION_2026-04-13.md`
 - `docs/RALLY_MASTER_DESIGN_2026-04-12.md`
 - `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md`
 - `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`
@@ -584,16 +581,17 @@ Cons:
 
 - not backed by the normal local Claude subscription login
 
-# What This Changes In The Hermes Planning Docs
+# What This Means For Earlier Hermes Exploration
 
-The general direction in
-`docs/RALLY_HERMES_ADAPTER_RUNTIME_GENERALIZATION_2026-04-13.md` is still
-good:
+The useful part that carried forward is still small and clear:
 
 - real adapter registry
 - adapter-owned launch rules
 - adapter-owned session handling
 - adapter-owned event parsing
+
+Use the current master design, Phase 4 runtime doc, and CLI/logging doc for
+live runtime truth.
 - adapter-owned result-envelope parsing
 
 But Claude changes three practical assumptions:

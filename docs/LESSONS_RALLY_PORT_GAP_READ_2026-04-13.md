@@ -10,6 +10,8 @@ related:
   - docs/RALLY_MASTER_DESIGN_2026-04-12.md
   - docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md
   - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
+  - docs/RALLY_AGENT_ALLOWED_SKILL_ENFORCEMENT_PLAN_2026-04-13.md
+  - docs/RALLY_CODEX_RUNNER_MCP_SUPPORT_AND_AUTH_2026-04-13.md
   - src/rally/services/runner.py
   - src/rally/services/issue_ledger.py
   - src/rally/services/home_materializer.py
@@ -23,6 +25,8 @@ runtime shell, the true Rally-core gap list is short.
 
 I overstated Paperclip control-plane features that we can simply collapse away
 in a linear, single-run, `issue.md`-centric Rally flow.
+The list is even shorter now that per-agent skill isolation shipped on
+2026-04-14. The remaining runtime gap is MCP handling, not skill handling.
 
 # Drops Out
 
@@ -92,16 +96,20 @@ in a linear, single-run, `issue.md`-centric Rally flow.
 
 # True Rally Runtime Gaps
 
-- Per-agent skill and MCP isolation is the one clear runtime gap. Today Rally
-  copies the union of all allowed skills and MCPs into one shared run home
-  (`src/rally/services/home_materializer.py:289`). Lessons doctrine assumes
-  each role only sees the skills named for that role and its aligned config
-  entry
-  (`/Users/aelaguiz/workspace/paperclip_agents/doctrine/prompts/lessons/common/skills.prompt:309`,
-  `/Users/aelaguiz/workspace/paperclip_agents/paperclip_home/agents/agent_configs.json:59`).
-  To support that faithfully, Rally should re-materialize `home/skills` and
-  `config.toml` per current agent, or launch each turn with an agent-specific
-  overlay.
+- Per-agent skill isolation is no longer a runtime gap. Rally now refreshes
+  one stable skill view per agent under `home/sessions/<agent>/skills/` and
+  switches the live `home/skills/` tree before each turn
+  (`docs/RALLY_MASTER_DESIGN_2026-04-12.md:196`,
+  `docs/RALLY_AGENT_ALLOWED_SKILL_ENFORCEMENT_PLAN_2026-04-13.md:26`).
+- Per-agent MCP handling is still the clear runtime gap. Rally still copies
+  the union of all allowed MCPs into shared `home/mcps/`
+  (`src/rally/services/home_materializer.py:407`), while the live runtime docs
+  still call out per-agent `allowed_mcps` enforcement and per-agent MCP
+  isolation as follow-up work
+  (`docs/RALLY_MASTER_DESIGN_2026-04-12.md:219`,
+  `docs/RALLY_MASTER_DESIGN_2026-04-12.md:613`). The separate Codex MCP note
+  still treats required-MCP readiness and child-run parity as open
+  (`docs/RALLY_CODEX_RUNNER_MCP_SUPPORT_AND_AUTH_2026-04-13.md`).
 - First-class structured note metadata would be useful, but it is not
   required. We can store fenced JSON or YAML inside note bodies today. A typed
   `rally issue note` mode would reduce brittle parsing, but I would treat it
@@ -131,7 +139,8 @@ in a linear, single-run, `issue.md`-centric Rally flow.
 
 The corrected exhaustive read is: most of the Lessons support work belongs in
 a Rally-native Lessons flow, its shared prompt library, and its issue-state
-reducer. The only strong runtime feature I would call actually missing in
-Rally is per-agent capability isolation. Everything else from Paperclip that
-looked scary in the first pass mostly disappears once you take Rally's linear,
-synchronous, `issue.md`-first design seriously.
+reducer. The strongest remaining runtime feature gap is per-agent MCP
+handling, including required-MCP readiness. Per-agent skill isolation is
+already shipped. Everything else from Paperclip that looked scary in the first
+pass mostly disappears once you take Rally's linear, synchronous,
+`issue.md`-first design seriously.
