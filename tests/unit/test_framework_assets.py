@@ -17,12 +17,17 @@ class FrameworkAssetsTests(unittest.TestCase):
             workspace_root = root / "workspace"
             (framework_root / "stdlib" / "rally" / "prompts").mkdir(parents=True)
             (framework_root / "skills" / "rally-kernel").mkdir(parents=True)
+            (framework_root / "skills" / "rally-memory").mkdir(parents=True)
             (framework_root / "stdlib" / "rally" / "prompts" / "base.prompt").write_text(
                 "prompt\n",
                 encoding="utf-8",
             )
             (framework_root / "skills" / "rally-kernel" / "SKILL.md").write_text(
                 "# Rally Kernel\n",
+                encoding="utf-8",
+            )
+            (framework_root / "skills" / "rally-memory" / "SKILL.md").write_text(
+                "# Rally Memory\n",
                 encoding="utf-8",
             )
             workspace_root.mkdir()
@@ -42,6 +47,10 @@ class FrameworkAssetsTests(unittest.TestCase):
                 (workspace_root / "skills" / "rally-kernel" / "SKILL.md").read_text(encoding="utf-8"),
                 "# Rally Kernel\n",
             )
+            self.assertEqual(
+                (workspace_root / "skills" / "rally-memory" / "SKILL.md").read_text(encoding="utf-8"),
+                "# Rally Memory\n",
+            )
 
     def test_ensure_framework_builtins_rejects_local_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -49,8 +58,13 @@ class FrameworkAssetsTests(unittest.TestCase):
             framework_root = root / "framework"
             workspace_root = root / "workspace"
             (framework_root / "skills" / "rally-kernel").mkdir(parents=True)
+            (framework_root / "skills" / "rally-memory").mkdir(parents=True)
             (framework_root / "skills" / "rally-kernel" / "SKILL.md").write_text(
                 "# Rally Kernel\n",
+                encoding="utf-8",
+            )
+            (framework_root / "skills" / "rally-memory" / "SKILL.md").write_text(
+                "# Rally Memory\n",
                 encoding="utf-8",
             )
             (framework_root / "stdlib" / "rally").mkdir(parents=True)

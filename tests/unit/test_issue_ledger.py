@@ -6,9 +6,12 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
+from rally.domain.memory import MemoryEntry, MemorySaveResult, MemoryScope
 from rally.errors import RallyStateError
 from rally.services.issue_ledger import (
     ORIGINAL_ISSUE_END_MARKER,
+    append_memory_saved,
+    append_memory_used,
     append_issue_edit_diff,
     append_issue_note,
     extract_original_issue_text,
@@ -362,6 +365,43 @@ class IssueLedgerTests(unittest.TestCase):
                     after_text="Same text.\n",
                 )
 
+    def test_append_memory_used_formats_memory_readback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            append_memory_used(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                entry=self._memory_entry(repo_root),
+                turn_index=4,
+                now=datetime(2026, 4, 13, 20, 30, tzinfo=UTC),
+            )
+
+            issue_text = issue_file.read_text(encoding="utf-8")
+            self.assertIn("## Memory Used", issue_text)
+            self.assertIn("- Turn: `4`", issue_text)
+            self.assertIn("- Memory ID: `mem_flw_scope_lead_focus_the_fix`", issue_text)
+            self.assertIn("### Lesson", issue_text)
+            self.assertIn("Focus the fix before expanding scope.", issue_text)
+
+    def test_append_memory_saved_includes_outcome(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            append_memory_saved(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                save_result=MemorySaveResult(outcome="updated", entry=self._memory_entry(repo_root)),
+                now=datetime(2026, 4, 13, 20, 31, tzinfo=UTC),
+            )
+
+            issue_text = issue_file.read_text(encoding="utf-8")
+            self.assertIn("## Memory Saved", issue_text)
+            self.assertIn("- Outcome: `updated`", issue_text)
+            self.assertIn("- Source: `rally memory save`", issue_text)
+
     def _write_run(
         self,
         *,
@@ -387,6 +427,20 @@ class IssueLedgerTests(unittest.TestCase):
             encoding="utf-8",
         )
         return issue_path
+
+    def _memory_entry(self, repo_root: Path) -> MemoryEntry:
+        path = repo_root / "runs" / "memory" / "entries" / "FLW" / "scope_lead" / "mem_flw_scope_lead_focus_the_fix.md"
+        return MemoryEntry(
+            memory_id="mem_flw_scope_lead_focus_the_fix",
+            scope=MemoryScope(flow_code="FLW", agent_slug="scope_lead"),
+            source_run_id="FLW-1",
+            created_at="2026-04-13T20:00:00Z",
+            updated_at="2026-04-13T20:05:00Z",
+            lesson="Focus the fix before expanding scope.",
+            when_this_matters="Use this when the first bug is still not fixed.",
+            what_to_do="Fix the concrete bug, then widen only if the proof shows a second issue.",
+            path=path,
+        )
 
 
 if __name__ == "__main__":

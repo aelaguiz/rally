@@ -26,6 +26,9 @@ Phase 4 now has a proved Codex vertical slice.
 Rally can create a real run, prepare a real run home, launch real Codex turns,
 read strict final JSON results, including control-ready review finals, and drive the authored flow to a real done
 state.
+The current repo also ships the first built-in Rally memory slice on top of that runtime:
+shared Doctrine memory contract, repo-local markdown truth, repo-local QMD state,
+Rally memory CLI, and visible memory issue and event records.
 
 Use `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` for the focused command and
 logging contract.
@@ -54,6 +57,16 @@ What is real today:
 - `home/issue.md` plus `issue_history/`
 - the opening brief lives in `home/issue.md`, not a shared sidecar brief file
 - `rally issue note --field key=value` for flat structured note labels
+- shared issue-ledger input and shared `rally-memory` guidance in the Rally stdlib
+- `rally memory search`
+- `rally memory use`
+- `rally memory save`
+- `rally memory refresh`
+- durable memory markdown under `runs/memory/entries/<flow_code>/<agent_slug>/`
+- repo-local QMD state under `runs/memory/qmd/index.sqlite` and `runs/memory/qmd/cache/`
+- a pinned QMD bridge under `tools/qmd_bridge/`
+- `Memory Used` and `Memory Saved` blocks in `home/issue.md`
+- `memory_used` and `memory_saved` in the canonical runtime event stream
 - `logs/events.jsonl`
 - `logs/agents/<agent>.jsonl`
 - `logs/rendered.log`
@@ -73,10 +86,13 @@ What is outside Phase 4:
 # Stable Rules
 
 - Notes are context only.
+- Memory is context only.
 - Notes may carry flat string header fields for stable labels.
 - Final JSON is the only turn-ending control path.
 - Many turns use the shared five-key Rally turn result.
 - Review-native turns may use control-ready Doctrine review JSON instead.
+- `memory search` is discovery only.
+- `memory use` and `memory save` are the visible memory actions.
 - `AGENTS.md` is injected instruction readback only.
 - `AGENTS.contract.json` is the compiler-owned metadata file Rally loads.
 - Rally does not ship a shared file-state carrier.
@@ -97,13 +113,26 @@ The current checked-in runtime surface is:
   - requires compiled `build/agents/*`
   - requires `AGENTS.contract.json`
   - validates flow codes, `runtime.max_command_turns`, prompt-input commands, and the shared turn-result schema
+  - carries the compiled slug forward as the source-of-truth agent identity after validation
 - `src/rally/cli.py`
   - ships real `run`
   - ships real `resume`
   - ships `resume --edit`
   - ships `resume --restart`
   - ships `issue note`, including repeatable `--field key=value`
+  - ships `memory search`, `memory use`, `memory save`, and `memory refresh`
   - stamps `- Turn: \`N\`` on in-turn notes automatically when Rally launched that turn
+- `src/rally/domain/memory.py`
+  - defines `MemoryScope`, `MemoryEntry`, `MemorySearchHit`, `MemorySaveResult`, and `MemoryRefreshResult`
+- `src/rally/services/memory_store.py`
+  - keeps markdown under `runs/memory/entries/...` as the durable memory truth
+- `src/rally/services/memory_index.py`
+  - forces repo-local QMD paths
+  - talks only to the pinned Node bridge
+  - owns scoped refresh and search behavior
+- `src/rally/services/memory_runtime.py`
+  - resolves scope from run state and env
+  - keeps memory CLI behavior thin and Rally-owned
 - `src/rally/services/run_store.py`
   - allocates run ids
   - writes `run.yaml` and `state.yaml`
@@ -116,13 +145,19 @@ The current checked-in runtime surface is:
   - runs flow setup only when the run home first becomes ready
 - `src/rally/services/issue_ledger.py`
   - appends Rally-stamped notes and runtime event blocks
+  - appends normalized `Memory Used` and `Memory Saved` readback
   - renders flat structured note fields as `- Field <key>: \`<value>\`` header lines
   - inserts one hidden original-issue marker before the first Rally-owned block
   - can recover the original issue from the earliest issue snapshot
   - snapshots the full issue log after each append
 - `src/rally/services/run_events.py`
   - writes canonical run events
+  - records `memory_used` and `memory_saved`
   - fans them out to whole-run logs, agent logs, and the rendered transcript
+- `tools/qmd_bridge/`
+  - pins `@tobilu/qmd` `2.1.0`
+  - opens QMD through the SDK with explicit `dbPath`
+  - keeps the Python/Node seam narrow and explicit
 - `src/rally/terminal/display.py`
   - renders the live color stream on a TTY
   - shows a richer startup summary with run, flow, model, thinking level, adapter, and agent facts
@@ -172,6 +207,7 @@ The current core proof set is:
 
 - flow rebuild for `_stdlib_smoke`
 - flow rebuild for `poem_loop`
+- flow rebuild for `software_engineering_demo`
 - `tests/unit/test_flow_loader.py`
 - `tests/unit/domain/test_turn_result_contracts.py`
 - `tests/unit/test_cli.py`
@@ -181,7 +217,12 @@ The current core proof set is:
 - `tests/unit/test_run_events.py`
 - `tests/unit/test_codex_event_stream.py`
 - `tests/unit/test_runner.py`
+- `tests/unit/test_memory_store.py`
+- `tests/unit/test_memory_index.py`
+- `tests/unit/test_memory_runtime.py`
+- one bridge smoke proof that confirmed an empty scoped refresh does not create `~/.cache/qmd/`
 - one live end-to-end `poem_loop` run on Codex that reached `done`
+- one live `poem_loop` proof on Codex that saved memory on turn 7, searched and used it on turn 9, and still reached `done` on turn 10
 
 # Next Work
 
@@ -190,7 +231,7 @@ The next honest work is Phase 5 work:
 1. add a standalone `rally archive` command
 2. add better stale-run diagnosis
 3. add a replay or viewer command for old runs
-4. prove the new narrow flow on a live Codex run
+4. prove the second narrow flow on a live Codex run
 
 # Live Truth
 

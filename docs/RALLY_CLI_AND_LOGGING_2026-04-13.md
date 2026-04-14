@@ -145,6 +145,54 @@ What it does today:
 - writes a full snapshot into the run's `issue_history/`
 - prints the updated issue path and snapshot path
 
+### `rally memory`
+
+Current shape:
+
+```bash
+rally memory search --run-id <run-id> [--agent-slug <slug>] --query "<text>" [--limit N]
+rally memory use --run-id <run-id> [--agent-slug <slug>] <memory-id>
+rally memory save --run-id <run-id> [--agent-slug <slug>] [--text "<markdown>" | --file <path>]
+rally memory refresh --run-id <run-id> [--agent-slug <slug>]
+```
+
+What it does today:
+
+- resolves memory scope from the run's flow code plus the compiled agent slug carried into runtime state
+- lets `--agent-slug` override the current agent when the operator needs a different scoped memory view
+- keeps durable memory truth in markdown files under `runs/memory/entries/<flow_code>/<agent_slug>/`
+- keeps QMD state repo-local under `runs/memory/qmd/index.sqlite` and `runs/memory/qmd/cache/`
+- calls QMD only through the pinned bridge at `tools/qmd_bridge/`
+- fails loud if the bridge is missing, returns bad JSON, or QMD fails
+
+`rally memory search` today:
+
+- searches only the current flow-agent scope
+- prints a short ranked hit list with the canonical memory id, lesson title, and a short `When This Matters` snippet
+- does not append to `home/issue.md`
+- does not write a visible runtime event
+
+`rally memory use` today:
+
+- reads one scoped markdown memory file
+- prints the memory body
+- records `memory_used` in the canonical runtime event stream
+- appends one normalized `## Memory Used` block to `home/issue.md`
+
+`rally memory save` today:
+
+- reads memory markdown from stdin, `--text`, or `--file`
+- requires the shared three-section body with `# Lesson`, `# When This Matters`, and `# What To Do`
+- writes or updates one markdown memory file
+- refreshes only the scoped QMD collection
+- records `memory_saved`
+- appends one normalized `## Memory Saved` block to `home/issue.md`
+
+`rally memory refresh` today:
+
+- rebuilds the scoped QMD collection from the markdown source files
+- is the repair path when QMD state drifts or is cleared
+
 ### Exit behavior
 
 The CLI error model is already simple:
@@ -173,6 +221,8 @@ original issue for `resume --restart`.
 After that, Rally appends:
 
 - note blocks from `rally issue note`
+- `Memory Used` blocks from `rally memory use`
+- `Memory Saved` blocks from `rally memory save`
 - review-note blocks from `rally runtime review` when Rally consumes a review-native final response
 - `resume --edit` diff blocks when the operator changed `home/issue.md`
 - run-start records
@@ -201,7 +251,7 @@ The current Rally note block format is:
 ```
 
 Turn-scoped runtime blocks use the same optional `- Turn:` metadata line.
-That includes `Rally Turn Result`, `Rally Done`, `Rally Blocked`, and
+That includes `Memory Used`, `Memory Saved`, `Rally Turn Result`, `Rally Done`, `Rally Blocked`, and
 `Rally Sleeping` when the block belongs to one active turn.
 Non-turn blocks such as `Rally Run Started`, `Rally Archived`, and
 `user edited issue.md` stay unnumbered.
@@ -269,6 +319,9 @@ What exists today:
 - `state.yaml`
 - `home/issue.md`
 - `issue_history/` full snapshots after Rally-owned issue writes
+- `runs/memory/entries/` durable memory markdown
+- `runs/memory/qmd/index.sqlite`
+- `runs/memory/qmd/cache/`
 - `logs/events.jsonl`
 - `logs/agents/<agent>.jsonl`
 - `logs/rendered.log`
@@ -291,6 +344,7 @@ same event stream.
 That event stream now covers:
 
 - Rally lifecycle events such as run create, resume, home prep, setup, prompt-input load, launch, and final turn status
+- `memory_used` and `memory_saved`
 - Codex session start or resume events
 - assistant output lines when Codex emits text chunks
 - reasoning summary lines when Codex emits reasoning items

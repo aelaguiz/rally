@@ -9,6 +9,7 @@ from typing import Iterable
 
 import yaml
 
+from rally.domain.memory import MemoryEntry, MemorySaveResult
 from rally.errors import RallyStateError
 from rally.services.run_store import find_run_dir
 
@@ -16,6 +17,8 @@ ORIGINAL_ISSUE_END_MARKER = "<!-- RALLY_ORIGINAL_ISSUE_END -->"
 _NOTE_FIELD_KEY_PATTERN = re.compile(r"[a-z][a-z0-9_]*\Z")
 _RALLY_BLOCK_TITLES = (
     "Rally Note",
+    "Memory Used",
+    "Memory Saved",
     "user edited issue.md",
     "Rally Run Started",
     "Rally Turn Result",
@@ -77,6 +80,60 @@ def append_issue_edit_diff(
         source="rally resume --edit",
         detail_lines=(),
         body=_render_issue_edit_diff(before_text=before_text, after_text=after_text),
+        now=now,
+    )
+
+
+def append_memory_used(
+    *,
+    repo_root: Path,
+    run_id: str,
+    entry: MemoryEntry,
+    turn_index: int | None = None,
+    now: datetime | None = None,
+) -> IssueNoteAppendResult:
+    memory_path = _render_repo_relative_path(repo_root=repo_root, path=entry.path)
+    return append_issue_event(
+        repo_root=repo_root,
+        run_id=run_id,
+        title="Memory Used",
+        source="rally memory use",
+        detail_lines=(
+            f"Memory ID: `{entry.memory_id}`",
+            f"Flow Code: `{entry.scope.flow_code}`",
+            f"Agent Slug: `{entry.scope.agent_slug}`",
+            f"Memory File: `{memory_path}`",
+        ),
+        body=entry.issue_markdown(),
+        turn_index=turn_index,
+        now=now,
+    )
+
+
+def append_memory_saved(
+    *,
+    repo_root: Path,
+    run_id: str,
+    save_result: MemorySaveResult,
+    turn_index: int | None = None,
+    now: datetime | None = None,
+) -> IssueNoteAppendResult:
+    entry = save_result.entry
+    memory_path = _render_repo_relative_path(repo_root=repo_root, path=entry.path)
+    return append_issue_event(
+        repo_root=repo_root,
+        run_id=run_id,
+        title="Memory Saved",
+        source="rally memory save",
+        detail_lines=(
+            f"Outcome: `{save_result.outcome}`",
+            f"Memory ID: `{entry.memory_id}`",
+            f"Flow Code: `{entry.scope.flow_code}`",
+            f"Agent Slug: `{entry.scope.agent_slug}`",
+            f"Memory File: `{memory_path}`",
+        ),
+        body=entry.issue_markdown(),
+        turn_index=turn_index,
         now=now,
     )
 
@@ -323,3 +380,10 @@ def _should_insert_original_issue_marker(issue_text: str) -> bool:
     if ORIGINAL_ISSUE_END_MARKER in issue_text:
         return False
     return _find_first_rally_block_start(issue_text) is None
+
+
+def _render_repo_relative_path(*, repo_root: Path, path: Path) -> Path:
+    try:
+        return path.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        return path

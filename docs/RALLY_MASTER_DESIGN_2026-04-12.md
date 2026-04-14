@@ -94,6 +94,9 @@ This is the canonical split between Doctrine and Rally.
 - issue-log ordering and snapshots
 - the shared `rally issue note` surface
 - the Rally kernel skill
+- the Rally memory skill
+- repo-local memory files, QMD state, and memory indexing
+- memory issue-ledger readback and runtime event records
 - the runtime's interpretation of validated final turn results
 
 ### `paperclip_agents` owns nothing in the framework
@@ -209,7 +212,7 @@ It should:
 - begin with the operator's brief exactly as entered
 - remain append-only after that initial brief
 - add one hidden `<!-- RALLY_ORIGINAL_ISSUE_END -->` marker before the first Rally-owned block
-- hold setup notes, serialized notes, normalized final-turn response records, and runner-generated status records
+- hold setup notes, serialized notes, normalized final-turn response records, memory-use and memory-save readback, and runner-generated status records
 - use one Markdown `---` divider between Rally-owned blocks after that marker
 - add `- Turn: \`N\`` on turn-scoped blocks without asking the agent to manage that line
 
@@ -251,7 +254,7 @@ The actual return still comes back through the adapter's strict final JSON-schem
 Rally does not add a shared file-state carrier on top of Doctrine.
 If a local authored review needs review-state syntax, treat that as local Doctrine syntax, not as a Rally communication channel.
 
-### Standard Library And Kernel Skill
+### Standard Library And Core Skills
 
 Rally ships a mandatory standard library written in Doctrine.
 Every Rally flow and every Rally agent inherits from it.
@@ -260,8 +263,11 @@ The standard library should stay light-touch.
 It should start with:
 
 - one tiny shared `rally.turn_results` final-output contract
+- one shared issue-ledger input for run-home-relative `issue.md`
 - one shared note path
+- one shared memory contract
 - one mandatory Rally kernel skill
+- one mandatory Rally memory skill
 
 The Rally kernel skill should:
 
@@ -269,11 +275,19 @@ The Rally kernel skill should:
 - teach agents how to shape schema-valid end-of-turn JSON
 - remain helper-shaped rather than becoming a second runtime
 
+The Rally memory skill should:
+
+- teach agents to use `rally memory search`, `rally memory use`, `rally memory save`, and `rally memory refresh`
+- keep memory as explicit CLI behavior instead of hidden prompt-only magic
+- keep notes run-local and cross-run lessons in the shared memory path
+
 The checked-in shared prompts under `stdlib/rally/prompts/rally/` should stay small and direct.
 The favored design is now:
 
 - `rally.turn_results` as the machine control contract
+- one shared issue-ledger input and one shared memory document shape in Doctrine source
 - notes through Rally-owned skill-plus-CLI behavior
+- memory through Rally-owned skill-plus-CLI behavior backed by repo-local markdown plus repo-local QMD state
 - no separate authored handoff artifact
 
 ## Runtime Contract Summary
@@ -357,6 +371,8 @@ These are the stable runtime surfaces the design depends on:
 | `state.yaml` | compact machine status |
 | `home/issue.md` | live semantic ledger |
 | `issue_history/` | full-file ledger snapshots |
+| `runs/memory/entries/` | durable cross-run memory markdown truth |
+| `runs/memory/qmd/` | repo-local QMD index and cache root |
 | `logs/events.jsonl` | structured run telemetry |
 | `logs/agents/` | per-agent event mirrors |
 | `logs/rendered.log` | plain operator transcript |
@@ -375,6 +391,10 @@ rally run <flow> [--new]
 rally resume <FLOW_CODE>-<n> [--edit|--restart]
 rally archive <FLOW_CODE>-<n>
 rally issue note --run-id <FLOW_CODE>-<n> [--field key=value ...]
+rally memory search --run-id <FLOW_CODE>-<n> --query "<text>"
+rally memory use --run-id <FLOW_CODE>-<n> <memory-id>
+rally memory save --run-id <FLOW_CODE>-<n> [--text "<markdown>" | --file <path>]
+rally memory refresh --run-id <FLOW_CODE>-<n>
 ```
 
 `rally run` and `rally resume` should give the operator one clean live view on
@@ -588,13 +608,13 @@ These notes are still useful, but they no longer need to dominate the doc.
 ### Future Direction After Phase 5
 
 The next architecture move after Phase 5 should not be more product shell.
-It should be built-in turn-start memory lookup and turn-end learning as Rally runtime behavior.
+Built-in per-flow and per-agent memory now ships through repo-local markdown,
+repo-local QMD state, and Rally-owned CLI and issue/event paths.
 
-That future work should preserve the same core rules:
+The next memory-related work should stay on the same rails:
 
-- repo-local state
-- filesystem-first truth
-- no side-door instruction sources
-- auditable memory surfaces
-- no hidden global control plane
-- no DB source of truth
+- keep repo-local state
+- keep markdown as the durable truth
+- keep search and rebuild repair on the Rally front door
+- add replay, archive, and broader live-flow proof before broader memory scope
+- avoid hidden global control planes and DB-first truth

@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Mapping, Protocol
 
+from rally.domain.memory import MemoryEntry, MemorySaveResult
+
 
 @dataclass(frozen=True)
 class EventDraft:
@@ -132,6 +134,68 @@ class RunEventRecorder:
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(dict(payload), sort_keys=True))
             handle.write("\n")
+
+
+def record_memory_used(
+    *,
+    run_dir: Path,
+    run_id: str,
+    flow_code: str,
+    entry: MemoryEntry,
+    turn_index: int | None,
+    agent_slug: str,
+) -> RunEvent:
+    recorder = RunEventRecorder(run_dir=run_dir, run_id=run_id, flow_code=flow_code)
+    try:
+        return recorder.emit(
+            source="rally memory use",
+            kind="memory_used",
+            code="MEM USE",
+            message=f"Used memory `{entry.memory_id}`.",
+            data={
+                "memory_id": entry.memory_id,
+                "flow_code": entry.scope.flow_code,
+                "agent_slug": entry.scope.agent_slug,
+                "path": str(entry.path),
+                "source_run_id": entry.source_run_id,
+            },
+            turn_index=turn_index,
+            agent_slug=agent_slug,
+        )
+    finally:
+        recorder.close()
+
+
+def record_memory_saved(
+    *,
+    run_dir: Path,
+    run_id: str,
+    flow_code: str,
+    save_result: MemorySaveResult,
+    turn_index: int | None,
+    agent_slug: str,
+) -> RunEvent:
+    entry = save_result.entry
+    recorder = RunEventRecorder(run_dir=run_dir, run_id=run_id, flow_code=flow_code)
+    try:
+        return recorder.emit(
+            source="rally memory save",
+            kind="memory_saved",
+            code="MEM SAVE",
+            message=f"Saved memory `{entry.memory_id}` ({save_result.outcome}).",
+            data={
+                "memory_id": entry.memory_id,
+                "flow_code": entry.scope.flow_code,
+                "agent_slug": entry.scope.agent_slug,
+                "path": str(entry.path),
+                "source_run_id": entry.source_run_id,
+                "outcome": save_result.outcome,
+            },
+            turn_index=turn_index,
+            agent_slug=agent_slug,
+        )
+    finally:
+        recorder.close()
 
 
 def render_plain_event_line(event: RunEvent) -> str:

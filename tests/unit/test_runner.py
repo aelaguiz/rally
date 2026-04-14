@@ -220,11 +220,14 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(result.status, RunStatus.DONE)
             self.assertIsNone(result.current_agent_key)
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
+            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
             self.assertIn("## Skills", prompt_text)
             self.assertIn("### rally-kernel", prompt_text)
+            self.assertIn("### rally-memory", prompt_text)
             self.assertIn("### Issue Note", prompt_text)
             self.assertNotIn("\n### Writer Issue Note\n", prompt_text)
             self.assertIn("Use the shared `rally-kernel` skill for that note.", prompt_text)
+            self.assertIn("Use the shared `rally-memory` skill only when a past lesson could help", prompt_text)
             self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', prompt_text)
             self.assertIn("Artistic Rationale", prompt_text)
             self.assertIn("### Rally Turn Result", prompt_text)
@@ -579,6 +582,7 @@ class RunnerTests(unittest.TestCase):
                 updated_skill,
             )
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
+            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "mcps" / "fixture-repo" / "server.toml").is_file())
             config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
             self.assertIn("project_doc_max_bytes = 2048", config_text)
@@ -622,6 +626,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(first_result.status, RunStatus.BLOCKED)
             self.assertTrue((run_dir / "home" / "skills" / "repo-search" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
+            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "mcps" / "fixture-repo" / "server.toml").is_file())
 
             flow_text = flow_path.read_text(encoding="utf-8")
@@ -665,6 +670,7 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse((run_dir / "home" / "skills" / "repo-search").exists())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
+            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
             self.assertFalse((run_dir / "home" / "mcps" / "fixture-repo").exists())
             config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
             self.assertEqual(config_text, "project_doc_max_bytes = 0\n")
@@ -1905,6 +1911,7 @@ class RunnerTests(unittest.TestCase):
             encoding="utf-8",
         )
         shutil.copytree(source_root / "skills" / "rally-kernel", repo_root / "skills" / "rally-kernel")
+        shutil.copytree(source_root / "skills" / "rally-memory", repo_root / "skills" / "rally-memory")
         shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
 
         flow_root = repo_root / "flows" / "demo"
@@ -1982,6 +1989,7 @@ class RunnerTests(unittest.TestCase):
         source_root = Path(__file__).resolve().parents[2]
         shutil.copytree(source_root / "flows" / "poem_loop", repo_root / "flows" / "poem_loop")
         shutil.copytree(source_root / "skills" / "rally-kernel", repo_root / "skills" / "rally-kernel")
+        shutil.copytree(source_root / "skills" / "rally-memory", repo_root / "skills" / "rally-memory")
         shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
 
     def _write_markdown_skill(

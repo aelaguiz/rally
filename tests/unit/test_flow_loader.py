@@ -106,8 +106,12 @@ class FlowLoaderTests(unittest.TestCase):
 
         self.assertIn("## Skills", writer_readback)
         self.assertIn("### rally-kernel", writer_readback)
+        self.assertIn("### rally-memory", writer_readback)
         self.assertIn("### Issue Note", writer_readback)
         self.assertNotIn("\n### Writer Issue Note\n", writer_readback)
+        self.assertIn("### Issue Ledger", writer_readback)
+        self.assertIn("### Rally Agent Slug", writer_readback)
+        self.assertIn("## Read First", writer_readback)
         self.assertIn("Artistic Rationale", writer_readback)
         self.assertIn("### Rally Turn Result", writer_readback)
         self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', writer_readback)
