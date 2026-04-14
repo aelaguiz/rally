@@ -7,7 +7,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from rally.memory.service import save_memory, search_memory, use_memory
+from rally.memory.logging import MEMORY_EVENT_MODE_ADAPTER, MEMORY_EVENT_MODE_ENV
+from rally.memory.service import refresh_memory, save_memory, search_memory, use_memory
 
 
 class MemoryServiceTests(unittest.TestCase):
@@ -17,27 +18,6 @@ class MemoryServiceTests(unittest.TestCase):
             self._write_run(repo_root=repo_root, run_id="POM-7", flow_code="POM", current_agent_slug="poem_writer")
             self._write_bridge(repo_root=repo_root)
 
-            def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-                del command, kwargs
-                return subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout=json.dumps(
-                        {
-                            "collections": 1,
-                            "indexed": 1,
-                            "updated": 0,
-                            "unchanged": 0,
-                            "removed": 0,
-                            "needsEmbedding": 0,
-                            "docsProcessed": 0,
-                            "chunksEmbedded": 0,
-                            "embedErrors": 0,
-                        }
-                    ),
-                    stderr="",
-                )
-
             issue_path = repo_root / "runs" / "POM-7" / "home" / "issue.md"
             before_issue = issue_path.read_text(encoding="utf-8")
 
@@ -45,7 +25,7 @@ class MemoryServiceTests(unittest.TestCase):
                 repo_root=repo_root,
                 run_id="POM-7",
                 memory_markdown=self._memory_body(),
-                subprocess_run=fake_run,
+                subprocess_run=self._fake_bridge_run,
             )
 
             events_text = (repo_root / "runs" / "POM-7" / "logs" / "events.jsonl").read_text(encoding="utf-8")
@@ -54,7 +34,8 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(refresh_result.indexed, 1)
             self.assertTrue(save_result.entry.path.is_file())
             self.assertEqual(issue_path.read_text(encoding="utf-8"), before_issue)
-            self.assertIn('"kind": "memory_saved"', events_text)
+            self.assertIn('"kind": "memory"', events_text)
+            self.assertIn('"action": "save"', events_text)
 
     def test_use_memory_records_event_only(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -62,32 +43,11 @@ class MemoryServiceTests(unittest.TestCase):
             self._write_run(repo_root=repo_root, run_id="POM-7", flow_code="POM", current_agent_slug="poem_writer")
             self._write_bridge(repo_root=repo_root)
 
-            def fake_refresh(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-                del command, kwargs
-                return subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout=json.dumps(
-                        {
-                            "collections": 1,
-                            "indexed": 1,
-                            "updated": 0,
-                            "unchanged": 0,
-                            "removed": 0,
-                            "needsEmbedding": 0,
-                            "docsProcessed": 0,
-                            "chunksEmbedded": 0,
-                            "embedErrors": 0,
-                        }
-                    ),
-                    stderr="",
-                )
-
             save_result, _ = save_memory(
                 repo_root=repo_root,
                 run_id="POM-7",
                 memory_markdown=self._memory_body(),
-                subprocess_run=fake_refresh,
+                subprocess_run=self._fake_bridge_run,
             )
             issue_path = repo_root / "runs" / "POM-7" / "home" / "issue.md"
             before_issue = issue_path.read_text(encoding="utf-8")
@@ -102,9 +62,10 @@ class MemoryServiceTests(unittest.TestCase):
 
             self.assertEqual(entry.memory_id, save_result.entry.memory_id)
             self.assertEqual(issue_path.read_text(encoding="utf-8"), before_issue)
-            self.assertIn('"kind": "memory_used"', events_text)
+            self.assertIn('"kind": "memory"', events_text)
+            self.assertIn('"action": "use"', events_text)
 
-    def test_search_memory_does_not_touch_issue_log(self) -> None:
+    def test_search_memory_records_event_only(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_run(repo_root=repo_root, run_id="POM-7", flow_code="POM", current_agent_slug="poem_writer")
@@ -113,27 +74,6 @@ class MemoryServiceTests(unittest.TestCase):
             entries_dir.mkdir(parents=True, exist_ok=True)
             (entries_dir / "mem_pom_poem_writer_focus_revision.md").write_text("memory\n", encoding="utf-8")
 
-            def fake_search(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-                del command, kwargs
-                return subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout=json.dumps(
-                        {
-                            "results": [
-                                {
-                                    "memoryId": "mem_pom_poem_writer_focus_revision",
-                                    "path": str(entries_dir / "mem_pom_poem_writer_focus_revision.md"),
-                                    "title": "Focus revision",
-                                    "snippet": "Ask for one target before a rewrite.",
-                                    "score": 0.8,
-                                }
-                            ]
-                        }
-                    ),
-                    stderr="",
-                )
-
             issue_path = repo_root / "runs" / "POM-7" / "home" / "issue.md"
             before_text = issue_path.read_text(encoding="utf-8")
 
@@ -141,11 +81,73 @@ class MemoryServiceTests(unittest.TestCase):
                 repo_root=repo_root,
                 run_id="POM-7",
                 query="target before rewrite",
-                subprocess_run=fake_search,
+                subprocess_run=self._fake_bridge_run,
             )
 
+            events_text = (repo_root / "runs" / "POM-7" / "logs" / "events.jsonl").read_text(encoding="utf-8")
             self.assertEqual(len(hits), 1)
             self.assertEqual(issue_path.read_text(encoding="utf-8"), before_text)
+            self.assertIn('"kind": "memory"', events_text)
+            self.assertIn('"action": "search"', events_text)
+
+    def test_refresh_memory_records_event_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_run(repo_root=repo_root, run_id="POM-7", flow_code="POM", current_agent_slug="poem_writer")
+            self._write_bridge(repo_root=repo_root)
+            issue_path = repo_root / "runs" / "POM-7" / "home" / "issue.md"
+            before_text = issue_path.read_text(encoding="utf-8")
+
+            result = refresh_memory(
+                repo_root=repo_root,
+                run_id="POM-7",
+                subprocess_run=self._fake_bridge_run,
+            )
+
+            events_text = (repo_root / "runs" / "POM-7" / "logs" / "events.jsonl").read_text(encoding="utf-8")
+            self.assertEqual(result.indexed, 1)
+            self.assertEqual(issue_path.read_text(encoding="utf-8"), before_text)
+            self.assertIn('"kind": "memory"', events_text)
+            self.assertIn('"action": "refresh"', events_text)
+
+    def test_memory_commands_skip_direct_events_in_adapter_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_run(repo_root=repo_root, run_id="POM-7", flow_code="POM", current_agent_slug="poem_writer")
+            self._write_bridge(repo_root=repo_root)
+            env = {MEMORY_EVENT_MODE_ENV: MEMORY_EVENT_MODE_ADAPTER}
+
+            save_result, _ = save_memory(
+                repo_root=repo_root,
+                run_id="POM-7",
+                memory_markdown=self._memory_body(),
+                env=env,
+                subprocess_run=self._fake_bridge_run,
+            )
+            search_hits = search_memory(
+                repo_root=repo_root,
+                run_id="POM-7",
+                query="target before rewrite",
+                env=env,
+                subprocess_run=self._fake_bridge_run,
+            )
+            entry = use_memory(
+                repo_root=repo_root,
+                run_id="POM-7",
+                memory_id=save_result.entry.memory_id,
+                env=env,
+            )
+            refresh_result = refresh_memory(
+                repo_root=repo_root,
+                run_id="POM-7",
+                env=env,
+                subprocess_run=self._fake_bridge_run,
+            )
+
+            self.assertEqual(save_result.outcome, "created")
+            self.assertEqual(len(search_hits), 1)
+            self.assertEqual(entry.memory_id, save_result.entry.memory_id)
+            self.assertEqual(refresh_result.indexed, 1)
             self.assertFalse((repo_root / "runs" / "POM-7" / "logs" / "events.jsonl").exists())
 
     def _write_run(self, *, repo_root: Path, run_id: str, flow_code: str, current_agent_slug: str) -> None:
@@ -184,6 +186,57 @@ class MemoryServiceTests(unittest.TestCase):
         bridge_script = repo_root / "tools" / "qmd_bridge" / "main.mjs"
         bridge_script.parent.mkdir(parents=True, exist_ok=True)
         bridge_script.write_text("// bridge\n", encoding="utf-8")
+
+    def _fake_bridge_run(self, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        if command[-1] == "refresh":
+            return subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "collections": 1,
+                        "indexed": 1,
+                        "updated": 0,
+                        "unchanged": 0,
+                        "removed": 0,
+                        "needsEmbedding": 0,
+                        "docsProcessed": 0,
+                        "chunksEmbedded": 0,
+                        "embedErrors": 0,
+                    }
+                ),
+                stderr="",
+            )
+        if command[-1] == "search":
+            memory_path = (
+                Path(command[1]).resolve().parents[2]
+                / "runs"
+                / "memory"
+                / "entries"
+                / "POM"
+                / "poem_writer"
+                / "mem_pom_poem_writer_focus_revision.md"
+            )
+            return subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "results": [
+                            {
+                                "memoryId": "mem_pom_poem_writer_focus_revision",
+                                "path": str(memory_path),
+                                "title": "Focus revision",
+                                "snippet": "Ask for one target before a rewrite.",
+                                "score": 0.8,
+                            }
+                        ]
+                    }
+                ),
+                stderr="",
+            )
+        raise AssertionError(f"Unexpected bridge command: {command}")
 
     def _memory_body(self) -> str:
         return textwrap.dedent(

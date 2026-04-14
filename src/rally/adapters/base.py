@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Callable, Mapping, Protocol
 import yaml
 
 from rally.errors import RallyStateError
+from rally.memory.logging import MEMORY_EVENT_MODE_ADAPTER, MEMORY_EVENT_MODE_ENV
 from rally.services.run_events import RunEventRecorder
 
 if TYPE_CHECKING:
@@ -136,6 +137,7 @@ def build_rally_launch_env(
         "RALLY_RUN_ID": run_id,
         "RALLY_FLOW_CODE": flow_code,
         "RALLY_AGENT_SLUG": agent_slug,
+        MEMORY_EVENT_MODE_ENV: MEMORY_EVENT_MODE_ADAPTER,
         "RALLY_TURN_NUMBER": str(turn_index),
         "RALLY_WORKSPACE_DIR": str(workspace_dir.resolve()),
     }

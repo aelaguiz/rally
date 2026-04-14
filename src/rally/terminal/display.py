@@ -202,11 +202,17 @@ def _trace_class(event: RunEvent) -> str | None:
     return None
 
 
+def _is_memory_event(event: RunEvent) -> bool:
+    return _trace_class(event) == "memory" or event.kind == "memory"
+
+
 def _code_style(event: RunEvent) -> str:
     if event.level == "error":
         return "bold red"
     if event.level == "warning":
         return "bold bright_yellow"
+    if _is_memory_event(event):
+        return "bold #00d7af"
     trace_class = _trace_class(event)
     if trace_class == "thinking":
         return "bold magenta"
@@ -226,6 +232,8 @@ def _message_style(event: RunEvent) -> str:
         return "red"
     if event.level == "warning":
         return "bright_yellow"
+    if _is_memory_event(event):
+        return "#5fd7d7"
     trace_class = _trace_class(event)
     if trace_class == "thinking":
         return "magenta"
@@ -245,6 +253,8 @@ def _detail_style(event: RunEvent) -> str:
         return "red"
     if event.level == "warning":
         return "bright_yellow"
+    if _is_memory_event(event):
+        return "dim #5fd7d7"
     trace_class = _trace_class(event)
     if trace_class == "thinking":
         return "dim magenta"

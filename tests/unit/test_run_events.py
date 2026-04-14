@@ -252,6 +252,22 @@ class RunEventTests(unittest.TestCase):
 
         self.assertEqual(_message_style(event), "bright_blue")
 
+    def test_message_style_uses_memory_palette_for_memory_events(self) -> None:
+        event = RunEvent(
+            ts="2026-04-13T19:30:00Z",
+            run_id="DMO-1",
+            flow_code="DMO",
+            source="rally memory search",
+            kind="memory",
+            code="MEM OK",
+            message="Found 1 memory hit.",
+            level="info",
+            data={"trace_class": "memory"},
+            agent_key="01_scope_lead",
+        )
+
+        self.assertEqual(_message_style(event), "#5fd7d7")
+
     def test_rich_render_includes_detail_rows_for_trace_events(self) -> None:
         styles = _build_agent_style_lookup(_display_context().agent_identities)
         event = RunEvent(

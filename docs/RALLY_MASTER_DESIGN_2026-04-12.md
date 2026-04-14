@@ -293,6 +293,7 @@ The Rally memory skill should:
 
 - teach agents to use `rally memory search`, `rally memory use`, `rally memory save`, and `rally memory refresh`
 - keep memory as explicit CLI behavior instead of hidden prompt-only magic
+- keep memory visible in Rally logs as first-class memory rows instead of raw shell traces
 - keep reusable lessons in the shared memory path
 
 The checked-in shared prompts under `stdlib/rally/prompts/rally/` should stay small and direct.

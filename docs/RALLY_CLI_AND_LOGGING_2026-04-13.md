@@ -222,13 +222,13 @@ What it does today:
 - searches only the current flow-agent scope
 - prints a short ranked hit list with the canonical memory id, lesson title, and a short `When This Matters` snippet
 - does not append to `home/issue.md`
-- does not write a visible runtime event
+- writes a first-class memory event in the canonical runtime stream
 
 `rally memory use` today:
 
 - reads one scoped markdown memory file
 - prints the memory body
-- records `memory_used` in the canonical runtime event stream
+- writes a first-class memory event in the canonical runtime stream
 - does not append to `home/issue.md`
 
 `rally memory save` today:
@@ -237,13 +237,14 @@ What it does today:
 - requires the shared three-section body with `# Lesson`, `# When This Matters`, and `# What To Do`
 - writes or updates one markdown memory file
 - refreshes only the scoped QMD collection
-- records `memory_saved`
+- writes a first-class memory event in the canonical runtime stream
 - does not append to `home/issue.md`
 
 `rally memory refresh` today:
 
 - rebuilds the scoped QMD collection from the markdown source files
 - is the repair path when QMD state drifts or is cleared
+- writes a first-class memory event in the canonical runtime stream
 
 ### Exit behavior
 
@@ -412,7 +413,7 @@ same event stream.
 That event stream now covers:
 
 - Rally lifecycle events such as run create, resume, home prep, setup, prompt-input load, launch, and final turn status
-- `memory_used` and `memory_saved`
+- first-class memory rows for `search`, `use`, `save`, and `refresh`
 - adapter session start or resume events
 - assistant output lines when an adapter emits text chunks
 - reasoning summary lines when an adapter exposes them
@@ -451,6 +452,7 @@ The color rules are still simple:
 - agent labels: per-agent background colors in flow order on a TTY
 - reasoning summaries: magenta, with indented detail lines when an adapter
   sends more than one summary line
+- memory rows: teal, with short detail lines for hits, memory ids, paths, or index counts
 - tool traces: bright blue, with indented detail lines for short args, results, exit codes, or changed paths
 - final success state: green
 - warnings: amber

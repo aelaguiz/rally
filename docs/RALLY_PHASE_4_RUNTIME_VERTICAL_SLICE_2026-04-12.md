@@ -96,7 +96,7 @@ What is real today:
 - durable memory markdown under `runs/memory/entries/<flow_code>/<agent_slug>/`
 - repo-local QMD state under `runs/memory/qmd/index.sqlite` and `runs/memory/qmd/cache/`
 - a pinned QMD bridge under `tools/qmd_bridge/`
-- `memory_used` and `memory_saved` in the canonical runtime event stream
+- first-class memory rows for `search`, `use`, `save`, and `refresh` in the canonical runtime event stream
 - `logs/events.jsonl`
 - `logs/agents/<agent>.jsonl`
 - `logs/rendered.log`
@@ -125,8 +125,8 @@ What is still outside Phase 4:
 - Final JSON is the only turn-ending control path.
 - Many turns use the shared five-key Rally turn result.
 - Review-native turns may use control-ready Doctrine review JSON instead.
-- `memory search` is discovery only.
-- `memory use` and `memory save` are the visible memory actions.
+- all four memory commands are visible Rally events.
+- agent-run memory commands should render as memory rows, not generic shell rows.
 - `AGENTS.md` is injected instruction readback only.
 - `AGENTS.contract.json` is the compiler-owned metadata file Rally loads.
 - There is no separate handoff artifact.
@@ -200,7 +200,7 @@ The current checked-in runtime surface is:
   - snapshots the full issue log after each append
 - `src/rally/services/run_events.py`
   - writes canonical run events
-  - fans memory activity through `memory_used` and `memory_saved`
+  - fans memory activity through first-class memory rows for all four memory commands
   - fans them out to whole-run logs, agent logs, and the rendered transcript
 - `tools/qmd_bridge/`
   - pins `@tobilu/qmd` `2.1.0`

@@ -1,16 +1,16 @@
 skill package RallyMemory: "Rally Memory"
     metadata:
         name: "rally-memory"
-        description: "Shared Rally memory skill for searching, using, saving, and refreshing cross-run memory through Rally CLI. Use it when a past lesson could help the current turn or when this turn learns a short lesson worth keeping."
+        description: "Shared Rally memory skill for searching, using, saving, and refreshing cross-run memory through Rally CLI. Use it for tasks like past work or when you had to fix your own work and learned a lesson worth keeping."
 
     "Use this skill on Rally-managed turns when cross-run memory could help."
     "Do not use it to replace the issue, notes, or final JSON."
     "Rally loads this skill on every Rally-managed turn. Flows do not need to list it by hand."
 
     bullets when_to_use: "When to use"
-        search_memory: "A past lesson may help the current issue."
+        search_memory: "Check memory for tasks like this one."
         use_memory: "You found a memory that clearly fits this role and issue."
-        save_memory: "This turn learned a short lesson worth reusing later."
+        save_memory: "If you had to fix your own work, save the general lesson for later."
         repair_index: "The memory index needs a refresh from the markdown source files."
 
     bullets when_not_to_use: "When not to use"
@@ -28,14 +28,14 @@ skill package RallyMemory: "Rally Memory"
 
     sequence first_move: "First move"
         read_issue: "Read the issue and this role's local rules first."
-        decide_need: "Decide whether a past lesson could help or whether this turn learned a reusable lesson."
+        decide_need: "Decide whether this task looks like past work or whether you just learned a lesson worth keeping."
         choose_action: "Choose `search`, `use`, `save`, or `refresh` through Rally CLI."
 
     workflow: "Workflow"
         sequence steps: "Steps"
-            search_first: "Use `search` first when you only need to look for possible matches."
+            search_first: "For tasks like this one, start with `search`."
             use_selected: "Use `use` only after you pick one memory that clearly fits."
-            keep_save_small: "Use `save` only for a short lesson with when-to-use context and a clear next action."
+            keep_save_small: "If you had to fix your own work, use `save` to keep the general lesson."
             refresh_rebuilds: "Use `refresh` when the index needs to rebuild from markdown files."
             keep_issue_primary: "Keep the issue and local repo state primary. Memory is support context."
 

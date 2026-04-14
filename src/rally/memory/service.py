@@ -7,8 +7,14 @@ from pathlib import Path
 from typing import Mapping
 
 from rally.errors import RallyStateError, RallyUsageError
-from rally.memory.events import record_memory_saved, record_memory_used
+from rally.memory.events import (
+    record_memory_refreshed,
+    record_memory_saved,
+    record_memory_searched,
+    record_memory_used,
+)
 from rally.memory.index import BridgeSubprocessRunner, refresh_memory_index, search_memory_index
+from rally.memory.logging import should_record_memory_events
 from rally.memory.models import MemoryEntry, MemoryRefreshResult, MemorySaveResult, MemoryScope, MemorySearchHit
 from rally.memory.store import load_memory_entry, save_memory_entry
 from rally.services.run_store import find_run_dir, load_run_record, load_run_state
@@ -77,20 +83,32 @@ def search_memory(
     env: Mapping[str, str] | None = None,
     subprocess_run: BridgeSubprocessRunner = subprocess.run,
 ) -> tuple[MemorySearchHit, ...]:
+    resolved_env = env or os.environ
     context = resolve_memory_context(
         repo_root=repo_root,
         run_id=run_id,
         agent_slug=agent_slug,
         turn_index=turn_index,
-        env=env,
+        env=resolved_env,
     )
-    return search_memory_index(
+    hits = search_memory_index(
         repo_root=context.repo_root,
         scope=context.scope,
         query=query,
         limit=limit,
         subprocess_run=subprocess_run,
     )
+    if should_record_memory_events(env=resolved_env):
+        record_memory_searched(
+            run_dir=context.run_dir,
+            run_id=context.run_id,
+            flow_code=context.scope.flow_code,
+            query=query,
+            hits=hits,
+            turn_index=context.turn_index,
+            agent_slug=context.scope.agent_slug,
+        )
+    return hits
 
 
 def use_memory(
@@ -102,22 +120,24 @@ def use_memory(
     turn_index: int | None = None,
     env: Mapping[str, str] | None = None,
 ) -> MemoryEntry:
+    resolved_env = env or os.environ
     context = resolve_memory_context(
         repo_root=repo_root,
         run_id=run_id,
         agent_slug=agent_slug,
         turn_index=turn_index,
-        env=env,
+        env=resolved_env,
     )
     entry = load_memory_entry(repo_root=context.repo_root, scope=context.scope, memory_id=memory_id)
-    record_memory_used(
-        run_dir=context.run_dir,
-        run_id=context.run_id,
-        flow_code=context.scope.flow_code,
-        entry=entry,
-        turn_index=context.turn_index,
-        agent_slug=context.scope.agent_slug,
-    )
+    if should_record_memory_events(env=resolved_env):
+        record_memory_used(
+            run_dir=context.run_dir,
+            run_id=context.run_id,
+            flow_code=context.scope.flow_code,
+            entry=entry,
+            turn_index=context.turn_index,
+            agent_slug=context.scope.agent_slug,
+        )
     return entry
 
 
@@ -131,12 +151,13 @@ def save_memory(
     env: Mapping[str, str] | None = None,
     subprocess_run: BridgeSubprocessRunner = subprocess.run,
 ) -> tuple[MemorySaveResult, MemoryRefreshResult]:
+    resolved_env = env or os.environ
     context = resolve_memory_context(
         repo_root=repo_root,
         run_id=run_id,
         agent_slug=agent_slug,
         turn_index=turn_index,
-        env=env,
+        env=resolved_env,
     )
     save_result = save_memory_entry(
         repo_root=context.repo_root,
@@ -149,14 +170,16 @@ def save_memory(
         scope=context.scope,
         subprocess_run=subprocess_run,
     )
-    record_memory_saved(
-        run_dir=context.run_dir,
-        run_id=context.run_id,
-        flow_code=context.scope.flow_code,
-        save_result=save_result,
-        turn_index=context.turn_index,
-        agent_slug=context.scope.agent_slug,
-    )
+    if should_record_memory_events(env=resolved_env):
+        record_memory_saved(
+            run_dir=context.run_dir,
+            run_id=context.run_id,
+            flow_code=context.scope.flow_code,
+            save_result=save_result,
+            refresh_result=refresh_result,
+            turn_index=context.turn_index,
+            agent_slug=context.scope.agent_slug,
+        )
     return save_result, refresh_result
 
 
@@ -169,18 +192,29 @@ def refresh_memory(
     env: Mapping[str, str] | None = None,
     subprocess_run: BridgeSubprocessRunner = subprocess.run,
 ) -> MemoryRefreshResult:
+    resolved_env = env or os.environ
     context = resolve_memory_context(
         repo_root=repo_root,
         run_id=run_id,
         agent_slug=agent_slug,
         turn_index=turn_index,
-        env=env,
+        env=resolved_env,
     )
-    return refresh_memory_index(
+    result = refresh_memory_index(
         repo_root=context.repo_root,
         scope=context.scope,
         subprocess_run=subprocess_run,
     )
+    if should_record_memory_events(env=resolved_env):
+        record_memory_refreshed(
+            run_dir=context.run_dir,
+            run_id=context.run_id,
+            flow_code=context.scope.flow_code,
+            refresh_result=result,
+            turn_index=context.turn_index,
+            agent_slug=context.scope.agent_slug,
+        )
+    return result
 
 
 def _optional_env(env: Mapping[str, str], name: str) -> str | None:

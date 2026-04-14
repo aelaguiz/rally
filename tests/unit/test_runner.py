@@ -624,6 +624,109 @@ class RunnerTests(unittest.TestCase):
             self.assertNotIn("exit code 0", rendered_text)
             self.assertNotIn("12 matches", rendered_text)
 
+    def test_resume_run_renders_memory_commands_as_memory_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            fake_run = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-1",
+                        "stdout_lines": [
+                            {"type": "thread.started", "thread_id": "session-1"},
+                            {
+                                "type": "item.started",
+                                "item": {
+                                    "id": "item_1",
+                                    "type": "command_execution",
+                                    "command": (
+                                        '/bin/zsh -lc \'"$RALLY_CLI_BIN" memory search --run-id '
+                                        '"$RALLY_RUN_ID" --query "focus the fix"\''
+                                    ),
+                                    "aggregated_output": "",
+                                    "status": "in_progress",
+                                },
+                            },
+                            {
+                                "type": "item.completed",
+                                "item": {
+                                    "id": "item_1",
+                                    "type": "command_execution",
+                                    "command": (
+                                        '/bin/zsh -lc \'"$RALLY_CLI_BIN" memory search --run-id '
+                                        '"$RALLY_RUN_ID" --query "focus the fix"\''
+                                    ),
+                                    "aggregated_output": (
+                                        "1. mem_dmo_scope_lead_focus_the_fix (0.83)\n"
+                                        "   Focus the fix\n"
+                                        "   Fix the concrete bug before widening scope."
+                                    ),
+                                    "exit_code": 0,
+                                    "status": "completed",
+                                },
+                            },
+                            {
+                                "type": "turn.completed",
+                                "usage": {
+                                    "input_tokens": 1,
+                                    "cached_input_tokens": 0,
+                                    "output_tokens": 1,
+                                },
+                            },
+                        ],
+                        "last_message": {
+                            "kind": "done",
+                            "next_owner": None,
+                            "summary": "verified",
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+
+            stream = _FakeTtyStream()
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            def display_factory(run_record, flow):
+                return build_terminal_display(
+                    stream=stream,
+                    context=DisplayContext(
+                        run_id=run_record.id,
+                        flow_name=flow.name,
+                        flow_code=flow.code,
+                        adapter_name=flow.adapter.name,
+                        model_name="gpt-5.4",
+                        reasoning_effort="medium",
+                        start_agent_key=flow.start_agent_key,
+                        agent_count=len(flow.agents),
+                        agent_identities=tuple(
+                            AgentDisplayIdentity(key=agent.key, slug=agent.slug)
+                            for agent in flow.agents.values()
+                        ),
+                    ),
+                )
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=fake_run,
+                display_factory=display_factory,
+            )
+
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+            tty_text = _strip_ansi(stream.getvalue())
+
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("MEM", tty_text)
+            self.assertIn("Search memory for 'focus the fix'.", tty_text)
+            self.assertIn("Found 1 memory hit.", tty_text)
+            self.assertIn("└ mem_dmo_scope_lead_focus_the_fix: Focus the fix", tty_text)
+            self.assertIn("MEM", rendered_text)
+            self.assertIn("Found 1 memory hit.", rendered_text)
+            self.assertNotIn('/bin/zsh -lc \'"$RALLY_CLI_BIN" memory search', rendered_text)
+
     def test_resume_run_refreshes_run_home_agents_before_next_turn(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
