@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable, Sequence
 
-from rally.adapters.base import AdapterInvocation
+from rally.adapters.base import AdapterInvocation, AdapterReadinessFailure
 from rally.adapters.registry import get_adapter
 from rally.domain.flow import FlowAgent, FlowDefinition
 from rally.domain.run import ResumeRequest, RunRecord, RunRequest, RunState, RunStatus
@@ -659,6 +659,37 @@ def _execute_single_turn(
     adapter = get_adapter(flow.adapter.name)
     turn_index = state.turn_index + 1
     activate_agent_skills(run_home=run_home, agent=agent)
+
+    previous_session = adapter.load_session(run_home=run_home, agent_slug=agent.slug)
+    if state.status == RunStatus.SLEEPING and previous_session is None:
+        raise RallyStateError(
+            f"Run `{run_record.id}` is sleeping on `{agent.slug}`, but no {adapter.display_name} session was saved."
+        )
+
+    readiness_failure = adapter.check_turn_readiness(
+        repo_root=repo_root,
+        workspace=workspace,
+        run_dir=run_dir,
+        run_home=run_home,
+        flow=flow,
+        run_record=run_record,
+        agent=agent,
+        turn_index=turn_index,
+        recorder=recorder,
+        subprocess_run=subprocess_run,
+    )
+    if readiness_failure is not None:
+        return _block_for_adapter_readiness(
+            repo_root=repo_root,
+            run_dir=run_dir,
+            run_record=run_record,
+            state=state,
+            agent=agent,
+            adapter_name=adapter.display_name,
+            readiness_failure=readiness_failure,
+            recorder=recorder,
+        )
+
     artifacts = adapter.prepare_turn_artifacts(run_home=run_home, agent_slug=agent.slug, turn_index=turn_index)
 
     running_state = RunState(
@@ -689,11 +720,6 @@ def _execute_single_turn(
         recorder=recorder,
         turn_index=turn_index,
     )
-    previous_session = adapter.load_session(run_home=run_home, agent_slug=agent.slug)
-    if state.status == RunStatus.SLEEPING and previous_session is None:
-        raise RallyStateError(
-            f"Run `{run_record.id}` is sleeping on `{agent.slug}`, but no {adapter.display_name} session was saved."
-        )
 
     invocation = adapter.invoke(
         repo_root=repo_root,
@@ -892,6 +918,71 @@ def _execute_single_turn(
         state=next_state,
         turn_result=turn_result,
         command_result=result,
+    )
+
+
+def _block_for_adapter_readiness(
+    *,
+    repo_root: Path,
+    run_dir: Path,
+    run_record: RunRecord,
+    state: RunState,
+    agent: FlowAgent,
+    adapter_name: str,
+    readiness_failure: AdapterReadinessFailure,
+    recorder: RunEventRecorder,
+) -> _TurnExecutionOutcome:
+    blocker_reason = _format_adapter_readiness_failure(
+        adapter_name=adapter_name,
+        readiness_failure=readiness_failure,
+    )
+    blocked_state = RunState(
+        status=RunStatus.BLOCKED,
+        current_agent_key=agent.key,
+        current_agent_slug=agent.slug,
+        turn_index=state.turn_index,
+        updated_at=_render_time(),
+        last_turn_kind=state.last_turn_kind,
+        blocker_reason=blocker_reason,
+    )
+    write_run_state(run_dir=run_dir, state=blocked_state)
+    event_data: dict[str, object] = {"failed_check": readiness_failure.failed_check}
+    if readiness_failure.mcp_name is not None:
+        event_data["mcp_name"] = readiness_failure.mcp_name
+    recorder.emit(
+        source="rally",
+        kind="warning",
+        code="BLOCKED",
+        message=f"Run `{run_record.id}` is blocked: {blocker_reason}",
+        level="error",
+        turn_index=state.turn_index,
+        agent_key=agent.key,
+        agent_slug=agent.slug,
+        data=event_data,
+    )
+    detail_lines = [
+        f"Agent: `{agent.key}`",
+        f"Check: `{readiness_failure.failed_check}`",
+        f"Reason: {blocker_reason}",
+    ]
+    if readiness_failure.mcp_name is not None:
+        detail_lines.insert(1, f"MCP: `{readiness_failure.mcp_name}`")
+    append_issue_event(
+        repo_root=repo_root,
+        run_id=run_record.id,
+        title="Rally Blocked",
+        source="rally runtime",
+        detail_lines=tuple(detail_lines),
+    )
+    return _TurnExecutionOutcome(
+        state=blocked_state,
+        turn_result=None,
+        command_result=RunCommandResult(
+            run_id=run_record.id,
+            status=blocked_state.status,
+            current_agent_key=blocked_state.current_agent_key,
+            message=f"Run `{run_record.id}` blocked on `{agent.key}`: {blocked_state.blocker_reason}",
+        ),
     )
 
 
@@ -1410,6 +1501,19 @@ def _format_exec_failure(invocation: AdapterInvocation) -> str:
     if stdout:
         return stdout.splitlines()[-1]
     return f"adapter run exited with code {invocation.returncode}"
+
+
+def _format_adapter_readiness_failure(
+    *,
+    adapter_name: str,
+    readiness_failure: AdapterReadinessFailure,
+) -> str:
+    if readiness_failure.mcp_name is not None:
+        return (
+            f"{adapter_name} MCP `{readiness_failure.mcp_name}` failed "
+            f"`{readiness_failure.failed_check}`: {readiness_failure.reason}"
+        )
+    return f"{adapter_name} failed `{readiness_failure.failed_check}`: {readiness_failure.reason}"
 
 
 def _render_time() -> str:
