@@ -308,8 +308,11 @@ def _parse_json_object(raw_value: object) -> dict[str, object] | None:
         return payload
     fenced = _unwrap_json_code_fence(raw_value)
     if fenced is None:
-        return None
-    return _parse_json_mapping(fenced)
+        return _extract_embedded_json_code_fence(raw_value)
+    payload = _parse_json_mapping(fenced)
+    if payload is not None:
+        return payload
+    return _extract_embedded_json_code_fence(raw_value)
 
 
 def _parse_json_mapping(raw_text: str) -> dict[str, object] | None:
@@ -333,3 +336,33 @@ def _unwrap_json_code_fence(raw_text: str) -> str | None:
     if opening not in {"```", "```json"}:
         return None
     return "\n".join(lines[1:-1]).strip()
+
+
+def _extract_embedded_json_code_fence(raw_text: str) -> dict[str, object] | None:
+    lines = raw_text.splitlines()
+    index = 0
+    last_payload: dict[str, object] | None = None
+    while index < len(lines):
+        opening = lines[index].strip()
+        if not _is_json_fence_opening(opening):
+            index += 1
+            continue
+        index += 1
+        block_lines: list[str] = []
+        while index < len(lines) and lines[index].strip() != "```":
+            block_lines.append(lines[index])
+            index += 1
+        if index >= len(lines):
+            break
+        payload = _parse_json_mapping("\n".join(block_lines).strip())
+        if payload is not None:
+            last_payload = payload
+        index += 1
+    return last_payload
+
+
+def _is_json_fence_opening(opening: str) -> bool:
+    if not opening.startswith("```"):
+        return False
+    language = opening.removeprefix("```").strip().lower()
+    return language in {"", "json"}

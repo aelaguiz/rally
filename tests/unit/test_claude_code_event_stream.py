@@ -143,6 +143,24 @@ class ClaudeCodeEventStreamTests(unittest.TestCase):
             {"kind": "done", "summary": "fenced-result"},
         )
 
+    def test_extract_structured_output_accepts_embedded_fenced_json_result_string(self) -> None:
+        stdout_text = json.dumps(
+            {
+                "type": "result",
+                "result": (
+                    "Now I have everything I need.\n\n"
+                    "```json\n"
+                    '{"verdict":"changes_requested","reviewed_artifact":"artifacts/poem.md"}\n'
+                    "```"
+                ),
+            }
+        )
+
+        self.assertEqual(
+            extract_structured_output(stdout_text),
+            {"verdict": "changes_requested", "reviewed_artifact": "artifacts/poem.md"},
+        )
+
     def test_extract_structured_output_accepts_fenced_json_from_assistant_text(self) -> None:
         stdout_text = json.dumps(
             {
@@ -161,6 +179,31 @@ class ClaudeCodeEventStreamTests(unittest.TestCase):
         self.assertEqual(
             extract_structured_output(stdout_text),
             {"kind": "done", "summary": "assistant-fenced"},
+        )
+
+    def test_extract_structured_output_accepts_embedded_fenced_json_from_assistant_text(self) -> None:
+        stdout_text = json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "The poem is close, not finished.\n\n"
+                                "```json\n"
+                                '{"verdict":"changes_requested","next_owner":"poem_writer"}\n'
+                                "```"
+                            ),
+                        }
+                    ]
+                },
+            }
+        )
+
+        self.assertEqual(
+            extract_structured_output(stdout_text),
+            {"verdict": "changes_requested", "next_owner": "poem_writer"},
         )
 
 

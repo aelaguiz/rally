@@ -167,6 +167,11 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_poem_repo(repo_root=repo_root)
+            flow_path = repo_root / "flows" / "poem_loop" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_text = flow_text.replace("  adapter: claude_code\n", "  adapter: codex\n")
+            flow_text = flow_text.replace("    model: sonnet\n", "    model: gpt-5.4\n")
+            flow_path.write_text(flow_text, encoding="utf-8")
             fake_run = _FakeCodexRun(
                 [
                     {
@@ -361,6 +366,136 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("claude-session-1", session_text)
             self.assertIn("fixture-repo", mcp_config["mcpServers"])
             self.assertTrue((run_dir / "home" / ".claude" / "skills").is_symlink())
+
+    def test_poem_loop_claude_review_accepts_embedded_fenced_json_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_poem_repo(repo_root=repo_root)
+            flow_path = repo_root / "flows" / "poem_loop" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_text = flow_text.replace("  adapter: codex\n", "  adapter: claude_code\n")
+            flow_text = flow_text.replace("    model: gpt-5.4\n", "    model: sonnet\n")
+            flow_text = flow_text.replace("    project_doc_max_bytes: 0\n", "")
+            flow_path.write_text(flow_text, encoding="utf-8")
+
+            review_payload = {
+                "verdict": "changes_requested",
+                "reviewed_artifact": "artifacts/poem.md",
+                "analysis_performed": (
+                    "Checked the haiku against the brief and the writer rationale. "
+                    "Line 2 explains the idea instead of making the reader feel it."
+                ),
+                "findings_first": (
+                    "Line 3 lands. Line 2 still needs a sharper image before this poem is ready."
+                ),
+                "current_artifact": "artifacts/poem.md",
+                "next_owner": "poem_writer",
+                "failure_detail": {
+                    "blocked_gate": None,
+                    "failing_gates": [
+                        "Middle line explains rather than shows the stranding."
+                    ],
+                },
+            }
+            fake_run = _FakeClaudeRun(
+                [
+                    {
+                        "session_id": "claude-poem-1",
+                        "structured_output": {
+                            "kind": "handoff",
+                            "next_owner": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    },
+                    {
+                        "session_id": "claude-poem-2",
+                        "stdout_lines": [
+                            {
+                                "type": "system",
+                                "subtype": "init",
+                                "session_id": "claude-poem-2",
+                            },
+                            {
+                                "type": "assistant",
+                                "session_id": "claude-poem-2",
+                                "message": {
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "The poem is close, but the middle line still needs work.",
+                                        }
+                                    ]
+                                },
+                            },
+                            {
+                                "type": "result",
+                                "session_id": "claude-poem-2",
+                                "usage": {
+                                    "input_tokens": 5,
+                                    "output_tokens": 13,
+                                    "cache_read_input_tokens": 21,
+                                },
+                                "result": (
+                                    "Now I have everything I need.\n\n```json\n"
+                                    + json.dumps(review_payload, indent=2)
+                                    + "\n```"
+                                ),
+                            },
+                        ],
+                    },
+                    {
+                        "session_id": "claude-poem-3",
+                        "structured_output": {
+                            "kind": "done",
+                            "next_owner": None,
+                            "summary": "revised poem ready",
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    },
+                ]
+            )
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Write a haiku about being stranded in interstellar space.\n", encoding="utf-8")
+                return IssueEditorResult(
+                    status="saved",
+                    cleaned_text="Write a haiku about being stranded in interstellar space.\n",
+                )
+
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                result = run_flow(
+                    repo_root=repo_root,
+                    request=RunRequest(flow_name="poem_loop"),
+                    subprocess_run=fake_run,
+                )
+
+            run_dir = find_run_dir(repo_root=repo_root, run_id="POM-1")
+            state = load_run_state(run_dir=run_dir)
+            issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+            critic_last_message = json.loads(
+                (run_dir / "home" / "sessions" / "poem_critic" / "turn-002" / "last_message.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertEqual(state.turn_index, 3)
+            self.assertEqual(critic_last_message["verdict"], "changes_requested")
+            self.assertEqual(critic_last_message["next_owner"], "poem_writer")
+            self.assertTrue((run_dir / "logs" / "adapter_launch" / "turn-003-poem_writer.json").is_file())
+            self.assertIn("### Findings First", issue_text)
+            self.assertIn("Line 3 lands. Line 2 still needs a sharper image", issue_text)
+            self.assertIn("Middle line explains rather than shows the stranding.", issue_text)
 
     def test_run_flow_rebuild_failure_stops_before_creating_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
