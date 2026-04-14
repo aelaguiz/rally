@@ -113,6 +113,41 @@ def materialize_run_home(
     return run_home
 
 
+def prepare_interview_home(
+    *,
+    workspace: WorkspaceContext | None = None,
+    repo_root: Path | None = None,
+    flow: FlowDefinition,
+    run_record: RunRecord,
+    event_recorder: RunEventRecorder | None = None,
+) -> Path:
+    workspace_context = _coerce_workspace(workspace=workspace, repo_root=repo_root)
+    run_dir = find_run_dir(repo_root=workspace_context.workspace_root, run_id=run_record.id)
+    run_home = run_dir / "home"
+
+    _ensure_run_layout(run_dir=run_dir, run_home=run_home)
+    sync_workspace_builtins(workspace=workspace_context)
+    _sync_compiled_agents(run_home=run_home, flow=flow)
+    _refresh_agent_skill_views(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
+    _copy_allowed_mcps(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
+    get_adapter(flow.adapter.name).prepare_home(
+        repo_root=workspace_context.workspace_root,
+        workspace=workspace_context,
+        run_home=run_home,
+        flow=flow,
+        run_record=run_record,
+        event_recorder=event_recorder,
+    )
+    if event_recorder is not None:
+        event_recorder.emit(
+            source="rally",
+            kind="lifecycle",
+            code="HOME",
+            message="Prepared interview home.",
+        )
+    return run_home
+
+
 def _ensure_run_layout(*, run_dir: Path, run_home: Path) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
@@ -123,6 +158,7 @@ def _ensure_run_layout(*, run_dir: Path, run_home: Path) -> None:
         "skills",
         "mcps",
         "sessions",
+        "interviews",
         "artifacts",
         "repos",
     ):

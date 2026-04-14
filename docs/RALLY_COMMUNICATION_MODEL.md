@@ -8,6 +8,7 @@ doc_type: architecture_detail
 related:
   - docs/RALLY_MASTER_DESIGN.md
   - docs/RALLY_RUNTIME.md
+  - docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md
   - stdlib/rally/prompts/rally/base_agent.prompt
   - stdlib/rally/prompts/rally/notes.prompt
   - stdlib/rally/prompts/rally/turn_results.prompt
@@ -43,6 +44,10 @@ Review-native turns may use control-ready Doctrine review JSON instead.
 - Notes keep context only. Notes never carry `next_owner`, `done`, `blocker`, or `sleep` truth.
 - Notes may carry flat string fields such as `kind=...` or `lane=...` when later turns need stable labels.
 - Rally, not the agent, adds the turn number to in-turn note blocks.
+- `rally interview` is outside the turn engine and never writes turn control.
+- Diagnostic interviews do not append notes to `home/issue.md`.
+- Diagnostic interviews still write normalized `USER`, `LAUNCH`, `ASSIST`, and
+  `CLOSE` rows to the normal run event log.
 
 # Shipped Surfaces
 
@@ -51,6 +56,9 @@ Review-native turns may use control-ready Doctrine review JSON instead.
   - required env vars
   - required `rally-kernel` skill
   - shared advisory issue-note output
+- `stdlib/rally/prompts/rally/interview_agent.prompt`
+  - shared interview doctrine that tells the agent to explain rules instead of
+    doing normal work
 - `stdlib/rally/prompts/rally/notes.prompt`
   - one shared note output that shells through the Rally CLI
 - `stdlib/rally/prompts/rally/turn_results.prompt`
@@ -65,6 +73,8 @@ Review-native turns may use control-ready Doctrine review JSON instead.
   - builds the shared Rally launch env map, including the active turn number for note labeling
 - `src/rally/services/final_response_loader.py`
   - keeps one shared final JSON read path after adapter execution
+- `src/rally/services/interview.py`
+  - keeps diagnostic chat outside the turn-result path
 
 # Doctrine Note
 
@@ -92,5 +102,6 @@ Use these docs as the live design set:
 
 - `docs/RALLY_MASTER_DESIGN.md`
 - `docs/RALLY_RUNTIME.md`
+- `docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md`
 
 Treat older planning notes as history only.

@@ -10,6 +10,7 @@ Exact implementation details now live in:
 - [RALLY_COMMUNICATION_MODEL.md](RALLY_COMMUNICATION_MODEL.md)
 - [RALLY_RUNTIME.md](RALLY_RUNTIME.md)
 - [RALLY_CLI_AND_LOGGING.md](RALLY_CLI_AND_LOGGING.md)
+- [RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md](RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md)
 
 ## Repo Guide
 
@@ -420,6 +421,7 @@ These are the stable runtime surfaces the design depends on:
 | `home/mcps/` | materialized allowed MCP capabilities, refreshed on each start or resume |
 | `home/sessions/<agent>/skills/` | stable per-agent skill views, refreshed on each start or resume |
 | `home/sessions/` | adapter session sidecars or stable references |
+| `home/interviews/<agent>/<interview-id>/` | diagnostic interview prompt, transcript, raw events, and saved diagnostic session records |
 
 ### Operator Surface
 
@@ -429,6 +431,7 @@ Conceptually it is:
 ```bash
 rally run <flow> [--new]
 rally resume <FLOW_CODE>-<n> [--edit|--restart]
+rally interview <FLOW_CODE>-<n> [--agent <slug>] [--fork]
 rally archive <FLOW_CODE>-<n>
 rally issue note --run-id <FLOW_CODE>-<n> [--field key=value ...]
 rally memory search --run-id <FLOW_CODE>-<n> --query "<text>"
@@ -466,6 +469,14 @@ a fresh run with a new run id, and seed that new run's `home/issue.md` with
 only the recovered original issue. The new `Rally Run Started` block should
 use source `rally resume --restart` and include `Restarted From: <old-run-id>`.
 Done runs may restart even though they cannot resume.
+
+`rally interview` should open a diagnostic chat that explains the agent's
+doctrine without mutating the live run. Fresh mode should start a separate
+diagnostic session. `--fork` should branch the saved live session when the
+adapter can prove it safely. Assistant text should stream live back to the
+operator, and Rally should write normalized interview lifecycle plus message
+rows into the same run-local event log. The operator guide for that flow lives in
+`docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md`.
 
 `rally issue note` is the shared durable-note write surface for both agents and operators.
 When Rally launched the active turn, the CLI should add the current turn
@@ -570,10 +581,12 @@ At a high level, the runtime doc owns:
 
 - the first real `src/rally/` runtime package
 - the first real `rally` CLI entrypoint
+- the first real `rally interview` debugging path
 - the `rally workspace sync` front door for host-local built-ins
 - the shared adapter boundary
 - one real Codex adapter path
 - one real Claude adapter path
+- one shared diagnostic interview path for both supported adapters
 - one real end-to-end execution path for `poem_loop`
 - run storage, home preparation, note and final-response materialization, sessions, and logs
 

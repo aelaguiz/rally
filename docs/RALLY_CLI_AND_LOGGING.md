@@ -4,6 +4,7 @@ status: active
 doc_type: architecture_detail
 related:
   - docs/RALLY_MASTER_DESIGN.md
+  - docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md
   - docs/RALLY_RUNTIME.md
   - src/rally/cli.py
   - src/rally/adapters/base.py
@@ -28,6 +29,7 @@ related:
 This file keeps the concrete CLI and logging rules in one place.
 Use it with the master design and the runtime doc.
 If this file and the code disagree, the code wins.
+Use the debugging guide for the operator how-to for `rally interview`.
 
 # What Rally Ships Today
 
@@ -62,6 +64,49 @@ Current limits:
 
 If the current workspace is the Rally source repo itself, the command is a
 no-op and says the workspace already owns those built-ins.
+
+### `rally interview`
+
+Current shape:
+
+```bash
+rally interview <run-id> [--agent <slug>] [--fork]
+```
+
+What it does today:
+
+- reloads one active run
+- refreshes a diagnostic-safe run home through `prepare_interview_home(...)`
+- picks the current agent unless `--agent <slug>` overrides it
+- writes one interview folder under
+  `runs/active/<run-id>/home/interviews/<agent>/<interview-id>/`
+- copies the exact compiled interview prompt into `prompt.md`
+- writes `session.yaml`, `launch.json`, `transcript.jsonl`,
+  `raw_events.jsonl`, and `stderr.log`
+- streams assistant text live back to the operator on both Claude and Codex
+- appends normalized interview `USER`, `LAUNCH`, `ASSIST`, and `CLOSE` rows to
+  `logs/events.jsonl` and the agent log
+- keeps the chat outside the normal turn engine
+- does not write a turn result
+- does not append to `home/issue.md`
+- does not change the live work-session record at
+  `home/sessions/<agent>/session.yaml`
+- uses a fresh diagnostic session by default
+- uses a safe fork of the saved live session when `--fork` is passed and the
+  adapter supports it
+
+Current limits:
+
+- it refuses archived runs
+- it fails loud when the run has no current agent and no `--agent` flag was
+  given
+- `--fork` fails loud when there is no saved live session for that agent
+
+Operator note:
+
+- Claude and Codex share this CLI shape
+- the deeper operator workflow lives in
+  `docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md`
 
 ### `rally run`
 
@@ -362,6 +407,11 @@ Adapter-specific launchers then add their own narrow extras:
 - Codex adds `CODEX_HOME`
 - Claude adds `ENABLE_CLAUDEAI_MCP_SERVERS=false`
 
+Interview launch uses the same shared `RALLY_*` env shape.
+The first interview turn also saves a launch proof under
+`home/interviews/<agent>/<interview-id>/launch.json` instead of the normal
+per-turn `logs/adapter_launch/`.
+
 The runner uses those values with these current launch shapes:
 
 ```bash
@@ -431,6 +481,12 @@ What exists today:
 - `home/sessions/<agent>/turn-<n>/exec.jsonl`
 - `home/sessions/<agent>/turn-<n>/stderr.log`
 - `home/sessions/<agent>/turn-<n>/last_message.json`
+- `home/interviews/<agent>/<interview-id>/prompt.md`
+- `home/interviews/<agent>/<interview-id>/session.yaml`
+- `home/interviews/<agent>/<interview-id>/launch.json`
+- `home/interviews/<agent>/<interview-id>/transcript.jsonl`
+- `home/interviews/<agent>/<interview-id>/raw_events.jsonl`
+- `home/interviews/<agent>/<interview-id>/stderr.log`
 
 What does not exist yet:
 
@@ -452,6 +508,8 @@ That event stream now covers:
 - tool start, success, and failure summaries when an adapter exposes them
 - token-use summaries
 - stderr lines, warnings, and hard errors
+- interview lifecycle plus normalized interview message rows from
+  `rally interview`
 
 Unknown adapter JSON events still stay in the raw per-turn `exec.jsonl` file.
 Rally keeps them out of the live stream unless they look like warnings or
@@ -510,8 +568,10 @@ Use the docs in this order:
 
 1. `docs/RALLY_MASTER_DESIGN.md`
 2. this doc
-3. `docs/RALLY_RUNTIME.md`
-4. the current code in `src/rally/cli.py`, `src/rally/services/issue_ledger.py`,
+3. `docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md` when the topic is
+   diagnostic interviews
+4. `docs/RALLY_RUNTIME.md`
+5. the current code in `src/rally/cli.py`, `src/rally/services/issue_ledger.py`,
    `src/rally/adapters/base.py`, and the adapter launchers
 
 That gives you:

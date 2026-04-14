@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from rally.adapters.base import build_rally_launch_env, write_adapter_launch_record
+from rally.domain.flow import FlowDefinition
+from rally.errors import RallyConfigError
 
 
 def build_codex_launch_env(
@@ -26,6 +28,13 @@ def build_codex_launch_env(
         ),
         "CODEX_HOME": str(run_home.resolve()),
     }
+
+
+def codex_project_doc_max_bytes(*, flow: FlowDefinition) -> int:
+    project_doc_max_bytes = flow.adapter.args.get("project_doc_max_bytes", 0)
+    if not isinstance(project_doc_max_bytes, int) or project_doc_max_bytes < 0:
+        raise RallyConfigError("`runtime.adapter_args.project_doc_max_bytes` must be a non-negative integer.")
+    return project_doc_max_bytes
 
 
 def write_codex_launch_record(

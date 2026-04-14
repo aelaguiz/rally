@@ -108,6 +108,40 @@ class CliTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("--restart", stderr.getvalue())
 
+    def test_interview_command_calls_service_with_defaults(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.run_interview",
+            return_value=SimpleNamespace(message="Closed fresh interview `interview-001`."),
+        ) as interview_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["interview", "DMO-1"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Closed fresh interview `interview-001`.", stdout.getvalue())
+        self.assertEqual(interview_mock.call_args.kwargs["request"].run_id, "DMO-1")
+        self.assertIsNone(interview_mock.call_args.kwargs["request"].agent_slug)
+        self.assertFalse(interview_mock.call_args.kwargs["request"].fork)
+
+    def test_interview_command_passes_agent_and_fork_flags(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.run_interview",
+            return_value=SimpleNamespace(message="Closed forked interview `interview-002`."),
+        ) as interview_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["interview", "DMO-1", "--agent", "change_engineer", "--fork"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Closed forked interview `interview-002`.", stdout.getvalue())
+        self.assertEqual(interview_mock.call_args.kwargs["request"].run_id, "DMO-1")
+        self.assertEqual(interview_mock.call_args.kwargs["request"].agent_slug, "change_engineer")
+        self.assertTrue(interview_mock.call_args.kwargs["request"].fork)
+
     def test_workspace_sync_command_prints_synced_paths(self) -> None:
         stdout = io.StringIO()
         workspace = self._workspace(Path("/tmp/repo"))

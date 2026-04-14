@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from rally.errors import RallyConfigError
-from rally.services.workspace import resolve_workspace
+from rally.services.workspace import resolve_rally_cli_bin, resolve_workspace
 
 
 class WorkspaceTests(unittest.TestCase):
@@ -49,6 +50,19 @@ class WorkspaceTests(unittest.TestCase):
             with patch.dict(os.environ, {"RALLY_CLI_BIN": "/tmp/rally"}, clear=False):
                 with self.assertRaisesRegex(RallyConfigError, "Ambiguous Rally workspace root"):
                     resolve_workspace(start_path=nested_root / "flows")
+
+    def test_resolve_rally_cli_bin_falls_back_to_source_tree_wrapper(self) -> None:
+        fake_python = Path(tempfile.gettempdir()) / "missing-rally-python"
+        expected = Path(__file__).resolve().parents[2] / "rally"
+
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("shutil.which", return_value=None),
+            patch.object(sys, "executable", str(fake_python)),
+        ):
+            resolved = resolve_rally_cli_bin()
+
+        self.assertEqual(resolved, expected.resolve())
 
 
 if __name__ == "__main__":

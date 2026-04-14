@@ -298,6 +298,7 @@ class FlowBuildTests(unittest.TestCase):
             self._write_flow_file(repo_root=repo_root, allowed_skills=())
             self._write_markdown_skill(repo_root=repo_root, skill_name="rally-kernel")
             self._write_markdown_skill(repo_root=repo_root, skill_name="rally-memory")
+            self._write_shared_interview_prompt(repo_root=repo_root)
             self._write_role_soul_prompt(repo_root=repo_root, role_slug="scope_lead")
             stale_sidecar = repo_root / "flows" / "demo" / "build" / "agents" / "stale_role" / "SOUL.md"
             stale_sidecar.parent.mkdir(parents=True, exist_ok=True)
@@ -317,6 +318,38 @@ class FlowBuildTests(unittest.TestCase):
             soul_path = repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "SOUL.md"
             self.assertTrue(soul_path.is_file())
             self.assertIn("You are Scope Lead.", soul_path.read_text(encoding="utf-8"))
+            self.assertFalse(stale_sidecar.exists())
+
+    def test_ensure_flow_assets_built_renders_shared_interview_sidecars_into_agent_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve() / "rally"
+            repo_root.mkdir(parents=True)
+            (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally'\n", encoding="utf-8")
+            self._write_flow_file(repo_root=repo_root, allowed_skills=())
+            self._write_markdown_skill(repo_root=repo_root, skill_name="rally-kernel")
+            self._write_markdown_skill(repo_root=repo_root, skill_name="rally-memory")
+            self._write_shared_interview_prompt(repo_root=repo_root)
+            agent_dir = repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead"
+            agent_dir.mkdir(parents=True, exist_ok=True)
+            (agent_dir / "AGENTS.md").write_text("compiled agent\n", encoding="utf-8")
+            stale_sidecar = repo_root / "flows" / "demo" / "build" / "agents" / "stale_role" / "INTERVIEW.md"
+            stale_sidecar.parent.mkdir(parents=True, exist_ok=True)
+            stale_sidecar.write_text("stale\n", encoding="utf-8")
+            calls: list[dict[str, object]] = []
+
+            def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                calls.append({"command": command, "kwargs": kwargs})
+                return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+
+            ensure_flow_assets_built(
+                workspace=self._workspace(repo_root),
+                flow_name="demo",
+                subprocess_run=fake_run,
+            )
+
+            interview_path = agent_dir / "INTERVIEW.md"
+            self.assertTrue(interview_path.is_file())
+            self.assertIn("You are in interview mode for a Rally agent.", interview_path.read_text(encoding="utf-8"))
             self.assertFalse(stale_sidecar.exists())
 
     def _write_flow_file(self, *, repo_root: Path, allowed_skills: tuple[str, ...]) -> None:
@@ -386,6 +419,21 @@ class FlowBuildTests(unittest.TestCase):
                     role: "You are Scope Lead."
                     workflow: "Identity"
                         "Keep scope clear."
+                """
+            ),
+            encoding="utf-8",
+        )
+
+    def _write_shared_interview_prompt(self, *, repo_root: Path) -> None:
+        prompt_root = repo_root / "stdlib" / "rally" / "prompts" / "rally"
+        prompt_root.mkdir(parents=True, exist_ok=True)
+        (prompt_root / "interview_agent.prompt").write_text(
+            textwrap.dedent(
+                """\
+                agent InterviewModeGuide:
+                    role: "You are in interview mode for a Rally agent."
+                    workflow: "Interview Mode"
+                        "Stay in interview mode."
                 """
             ),
             encoding="utf-8",

@@ -78,6 +78,7 @@ def ensure_flow_assets_built(
         target_names=(flow_name,),
         failure_label=f"flow `{flow_name}`",
     )
+    _sync_shared_interview_sidecars(workspace=workspace_context, flow_name=flow_name)
     _sync_role_soul_sidecars(workspace=workspace_context, flow_name=flow_name)
 
     if not doctrine_skill_targets:
@@ -207,6 +208,32 @@ def _sync_role_soul_sidecars(*, workspace: WorkspaceContext, flow_name: str) -> 
                 sidecar_path.unlink()
 
 
+def _sync_shared_interview_sidecars(*, workspace: WorkspaceContext, flow_name: str) -> None:
+    build_agents_root = workspace.workspace_root / "flows" / flow_name / "build" / "agents"
+    if not build_agents_root.is_dir():
+        return
+
+    interview_prompt = workspace.workspace_root / "stdlib" / "rally" / "prompts" / "rally" / "interview_agent.prompt"
+    if not interview_prompt.is_file():
+        raise RallyConfigError(f"Shared interview sidecar prompt is missing: `{interview_prompt}`.")
+
+    rendered = _render_sidecar_prompt(
+        prompt_path=interview_prompt,
+        project_config_path=workspace.pyproject_path,
+        flow_name=flow_name,
+    )
+
+    for agent_dir in sorted(build_agents_root.iterdir()):
+        if not agent_dir.is_dir():
+            continue
+        interview_path = agent_dir / "INTERVIEW.md"
+        if (agent_dir / "AGENTS.md").is_file():
+            interview_path.write_text(rendered, encoding="utf-8")
+            continue
+        if interview_path.is_file():
+            interview_path.unlink()
+
+
 def _render_sidecar_prompt(
     *,
     prompt_path: Path,
@@ -218,6 +245,7 @@ def _render_sidecar_prompt(
         from doctrine.diagnostics import DoctrineError
         from doctrine.emit_common import root_concrete_agents
         from doctrine.parser import parse_file
+        from doctrine.project_config import ProjectConfig
         from doctrine.project_config import load_project_config
         from doctrine.renderer import render_markdown
     except ImportError as exc:
@@ -233,6 +261,24 @@ def _render_sidecar_prompt(
                 f"Role sidecar `{prompt_path}` must compile exactly one concrete agent, found {len(agent_names)}."
             )
         project_config = load_project_config(project_config_path)
+        compile_config = project_config.resolve_compile_config()
+        if any(prompt_path.is_relative_to(root) for root in compile_config.additional_prompt_roots):
+            raw_compile = dict(project_config.raw_compile) if isinstance(project_config.raw_compile, dict) else {}
+            raw_prompt_roots = raw_compile.get("additional_prompt_roots", [])
+            if isinstance(raw_prompt_roots, list):
+                prompt_path_resolved = prompt_path.resolve()
+                deduped_roots = []
+                for raw_root in raw_prompt_roots:
+                    resolved_root = (project_config_path.parent / Path(raw_root)).resolve()
+                    if prompt_path_resolved.is_relative_to(resolved_root):
+                        continue
+                    deduped_roots.append(raw_root)
+                raw_compile["additional_prompt_roots"] = deduped_roots
+                project_config = ProjectConfig(
+                    path=project_config.path,
+                    raw_compile=raw_compile,
+                    raw_emit=project_config.raw_emit,
+                )
         session = CompilationSession(prompt_file, project_config=project_config)
         compiled_agents = session.compile_agents(agent_names)
     except DoctrineError as exc:

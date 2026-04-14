@@ -21,7 +21,11 @@ from rally.adapters.base import (
     record_adapter_session,
 )
 from rally.adapters.codex.event_stream import CodexEventStreamParser
-from rally.adapters.codex.launcher import build_codex_launch_env, write_codex_launch_record
+from rally.adapters.codex.launcher import (
+    build_codex_launch_env,
+    codex_project_doc_max_bytes,
+    write_codex_launch_record,
+)
 from rally.adapters.mcp_readiness import (
     allowed_mcp_names,
     probe_stdio_startability,
@@ -229,7 +233,7 @@ class CodexAdapter(RallyAdapter):
             "-o",
             str(artifacts.last_message_file),
             "-c",
-            f"project_doc_max_bytes={_project_doc_max_bytes(flow=flow)}",
+            f"project_doc_max_bytes={codex_project_doc_max_bytes(flow=flow)}",
         ]
         model = flow.adapter.args.get("model")
         if isinstance(model, str) and model.strip():
@@ -564,17 +568,8 @@ def _coerce_stream_text(raw_value: str | bytes | None) -> str:
     return raw_value
 
 
-def _project_doc_max_bytes(*, flow: FlowDefinition) -> int:
-    raw_value = flow.adapter.args.get("project_doc_max_bytes", 0)
-    if not isinstance(raw_value, int) or raw_value < 0:
-        raise RallyConfigError("`project_doc_max_bytes` must be a non-negative integer.")
-    return raw_value
-
-
 def _write_codex_config(*, workspace_root: Path, run_home: Path, flow: FlowDefinition) -> None:
-    project_doc_max_bytes = flow.adapter.args.get("project_doc_max_bytes", 0)
-    if not isinstance(project_doc_max_bytes, int) or project_doc_max_bytes < 0:
-        raise RallyConfigError("`runtime.adapter_args.project_doc_max_bytes` must be a non-negative integer.")
+    project_doc_max_bytes = codex_project_doc_max_bytes(flow=flow)
 
     lines = [f"project_doc_max_bytes = {project_doc_max_bytes}", ""]
     for mcp_name in allowed_mcp_names(flow):

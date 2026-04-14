@@ -7,7 +7,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/aelaguiz/rally/badge)](https://scorecard.dev/viewer/?uri=github.com/aelaguiz/rally)
 
 [Doctrine](https://github.com/aelaguiz/doctrine) · [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
-[Design](docs/RALLY_MASTER_DESIGN.md) · [Versioning](docs/VERSIONING.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
+[Design](docs/RALLY_MASTER_DESIGN.md) · [Debugging Guide](docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md) · [Versioning](docs/VERSIONING.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
 
 Build strong, stable coding-agent workflows from plain repo files.
 
@@ -74,6 +74,17 @@ If you want Rally inside a repo-local environment instead of a tool install:
 uv add --dev rally-agents
 uv run rally --help
 ```
+
+Rally also ships one first-class debugging path for agent doctrine:
+
+```bash
+rally interview <run-id> [--agent <slug>] [--fork]
+```
+
+Use the deep operator guide at
+[docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md](docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md)
+for fresh versus forked interviews, artifact layout under `home/interviews/`,
+and safe resume after the chat ends.
 
 If you still have an older env or lockfile pinned to `doctrine`, refresh it to
 `doctrine-agents>=1.0.2,<2`.
@@ -297,6 +308,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). The short version:
 - [docs/RALLY_MASTER_DESIGN.md](docs/RALLY_MASTER_DESIGN.md)
 - [docs/RALLY_RUNTIME.md](docs/RALLY_RUNTIME.md)
 - [docs/RALLY_CLI_AND_LOGGING.md](docs/RALLY_CLI_AND_LOGGING.md)
+- [docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md](docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md)
 - [docs/RALLY_COMMUNICATION_MODEL.md](docs/RALLY_COMMUNICATION_MODEL.md)
 - [docs/RALLY_MEMORY.md](docs/RALLY_MEMORY.md)
 - [SUPPORT.md](SUPPORT.md)

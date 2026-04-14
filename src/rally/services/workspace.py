@@ -85,9 +85,14 @@ def resolve_rally_cli_bin() -> Path:
     if executable_peer.is_file():
         return executable_peer
 
+    source_wrapper = _source_tree_rally_bin()
+    if source_wrapper is not None:
+        return source_wrapper
+
     raise RallyConfigError(
         "Rally CLI executable is missing. Set `RALLY_CLI_BIN` or add `rally` to PATH."
     )
+
 
 def _resolve_search_root(start_path: Path | None) -> Path:
     candidate = (start_path or Path.cwd()).expanduser().resolve()
@@ -123,3 +128,10 @@ def _load_pyproject(pyproject_path: Path) -> dict[str, object]:
         return tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise RallyConfigError(f"Workspace pyproject is not valid TOML: `{pyproject_path}`.") from exc
+
+
+def _source_tree_rally_bin() -> Path | None:
+    source_wrapper = Path(__file__).resolve().parents[3] / "rally"
+    if source_wrapper.is_file():
+        return source_wrapper.resolve()
+    return None

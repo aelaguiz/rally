@@ -7,10 +7,12 @@ from pathlib import Path
 from typing import TextIO
 
 from rally.domain.flow import FlowDefinition
+from rally.domain.interview import InterviewRequest
 from rally.domain.run import ResumeRequest, RunRecord, RunRequest
 from rally.errors import RallyError, RallyUsageError
 from rally.memory.service import refresh_memory, save_memory, search_memory, use_memory
 from rally.services.issue_ledger import append_issue_note
+from rally.services.interview import run_interview
 from rally.services.runner import resume_run, run_flow
 from rally.services.workspace import resolve_workspace
 from rally.services.workspace_sync import sync_workspace_builtins
@@ -57,6 +59,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Archive this run, restore the original issue, and start a fresh run.",
     )
     resume_parser.set_defaults(func=_resume_command)
+
+    interview_parser = subparsers.add_parser(
+        "interview",
+        help="Ask an agent to explain its doctrine without changing the live run.",
+    )
+    interview_parser.add_argument("run_id", help="Run identifier to inspect.")
+    interview_parser.add_argument(
+        "--agent",
+        help="Target one agent slug. By default Rally uses the current run agent.",
+    )
+    interview_parser.add_argument(
+        "--fork",
+        action="store_true",
+        help="Fork the saved live session into interview mode when the adapter supports it.",
+    )
+    interview_parser.set_defaults(func=_interview_command)
 
     workspace_parser = subparsers.add_parser("workspace", help="Work with the Rally workspace.")
     workspace_subparsers = workspace_parser.add_subparsers(dest="workspace_command", required=True)
@@ -135,6 +153,22 @@ def _resume_command(args: argparse.Namespace) -> int:
             restart=args.restart,
         ),
         display_factory=_build_display_factory(sys.stdout),
+    )
+    print(result.message)
+    return 0
+
+
+def _interview_command(args: argparse.Namespace) -> int:
+    workspace = resolve_workspace()
+    result = run_interview(
+        workspace=workspace,
+        request=InterviewRequest(
+            run_id=args.run_id,
+            agent_slug=args.agent,
+            fork=args.fork,
+        ),
+        input_stream=sys.stdin,
+        output_stream=sys.stdout,
     )
     print(result.message)
     return 0

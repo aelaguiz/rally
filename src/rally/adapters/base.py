@@ -38,11 +38,35 @@ class TurnArtifactPaths:
 
 
 @dataclass(frozen=True)
+class InterviewArtifactPaths:
+    interview_dir: Path
+    prompt_file: Path
+    session_file: Path
+    launch_file: Path
+    transcript_file: Path
+    raw_events_file: Path
+    stderr_file: Path
+
+
+@dataclass(frozen=True)
 class AdapterInvocation:
     returncode: int
     stdout_text: str
     stderr_text: str
     session_id: str | None
+
+
+@dataclass(frozen=True)
+class InterviewSessionRecord:
+    interview_id: str
+    adapter_name: str
+    agent_slug: str
+    mode: str
+    diagnostic_session_id: str | None
+    source_session_id: str | None
+    cwd: str
+    created_at: str
+    updated_at: str
 
 
 @dataclass(frozen=True)
@@ -257,5 +281,88 @@ def prepare_adapter_turn_artifacts(
     )
 
 
+def prepare_interview_artifacts(
+    *,
+    run_home: Path,
+    agent_slug: str,
+    interview_id: str,
+) -> InterviewArtifactPaths:
+    interview_dir = run_home / "interviews" / agent_slug / interview_id
+    interview_dir.mkdir(parents=True, exist_ok=True)
+    return InterviewArtifactPaths(
+        interview_dir=interview_dir,
+        prompt_file=interview_dir / "prompt.md",
+        session_file=interview_dir / "session.yaml",
+        launch_file=interview_dir / "launch.json",
+        transcript_file=interview_dir / "transcript.jsonl",
+        raw_events_file=interview_dir / "raw_events.jsonl",
+        stderr_file=interview_dir / "stderr.log",
+    )
+
+
+def load_interview_session(*, interview_dir: Path) -> InterviewSessionRecord | None:
+    session_file = interview_dir / "session.yaml"
+    if not session_file.is_file():
+        return None
+    payload = yaml.safe_load(session_file.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RallyStateError(f"Interview session file `{session_file}` must load to a YAML map.")
+    return InterviewSessionRecord(
+        interview_id=str(payload["interview_id"]),
+        adapter_name=str(payload["adapter_name"]),
+        agent_slug=str(payload["agent_slug"]),
+        mode=str(payload["mode"]),
+        diagnostic_session_id=_optional_yaml_string(payload, "diagnostic_session_id"),
+        source_session_id=_optional_yaml_string(payload, "source_session_id"),
+        cwd=str(payload["cwd"]),
+        created_at=str(payload["created_at"]),
+        updated_at=str(payload["updated_at"]),
+    )
+
+
+def record_interview_session(
+    *,
+    interview_dir: Path,
+    interview_id: str,
+    adapter_name: str,
+    agent_slug: str,
+    mode: str,
+    cwd: Path,
+    diagnostic_session_id: str | None = None,
+    source_session_id: str | None = None,
+    now: datetime | None = None,
+) -> InterviewSessionRecord:
+    existing = load_interview_session(interview_dir=interview_dir)
+    created_at = existing.created_at if existing is not None else _render_timestamp(now)
+    record = InterviewSessionRecord(
+        interview_id=interview_id,
+        adapter_name=adapter_name,
+        agent_slug=agent_slug,
+        mode=mode,
+        diagnostic_session_id=diagnostic_session_id,
+        source_session_id=source_session_id,
+        cwd=str(cwd.resolve()),
+        created_at=created_at,
+        updated_at=_render_timestamp(now),
+    )
+    session_file = interview_dir / "session.yaml"
+    session_file.parent.mkdir(parents=True, exist_ok=True)
+    session_file.write_text(yaml.safe_dump(asdict(record), sort_keys=False), encoding="utf-8")
+    return record
+
+
 def _session_file(*, run_home: Path, agent_slug: str) -> Path:
     return run_home / "sessions" / agent_slug / "session.yaml"
+
+
+def _optional_yaml_string(payload: dict[str, object], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise RallyStateError(f"Interview session field `{key}` must be a string when present.")
+    return value
+
+
+def _render_timestamp(now: datetime | None) -> str:
+    return (now or datetime.now(UTC)).astimezone(UTC).isoformat().replace("+00:00", "Z")

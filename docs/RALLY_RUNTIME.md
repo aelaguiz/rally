@@ -7,6 +7,7 @@ reviewers: []
 doc_type: architecture_detail
 related:
   - docs/RALLY_MASTER_DESIGN.md
+  - docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md
   - docs/RALLY_COMMUNICATION_MODEL.md
   - docs/RALLY_CLI_AND_LOGGING.md
   - docs/RALLY_MEMORY.md
@@ -49,6 +50,8 @@ The current repo also ships built-in Rally memory on top of that runtime:
 
 Use `docs/RALLY_CLI_AND_LOGGING.md` for the focused command and
 logging contract.
+Use `docs/RALLY_AGENT_INTERVIEW_DEBUGGING_GUIDE.md` for the deep
+operator workflow for `rally interview`.
 
 What ships today:
 
@@ -64,6 +67,7 @@ What ships today:
 - one shared prompt path
 - one shared final JSON path at `last_message.json`
 - shared session-artifact paths under `home/sessions/<agent>/`
+- diagnostic interview artifacts under `home/interviews/<agent>/<interview-id>/`
 - shared launch proof under `logs/adapter_launch/`
 - run directories under `runs/active/<run-id>/`
 - home materialization for agents, repos, config, auth links, and setup
@@ -82,6 +86,10 @@ What ships today:
 - `rally resume`
 - `rally resume --edit`
 - `rally resume --restart`
+- `rally interview`
+- live streamed assistant text for `rally interview` on Claude and Codex
+- normalized interview `USER`, `LAUNCH`, `ASSIST`, and `CLOSE` rows in
+  `logs/events.jsonl`
 - workspace built-ins can sync before a manual Doctrine emit or before the
   first run without creating run state
 - live operator stream on a TTY with plain fallback off TTY
@@ -126,6 +134,8 @@ What is not shipped yet:
 - Memory is context only.
 - Notes may carry flat string header fields for stable labels.
 - Final JSON is the only turn-ending control path.
+- Diagnostic interviews are outside the turn engine.
+- Diagnostic interviews do not write turn results or issue notes.
 - Many turns use the shared five-key Rally turn result.
 - Review-native turns may use control-ready Doctrine review JSON instead.
 - all four memory commands are visible Rally events.
@@ -164,9 +174,13 @@ The current checked-in runtime surface is:
   - ships real `resume`
   - ships `resume --edit`
   - ships `resume --restart`
+  - ships `interview`
   - ships `issue note`, including repeatable `--field key=value`
   - ships `memory search`, `memory use`, `memory save`, and `memory refresh`
   - stamps `- Turn: \`N\`` on in-turn notes automatically when Rally launched that turn
+- `src/rally/services/interview.py`
+  - owns target-agent resolution, interview prompt assembly, interview
+    artifact writes, and the human chat loop outside `runner.py`
 - `src/rally/memory/models.py`
   - defines `MemoryScope`, `MemoryEntry`, `MemorySearchHit`, `MemorySaveResult`, and `MemoryRefreshResult`
 - `src/rally/memory/store.py`
@@ -190,6 +204,7 @@ The current checked-in runtime surface is:
   - prepares the shared run-home layout
   - enforces non-empty `home/issue.md`
   - syncs built-in framework assets
+  - prepares a lighter diagnostic-safe interview refresh path
   - copies compiled agents, refreshes per-agent skill views under
     `home/sessions/<agent>/skills/`, and copies allowlisted MCPs
   - calls `adapter.prepare_home(...)`
@@ -228,9 +243,14 @@ The current checked-in runtime surface is:
 - `src/rally/adapters/codex/adapter.py`
   - owns the Codex launch shape, root-home bootstrap, event replay, and
     session reuse
+- `src/rally/adapters/codex/interview.py`
+  - owns the diagnostic-only `codex app-server` interview client with native
+    `thread/start`, `thread/fork`, and `turn/start`
 - `src/rally/adapters/claude_code/adapter.py`
   - owns the Claude launch shape, generated MCP config, tool clamp, event
     replay, and session reuse
+- `src/rally/adapters/claude_code/interview.py`
+  - owns the Claude diagnostic chat path with fresh and forked session reuse
 - `src/rally/adapters/claude_code/event_stream.py`
   - parses Claude stream-json events
   - extracts final JSON from `structured_output`, `result.result`, assistant
@@ -315,6 +335,7 @@ The current core proof set is:
 - `tests/unit/test_flow_loader.py`
 - `tests/unit/domain/test_turn_result_contracts.py`
 - `tests/unit/test_cli.py`
+- `tests/unit/test_interview.py`
 - `tests/unit/test_final_response_loader.py`
 - `tests/unit/test_issue_ledger.py`
 - `tests/unit/test_runner.py`
