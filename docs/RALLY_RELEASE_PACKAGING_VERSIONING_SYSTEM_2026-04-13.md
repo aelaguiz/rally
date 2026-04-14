@@ -1197,18 +1197,7 @@ Status: COMPLETED
 
 ## Phase 4 - Harden GitHub governance and PR CI
 
-Status: REOPENED (audit found missing code work)
-
-Missing (code):
-- The split PR workflow cutover is real, but the last planned hardening step
-  is still missing. Phase 4 said to make CodeQL a required gate after the
-  baseline turned green.
-- On 2026-04-14, `gh run list --workflow CodeQL --branch main --limit 10
-  --json ...` showed successful `main` runs, but
-  `gh api repos/aelaguiz/rally/rulesets/15059522` still did not require any
-  CodeQL check.
-- PR `#5` merged while `Analyze (python)` failed, so the live gate is still
-  weaker than the approved Phase 4 target.
+Status: COMPLETED
 
 Completion proof already landed for the split PR and ruleset cutover:
 - PR `#5` ran the split PR checks against the live `main` ruleset and showed
@@ -1225,8 +1214,18 @@ Completion proof already landed for the split PR and ruleset cutover:
   - `.github/workflows/pr.yml`
   - `.github/workflows/publish.yml`
   - `.github/workflows/scorecards.yml`
-- The active `main` ruleset still requires the same stable required checks on
-  the default branch.
+- After the CodeQL baseline turned green on `main`, the live `main` ruleset
+  gained a real `code_scanning` rule for `CodeQL` with thresholds:
+  - alerts: `errors`
+  - security alerts: `medium_or_higher`
+- This uses GitHub's code-scanning merge protection surface instead of
+  unstable `Analyze (...)` required status contexts.
+- PR `#9` proved the final gate behavior under the finished ruleset:
+  - it was `BLOCKED` while `Analyze (actions)`,
+    `Analyze (javascript-typescript)`, and `Analyze (python)` were still
+    pending
+  - it became `CLEAN` only after all three CodeQL analyses passed, alongside
+    the split PR checks
 
 * Goal:
   Make Rally's GitHub repo posture read like Doctrine's maintainer-first
@@ -1382,16 +1381,7 @@ Completion proof:
 
 ## Phase 6 - Prove full parity and release readiness
 
-Status: REOPENED (audit found missing code work)
-
-Missing (code):
-- The local verify path, publish dry run, and host-repo manual path are real,
-  but the final readiness proof still sits on the weaker pre-CodeQL ruleset.
-- Phase 6 required the hardened repo settings to line up with the named
-  required checks after the workflow split. Because CodeQL is not required
-  yet, PR `#5` does not satisfy that final live-gate proof.
-- After Phase 4 lands the CodeQL required gate, rerun one live PR proof under
-  the finished ruleset and then refresh the readiness proof.
+Status: COMPLETED
 
 Completion proof already landed for the rest of this phase:
 - Local release proof stayed green after the clean-checkout repair:
@@ -1407,6 +1397,13 @@ Completion proof already landed for the rest of this phase:
   - confirmed Rally created `DMO-1`, synced `stdlib/rally/`,
     `skills/rally-kernel/`, and `skills/rally-memory/` into the host repo,
     and stopped cleanly at the documented `home/issue.md` step
+- Final live-gate proof landed through PR `#9` on 2026-04-14:
+  - the PR started `BLOCKED` under the finished ruleset while CodeQL was
+    still running
+  - the PR became `CLEAN` only after the split PR checks and all three live
+    CodeQL analyses passed
+  - PR `#9` then merged to `main`, so the final readiness proof is now on the
+    default branch rather than only in local notes
 
 * Goal:
   Prove that Rally now feels like a Doctrine-aligned extension at release time,

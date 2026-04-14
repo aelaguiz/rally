@@ -289,6 +289,41 @@ Plan doc: /Users/aelaguiz/workspace/rally/docs/RALLY_RELEASE_PACKAGING_VERSIONIN
     `skills/rally-kernel/`, and `skills/rally-memory/` into the host repo,
     and stopped at the documented pending `home/issue.md` step
 - Current phase: complete pending fresh implementation audit.
+
+## 2026-04-14 - CodeQL gate completed and final live readiness proof landed
+- The fresh audit reopened Phase 4 and Phase 6 because the split PR gate was
+  live, but the `main` ruleset still did not require CodeQL after the baseline
+  turned green.
+- I verified the baseline first:
+  - `gh api repos/aelaguiz/rally/code-scanning/default-setup`
+  - `gh run list --workflow CodeQL --branch main --limit 5 --json ...`
+  - result: CodeQL default setup was configured and the latest `main` run was
+    green
+- I updated the active `main` ruleset to add a real `code_scanning` rule for
+  `CodeQL` with thresholds:
+  - alerts: `errors`
+  - security alerts: `medium_or_higher`
+- I did not keep `Analyze (...)` as required status checks. GitHub's code
+  scanning merge protection is the right surface here, and open Dependabot PRs
+  already showed those raw `Analyze (...)` contexts are not a stable required
+  check contract.
+- Opened proof PR `#9` from branch `codeql-required-gate-proof` after one
+  local targeted check:
+  - `uv run pytest tests/unit/test_bundled_assets.py -q`
+- The finished live-gate proof is now real:
+  - PR `#9` started `BLOCKED` while:
+    - `Analyze (actions)` was pending
+    - `Analyze (javascript-typescript)` was pending
+    - `Analyze (python)` was pending
+  - the same PR became `CLEAN` only after all three CodeQL analyses passed,
+    together with:
+    - `bundled-assets`
+    - `unit`
+    - `packaged-install`
+    - `security / dependency-review`
+- Merged PR `#9` into `main`, so the final readiness proof now exists on the
+  default branch, not only in a temporary proof branch.
+- Current phase: complete pending fresh implementation audit.
   - `gh run list --workflow publish.yml ...`
 - Result: the default branch still exposes only `ci.yml` and CodeQL, and both
   `pr.yml` and `publish.yml` still return `404` on `main`.
