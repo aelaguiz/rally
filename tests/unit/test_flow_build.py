@@ -183,6 +183,30 @@ class FlowBuildTests(unittest.TestCase):
             with self.assertRaisesRegex(RallyConfigError, "must define either"):
                 ensure_flow_assets_built(workspace=self._workspace(repo_root), flow_name="demo")
 
+    def test_ensure_flow_assets_built_rejects_bare_relative_prompt_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve() / "rally"
+            repo_root.mkdir(parents=True)
+            (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally'\n", encoding="utf-8")
+            self._write_flow_file(repo_root=repo_root, allowed_skills=())
+            self._write_markdown_skill(repo_root=repo_root, skill_name="rally-kernel")
+
+            prompt_root = repo_root / "flows" / "demo" / "prompts"
+            prompt_root.mkdir(parents=True, exist_ok=True)
+            (prompt_root / "AGENTS.prompt").write_text(
+                textwrap.dedent(
+                    """\
+                    input IssueLedger: "Issue Ledger"
+                        source: File
+                            path: "issue.md"
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RallyConfigError, "rooted Rally path"):
+                ensure_flow_assets_built(workspace=self._workspace(repo_root), flow_name="demo")
+
     def _write_flow_file(self, *, repo_root: Path, allowed_skills: tuple[str, ...]) -> None:
         flow_root = repo_root / "flows" / "demo"
         flow_root.mkdir(parents=True)

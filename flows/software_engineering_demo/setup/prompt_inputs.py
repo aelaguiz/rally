@@ -37,7 +37,7 @@ def main() -> int:
 def repo_status(repo: Path) -> dict[str, object]:
     if not repo.is_dir():
         return {
-            "repo_path": "home/repos/demo_repo",
+            "repo_path": "home:repos/demo_repo",
             "exists": False,
             "branch": None,
             "head_commit": None,
@@ -49,7 +49,7 @@ def repo_status(repo: Path) -> dict[str, object]:
     status_lines = git(repo, "status", "--short").splitlines()
     history_lines = git(repo, "log", "--max-count=3", "--pretty=format:%h %s").splitlines()
     return {
-        "repo_path": "home/repos/demo_repo",
+        "repo_path": "home:repos/demo_repo",
         "exists": True,
         "branch": branch,
         "head_commit": head,

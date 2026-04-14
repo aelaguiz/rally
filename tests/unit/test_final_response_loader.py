@@ -59,7 +59,7 @@ class FinalResponseLoaderTests(unittest.TestCase):
             last_message.write_text(
                 """{
   "verdict": "accept",
-  "reviewed_artifact": "artifacts/poem.md",
+  "reviewed_artifact": "home:artifacts/poem.md",
   "analysis_performed": "The draft now feels finished.",
   "findings_first": "The poem is ready to keep."
 }
@@ -82,7 +82,7 @@ class FinalResponseLoaderTests(unittest.TestCase):
             last_message.write_text(
                 """{
   "verdict": "changes_requested",
-  "reviewed_artifact": "artifacts/poem.md",
+  "reviewed_artifact": "home:artifacts/poem.md",
   "analysis_performed": "The review could not start.",
   "findings_first": "The poem draft is missing.",
   "failure_detail": {
@@ -106,7 +106,7 @@ class FinalResponseLoaderTests(unittest.TestCase):
             last_message.write_text(
                 """{
   "verdict": "changes_requested",
-  "current_artifact": "artifacts/poem.md",
+  "current_artifact": "home:artifacts/poem.md",
   "next_owner": "poem_writer"
 }
 """,

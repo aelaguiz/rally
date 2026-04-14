@@ -22,6 +22,7 @@ from rally.adapters.base import (
 from rally.adapters.codex.event_stream import CodexEventStreamParser
 from rally.adapters.codex.launcher import build_codex_launch_env, write_codex_launch_record
 from rally.domain.flow import FlowAgent, FlowDefinition
+from rally.domain.rooted_path import INTERNAL_PATH_ROOTS, expand_rooted_value
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError
 from rally.services.run_events import RunEventRecorder
@@ -51,7 +52,7 @@ class CodexAdapter(RallyAdapter):
         event_recorder: RunEventRecorder | None,
     ) -> None:
         del workspace, run_record, event_recorder
-        _write_codex_config(repo_root=repo_root, run_home=run_home, flow=flow)
+        _write_codex_config(workspace_root=repo_root, run_home=run_home, flow=flow)
         _seed_codex_auth(run_home=run_home)
 
     def prepare_turn_artifacts(
@@ -461,17 +462,24 @@ def _project_doc_max_bytes(*, flow: FlowDefinition) -> int:
     return raw_value
 
 
-def _write_codex_config(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:
+def _write_codex_config(*, workspace_root: Path, run_home: Path, flow: FlowDefinition) -> None:
     project_doc_max_bytes = flow.adapter.args.get("project_doc_max_bytes", 0)
     if not isinstance(project_doc_max_bytes, int) or project_doc_max_bytes < 0:
         raise RallyConfigError("`runtime.adapter_args.project_doc_max_bytes` must be a non-negative integer.")
 
     lines = [f"project_doc_max_bytes = {project_doc_max_bytes}", ""]
     for mcp_name in _allowed_mcp_names(flow):
-        server_file = repo_root / "mcps" / mcp_name / "server.toml"
+        server_file = run_home / "mcps" / mcp_name / "server.toml"
         payload = tomllib.loads(server_file.read_text(encoding="utf-8"))
+        expanded_payload = _expand_mcp_payload(
+            payload,
+            workspace_root=workspace_root,
+            run_home=run_home,
+            flow=flow,
+            context=f"MCP server `{mcp_name}`",
+        )
         lines.append(f'[mcp_servers."{mcp_name}"]')
-        for key, value in payload.items():
+        for key, value in expanded_payload.items():
             lines.append(f"{key} = {_render_toml_value(value)}")
         lines.append("")
     (run_home / "config.toml").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
@@ -493,6 +501,28 @@ def _allowed_mcp_names(flow: FlowDefinition) -> tuple[str, ...]:
     return tuple(sorted({mcp for agent in flow.agents.values() for mcp in agent.allowed_mcps}))
 
 
+def _expand_mcp_payload(
+    payload: dict[str, object],
+    *,
+    workspace_root: Path,
+    run_home: Path,
+    flow: FlowDefinition,
+    context: str,
+) -> dict[str, object]:
+    expanded = expand_rooted_value(
+        payload,
+        workspace_root=workspace_root,
+        flow_root=flow.root_dir,
+        run_home=run_home,
+        allowed_roots=INTERNAL_PATH_ROOTS,
+        context=context,
+        example="home:repos/demo_repo",
+    )
+    if not isinstance(expanded, dict):
+        raise RallyConfigError(f"{context} must decode to a TOML table.")
+    return expanded
+
+
 def _render_toml_value(value: object) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -500,6 +530,9 @@ def _render_toml_value(value: object) -> str:
         return str(value)
     if isinstance(value, str):
         return json.dumps(value)
+    if isinstance(value, dict):
+        rendered_pairs = [f"{json.dumps(key)} = {_render_toml_value(item)}" for key, item in value.items()]
+        return "{ " + ", ".join(rendered_pairs) + " }"
     if isinstance(value, list):
         return "[" + ", ".join(_render_toml_value(item) for item in value) + "]"
     raise RallyConfigError(f"Unsupported TOML value in MCP server definition: `{value!r}`.")

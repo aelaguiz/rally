@@ -9,6 +9,7 @@ from typing import Sequence
 
 from rally.adapters.registry import get_adapter
 from rally.domain.flow import FlowDefinition
+from rally.domain.rooted_path import RootedPath, resolve_rooted_path
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError, RallyStateError, RallyUsageError
 from rally.services.framework_assets import ensure_framework_builtins
@@ -17,7 +18,7 @@ from rally.services.issue_ledger import snapshot_issue_log
 from rally.services.run_events import RunEventRecorder
 from rally.services.run_store import find_run_dir
 from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
-from rally.services.workspace import WorkspaceContext, workspace_context_from_root
+from rally.services.workspace import WorkspaceContext, resolve_framework_root, workspace_context_from_root
 
 _HOME_READY_MARKER = ".rally_home_ready"
 
@@ -313,8 +314,13 @@ def _remove_path(path: Path) -> None:
 
 def _copy_allowed_skills_and_mcps(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:
     skill_sources: dict[str, Path] = {}
+    framework_root = resolve_framework_root()
     for skill_name in _allowed_skill_names(flow):
-        bundle = resolve_skill_bundle_source(repo_root=repo_root, skill_name=skill_name)
+        bundle = resolve_skill_bundle_source(
+            repo_root=repo_root,
+            skill_name=skill_name,
+            framework_root=framework_root,
+        )
         skill_sources[skill_name] = bundle.runtime_source_dir()
 
     _sync_named_directories(target_root=run_home / "skills", sources_by_name=skill_sources)
@@ -420,42 +426,43 @@ def _require_host_inputs_ready(
         _emit_host_input_error(message=message, event_recorder=event_recorder, data={"env_var": env_name})
         raise RallyUsageError(message)
 
-    for raw_path in flow.host_inputs.required_files:
-        resolved_path = _resolve_host_input_path(workspace=workspace, raw_path=raw_path)
+    for rooted_path in flow.host_inputs.required_files:
+        resolved_path = _resolve_host_input_path(workspace=workspace, rooted_path=rooted_path)
         if resolved_path.is_file():
             continue
         message = (
-            f"Flow `{flow.name}` requires host file `{raw_path}` before "
+            f"Flow `{flow.name}` requires host file `{rooted_path}` before "
             "`setup_home_script` can run."
         )
         _emit_host_input_error(
             message=message,
             event_recorder=event_recorder,
-            data={"required_file": raw_path, "resolved_path": str(resolved_path)},
+            data={"required_file": str(rooted_path), "resolved_path": str(resolved_path)},
         )
         raise RallyUsageError(message)
 
-    for raw_path in flow.host_inputs.required_directories:
-        resolved_path = _resolve_host_input_path(workspace=workspace, raw_path=raw_path)
+    for rooted_path in flow.host_inputs.required_directories:
+        resolved_path = _resolve_host_input_path(workspace=workspace, rooted_path=rooted_path)
         if resolved_path.is_dir():
             continue
         message = (
-            f"Flow `{flow.name}` requires host directory `{raw_path}` before "
+            f"Flow `{flow.name}` requires host directory `{rooted_path}` before "
             "`setup_home_script` can run."
         )
         _emit_host_input_error(
             message=message,
             event_recorder=event_recorder,
-            data={"required_directory": raw_path, "resolved_path": str(resolved_path)},
+            data={"required_directory": str(rooted_path), "resolved_path": str(resolved_path)},
         )
         raise RallyUsageError(message)
 
 
-def _resolve_host_input_path(*, workspace: WorkspaceContext, raw_path: str) -> Path:
-    path = Path(raw_path).expanduser()
-    if path.is_absolute():
-        return path.resolve(strict=False)
-    return (workspace.workspace_root / path).resolve(strict=False)
+def _resolve_host_input_path(*, workspace: WorkspaceContext, rooted_path: RootedPath) -> Path:
+    return resolve_rooted_path(
+        rooted_path,
+        workspace_root=workspace.workspace_root,
+        context="host input",
+    )
 
 
 def _emit_host_input_error(

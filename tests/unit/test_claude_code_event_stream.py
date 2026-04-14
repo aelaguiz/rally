@@ -150,7 +150,7 @@ class ClaudeCodeEventStreamTests(unittest.TestCase):
                 "result": (
                     "Now I have everything I need.\n\n"
                     "```json\n"
-                    '{"verdict":"changes_requested","reviewed_artifact":"artifacts/poem.md"}\n'
+                    '{"verdict":"changes_requested","reviewed_artifact":"home:artifacts/poem.md"}\n'
                     "```"
                 ),
             }
@@ -158,7 +158,7 @@ class ClaudeCodeEventStreamTests(unittest.TestCase):
 
         self.assertEqual(
             extract_structured_output(stdout_text),
-            {"verdict": "changes_requested", "reviewed_artifact": "artifacts/poem.md"},
+            {"verdict": "changes_requested", "reviewed_artifact": "home:artifacts/poem.md"},
         )
 
     def test_extract_structured_output_accepts_fenced_json_from_assistant_text(self) -> None:

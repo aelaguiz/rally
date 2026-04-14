@@ -10,7 +10,7 @@ output shape PoemReviewJson: "Poem Review JSON"
 
     field_notes: "Field Notes"
         "Use owner key `poem_writer` when the poem needs another draft."
-        "Use `artifacts/poem.md` for `reviewed_artifact` and `current_artifact` when the poem draft is current."
+        "Use `home:artifacts/poem.md` for `reviewed_artifact` and `current_artifact` when the poem draft is current."
         "Use `null` for `current_artifact`, `next_owner`, and `failure_detail` when they do not apply."
         "Inside `failure_detail`, use `null` for `blocked_gate` or `failing_gates` when one does not apply."
 
@@ -35,7 +35,7 @@ output PoemReviewResponse: "Poem Review Response"
         "Say whether the review accepts the poem or asks for changes."
 
     reviewed_artifact: "Reviewed Artifact"
-        "Use `artifacts/poem.md`."
+        "Use `home:artifacts/poem.md`."
 
     analysis_performed: "Review Summary"
         "Explain the review in 2-4 plain sentences."
@@ -48,7 +48,7 @@ output PoemReviewResponse: "Poem Review Response"
         "Keep it short and plain."
 
     current_artifact: "Current Artifact" when present(current_artifact):
-        "Use `artifacts/poem.md` when the poem draft still stands."
+        "Use `home:artifacts/poem.md` when the poem draft still stands."
 
     next_owner: "Next Owner" when present(next_owner):
         "Use {{PoemWriter:key}} when the poem needs another draft."

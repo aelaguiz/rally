@@ -3,15 +3,15 @@ import shared.outputs
 
 input IssueLedger: "Issue Ledger"
     source: File
-        path: "issue.md"
+        path: "home:issue.md"
     shape: MarkdownDocument
     requirement: Required
-    "Use `issue.md` as the only shared human and agent context path."
+    "Use `home:issue.md` as the only shared human and agent context path."
 
 
 input PoemDraftFile: "Poem Draft File"
     source: File
-        path: "artifacts/poem.md"
+        path: "home:artifacts/poem.md"
     shape: MarkdownDocument
     structure: shared.outputs.PoemDraftDocument
     requirement: Advisory

@@ -25,13 +25,13 @@ workflow PoemWriterJob: "Your Job"
         "Find one clear poem type and one clear subject."
         "If either one is unclear, end with `blocker` and say what is missing."
         "When you are revising, start with the newest Rally note."
-        "Write or revise `artifacts/poem.md`."
-        "Then use `rally-kernel` and leave the required writer note on `issue.md`."
+        "Write or revise `home:artifacts/poem.md`."
+        "Then use `rally-kernel` and leave the required writer note on `home:issue.md`."
         "End with `handoff` to `poem_critic` when the brief gives one clear type and one clear subject."
         "End with valid Rally JSON."
 
     output_contract: "Output Contract"
-        "Put the full poem in `artifacts/poem.md`."
+        "Put the full poem in `home:artifacts/poem.md`."
         "Use the writer note to say what changed, why the draft took this shape, and what the critic should judge next."
 
 

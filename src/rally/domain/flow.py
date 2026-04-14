@@ -6,6 +6,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping
 
+from rally.domain.rooted_path import RootedPath
+
 _FLOW_KEY_PREFIX_RE = re.compile(r"^\d+_")
 FieldPath = tuple[str, ...]
 
@@ -101,8 +103,8 @@ class FlowAgent:
 @dataclass(frozen=True)
 class FlowHostInputs:
     required_env: tuple[str, ...]
-    required_files: tuple[str, ...]
-    required_directories: tuple[str, ...]
+    required_files: tuple[RootedPath, ...]
+    required_directories: tuple[RootedPath, ...]
 
 
 @dataclass(frozen=True)

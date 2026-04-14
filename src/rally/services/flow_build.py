@@ -1,18 +1,38 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 import yaml
 
+from rally.domain.rooted_path import HOME_ROOT, PathRoot, parse_rooted_path
 from rally.errors import RallyConfigError
-from rally.services.framework_assets import ensure_framework_builtins
 from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
 from rally.services.workspace import WorkspaceContext, workspace_context_from_root
 
 BuildSubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
+
+
+@dataclass(frozen=True)
+class _PromptPathRule:
+    field_name: str
+    pattern: re.Pattern[str]
+    allowed_roots: frozenset[PathRoot]
+    example: str
+
+
+_PROMPT_PATH_RULES = (
+    _PromptPathRule(
+        field_name="path",
+        pattern=re.compile(r'^\s*path:\s*"(?P<value>[^"]+)"\s*$'),
+        allowed_roots=frozenset({HOME_ROOT}),
+        example="home:issue.md",
+    ),
+)
 
 
 def ensure_flow_assets_built(
@@ -28,11 +48,16 @@ def ensure_flow_assets_built(
     if not config_path.is_file():
         raise RallyConfigError(f"Rally workspace pyproject is missing: `{config_path}`.")
 
-    ensure_framework_builtins(workspace_context)
+    skill_names = _load_flow_skill_names(repo_root=repo_root, flow_name=flow_name)
+    _validate_prompt_rooted_paths(
+        workspace=workspace_context,
+        flow_name=flow_name,
+        skill_names=skill_names,
+    )
 
     doctrine_skill_targets = tuple(
         skill_name
-        for skill_name in _load_flow_skill_names(repo_root=repo_root, flow_name=flow_name)
+        for skill_name in skill_names
         if _should_emit_skill_build(
             workspace=workspace_context,
             repo_root=repo_root,
@@ -95,10 +120,14 @@ def _should_emit_skill_build(
     repo_root: Path,
     skill_name: str,
 ) -> bool:
-    bundle = resolve_skill_bundle_source(repo_root=repo_root, skill_name=skill_name)
-    if bundle.kind != "doctrine":
-        return False
     if skill_name in MANDATORY_SKILL_NAMES and workspace.workspace_root != workspace.framework_root:
+        return False
+    bundle = resolve_skill_bundle_source(
+        repo_root=repo_root,
+        skill_name=skill_name,
+        framework_root=workspace.framework_root,
+    )
+    if bundle.kind != "doctrine":
         return False
     return True
 
@@ -147,3 +176,47 @@ def _coerce_workspace(*, workspace: WorkspaceContext | None, repo_root: Path | N
     if repo_root is None:
         raise RallyConfigError("`ensure_flow_assets_built` needs a workspace root.")
     return workspace_context_from_root(repo_root)
+
+
+def _validate_prompt_rooted_paths(
+    *,
+    workspace: WorkspaceContext,
+    flow_name: str,
+    skill_names: tuple[str, ...],
+) -> None:
+    prompt_roots: list[Path] = [
+        workspace.workspace_root / "flows" / flow_name / "prompts",
+        workspace.framework_root / "stdlib" / "rally" / "prompts",
+    ]
+    for skill_name in skill_names:
+        bundle = resolve_skill_bundle_source(
+            repo_root=workspace.workspace_root,
+            skill_name=skill_name,
+            framework_root=workspace.framework_root,
+        )
+        if bundle.kind != "doctrine" or bundle.doctrine_entrypoint is None:
+            continue
+        prompt_roots.append(bundle.doctrine_entrypoint.parent)
+
+    seen: set[Path] = set()
+    for prompt_root in prompt_roots:
+        resolved_root = prompt_root.resolve()
+        if resolved_root in seen or not prompt_root.is_dir():
+            continue
+        seen.add(resolved_root)
+        for prompt_file in sorted(prompt_root.rglob("*.prompt")):
+            _validate_prompt_file_rooted_paths(prompt_file)
+
+
+def _validate_prompt_file_rooted_paths(prompt_file: Path) -> None:
+    for line_number, line in enumerate(prompt_file.read_text(encoding="utf-8").splitlines(), start=1):
+        for rule in _PROMPT_PATH_RULES:
+            match = rule.pattern.match(line)
+            if match is None:
+                continue
+            parse_rooted_path(
+                match.group("value"),
+                context=f"`{prompt_file}:{line_number}` {rule.field_name}",
+                allowed_roots=rule.allowed_roots,
+                example=rule.example,
+            )

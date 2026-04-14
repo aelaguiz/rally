@@ -1,7 +1,7 @@
 skill package RallyKernel: "Rally Kernel"
     metadata:
         name: "rally-kernel"
-        description: "Shared Rally turn skill for leaving issue notes, adding flat structured note fields, and ending a turn with the declared final JSON. Use it when a Rally-managed agent needs to leave a note, write that note with `$RALLY_CLI_BIN issue note`, add `--field key=value` labels to that note, or shape final JSON without inventing another way to end the turn. Do not use it for flow-local planning, runtime code changes, or direct `issue.md` edits."
+        description: "Shared Rally turn skill for leaving issue notes, adding flat structured note fields, and ending a turn with the declared final JSON. Use it when a Rally-managed agent needs to leave a note, write that note with `$RALLY_CLI_BIN issue note`, add `--field key=value` labels to that note, or shape final JSON without inventing another way to end the turn. Do not use it for flow-local planning, runtime code changes, or direct `home:issue.md` edits."
 
     "Use this skill on Rally-managed turns when you need Rally's shared note and end-turn rules."
     "Do not use it to repeat flow-local prompt instructions."
@@ -28,7 +28,7 @@ skill package RallyKernel: "Rally Kernel"
         notes_are_context: "Notes are context only. They never decide who works next or whether the run is done, blocked, or sleeping."
         field_labels_only: "Structured note fields are labels only. Keep them short and flat."
         no_route_truth: "Note fields never carry `next_owner`, `done`, `blocker`, or `sleep` truth."
-        no_direct_edits: "Do not edit `home/issue.md` directly."
+        no_direct_edits: "Do not edit `home:issue.md` directly."
         cli_path: "Write notes with `\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\"`."
         fail_loud: "Fail loud if `RALLY_CLI_BIN`, `RALLY_WORKSPACE_DIR`, or `RALLY_RUN_ID` is missing instead of guessing the active run or CLI path."
         provided_by_rally: "Rally provides this skill on Rally-managed turns. Flows do not need to allowlist it by hand."
@@ -81,7 +81,7 @@ EOF
     bullets output_expectations: "Output expectations"
         final_only: "When no saved context is needed, the turn may emit only the final JSON result."
         note_plus_final: "When saved context is needed, the turn writes one note through Rally CLI and still ends with one final JSON result."
-        review_saved: "When Rally already saves a review-native final response into `issue.md`, do not add a second note unless the flow asks for it."
+        review_saved: "When Rally already saves a review-native final response into `home:issue.md`, do not add a second note unless the flow asks for it."
         no_second_path: "The skill never creates a second trusted routing path, second turn-ending command, or direct file-write shortcut."
 
     bullets reference_map: "Reference map"

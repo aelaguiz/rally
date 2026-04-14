@@ -23,10 +23,10 @@ input RoutingFacts: "Routing Facts"
 
 output RepairPlan: "Repair Plan"
     target: File
-        path: "artifacts/repair_plan.md"
+        path: "home:artifacts/repair_plan.md"
     shape: MarkdownDocument
     requirement: Required
-    "Write the repair plan to `artifacts/repair_plan.md`."
+    "Write the repair plan to `home:artifacts/repair_plan.md`."
 
 
 output PlanAuthorTurnResult: "Plan Author Turn Result"
@@ -71,7 +71,7 @@ output CloseoutTurnResult: "Closeout Turn Result"
 agent PlanAuthor[rally.base_agent.RallyManagedBaseAgent]:
     role: "Write the repair plan and either pass the smoke test forward or finish it."
     workflow: "Plan"
-        "Write `artifacts/repair_plan.md`."
+        "Write `home:artifacts/repair_plan.md`."
         "Pass the smoke test to RouteRepair only when it needs one more step."
         "Otherwise finish the smoke test here."
     inherit rally_contract

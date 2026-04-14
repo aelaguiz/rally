@@ -3,13 +3,13 @@ workflow PoemLoopSystemContext: "System Context"
     "It shows one writer, one critic, one poem file, and one shared issue ledger."
 
     downstream_read: "What This Becomes"
-        "A later reader should be able to open `home/issue.md` and follow the whole loop."
-        "The poem itself lives in `artifacts/poem.md`."
+        "A later reader should be able to open `home:issue.md` and follow the whole loop."
+        "The poem itself lives in `home:artifacts/poem.md`."
 
 
 workflow IssueLedgerGroundTruth: "Inputs And Ground Truth"
     opening_issue: "Opening Issue"
-        "Read the opening text at the top of `issue.md` as the human request."
+        "Read the opening text at the top of `home:issue.md` as the human request."
         "Treat the opening issue as everything before the first `## Rally` heading."
 
     turn_history: "Turn History"
@@ -26,7 +26,7 @@ workflow IssueLedgerGroundTruth: "Inputs And Ground Truth"
 
 
 workflow PrimaryPathRules: "Primary Path"
-    "Keep durable guidance on `issue.md`."
-    "The only file artifact is `artifacts/poem.md`."
-    "Keep the writer's short artistic rationale on `issue.md`, not in `artifacts/poem.md`."
+    "Keep durable guidance on `home:issue.md`."
+    "The only file artifact is `home:artifacts/poem.md`."
+    "Keep the writer's short artistic rationale on `home:issue.md`, not in `home:artifacts/poem.md`."
     "Do not create a second note file, plan file, or critique file."

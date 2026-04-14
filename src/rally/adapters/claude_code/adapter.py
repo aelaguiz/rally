@@ -25,6 +25,7 @@ from rally.adapters.claude_code.session_store import (
     record_session as record_claude_code_session,
 )
 from rally.domain.flow import FlowAgent, FlowDefinition
+from rally.domain.rooted_path import INTERNAL_PATH_ROOTS, expand_rooted_value
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError
 from rally.services.run_events import RunEventRecorder
@@ -69,7 +70,8 @@ class ClaudeCodeAdapter(RallyAdapter):
         claude_root = run_home / "claude_code"
         claude_root.mkdir(parents=True, exist_ok=True)
         (claude_root / "mcp.json").write_text(
-            json.dumps(_build_mcp_config(repo_root=repo_root, flow=flow), indent=2, sort_keys=True) + "\n",
+            json.dumps(_build_mcp_config(workspace_root=repo_root, run_home=run_home, flow=flow), indent=2, sort_keys=True)
+            + "\n",
             encoding="utf-8",
         )
         _sync_claude_skills(run_home=run_home)
@@ -470,13 +472,20 @@ def _coerce_stream_text(raw_value: str | bytes | None) -> str:
     return raw_value
 
 
-def _build_mcp_config(*, repo_root: Path, flow: FlowDefinition) -> dict[str, object]:
+def _build_mcp_config(*, workspace_root: Path, run_home: Path, flow: FlowDefinition) -> dict[str, object]:
     mcp_servers: dict[str, object] = {}
     for mcp_name in sorted({mcp for agent in flow.agents.values() for mcp in agent.allowed_mcps}):
-        server_file = repo_root / "mcps" / mcp_name / "server.toml"
+        server_file = run_home / "mcps" / mcp_name / "server.toml"
         payload = tomllib.loads(server_file.read_text(encoding="utf-8"))
-        command = payload.get("command")
-        args = payload.get("args", [])
+        expanded_payload = _expand_mcp_payload(
+            payload,
+            workspace_root=workspace_root,
+            run_home=run_home,
+            flow=flow,
+            context=f"MCP server `{mcp_name}`",
+        )
+        command = expanded_payload.get("command")
+        args = expanded_payload.get("args", [])
         if isinstance(command, list):
             if not command or not all(isinstance(item, str) and item for item in command):
                 raise RallyConfigError(
@@ -490,7 +499,7 @@ def _build_mcp_config(*, repo_root: Path, flow: FlowDefinition) -> dict[str, obj
             )
         if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
             raise RallyConfigError(f"MCP server `{mcp_name}` must declare `args` as a string list.")
-        env = payload.get("env", {})
+        env = expanded_payload.get("env", {})
         if not isinstance(env, dict) or not all(isinstance(key, str) and isinstance(value, str) for key, value in env.items()):
             raise RallyConfigError(f"MCP server `{mcp_name}` must declare `env` as a string map when present.")
         server_payload: dict[str, object] = {
@@ -499,11 +508,33 @@ def _build_mcp_config(*, repo_root: Path, flow: FlowDefinition) -> dict[str, obj
             "args": args,
             "env": env,
         }
-        cwd = payload.get("cwd")
+        cwd = expanded_payload.get("cwd")
         if isinstance(cwd, str) and cwd.strip():
             server_payload["cwd"] = cwd
         mcp_servers[mcp_name] = server_payload
     return {"mcpServers": mcp_servers}
+
+
+def _expand_mcp_payload(
+    payload: dict[str, object],
+    *,
+    workspace_root: Path,
+    run_home: Path,
+    flow: FlowDefinition,
+    context: str,
+) -> dict[str, object]:
+    expanded = expand_rooted_value(
+        payload,
+        workspace_root=workspace_root,
+        flow_root=flow.root_dir,
+        run_home=run_home,
+        allowed_roots=INTERNAL_PATH_ROOTS,
+        context=context,
+        example="home:repos/demo_repo",
+    )
+    if not isinstance(expanded, dict):
+        raise RallyConfigError(f"{context} must decode to a TOML table.")
+    return expanded
 
 
 def _sync_claude_skills(*, run_home: Path) -> None:

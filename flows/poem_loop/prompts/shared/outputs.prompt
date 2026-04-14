@@ -23,7 +23,7 @@ document WriterIssueNoteDocument: "Poem Writer Note"
         "Name the main artistic choices behind this draft in 2-4 plain sentences."
 
     section poem_path: "Poem Path"
-        "Point the critic to `artifacts/poem.md`."
+        "Point the critic to `home:artifacts/poem.md`."
 
     section next_step: "Next Step"
         "Tell the critic what to judge next."
@@ -31,7 +31,7 @@ document WriterIssueNoteDocument: "Poem Writer Note"
 
 output PoemDraft: "Poem Draft"
     target: File
-        path: "artifacts/poem.md"
+        path: "home:artifacts/poem.md"
     shape: MarkdownDocument
     structure: PoemDraftDocument
     requirement: Required

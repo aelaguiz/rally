@@ -1,6 +1,6 @@
 name: software_engineering_demo
 code: SED
-setup_home_script: setup/prepare_home.sh
+setup_home_script: flow:setup/prepare_home.sh
 start_agent: 01_architect
 agents:
   01_architect:
@@ -23,8 +23,8 @@ runtime:
   adapter: codex
   max_command_turns: 12
   guarded_git_repos:
-    - repos/demo_repo
-  prompt_input_command: setup/prompt_inputs.py
+    - home:repos/demo_repo
+  prompt_input_command: flow:setup/prompt_inputs.py
   adapter_args:
     model: gpt-5.4
     reasoning_effort: medium

@@ -23,7 +23,10 @@
 - Rally owns the runtime, CLI, run layout, logs, sessions, adapter rules, and the shared library under `stdlib/rally/`.
 - Rally ends each turn with notes plus one final JSON result. Do not add a second handoff path or another turn-ending return path.
 - Keep lasting notes on Rally-owned tools such as the Rally kernel skill and `rally issue note`. Keep route, done, blocker, and sleep truth only in `rally.turn_results`.
-- `home/issue.md` is the only shared run input and note file Rally sanctions by default. Do not add an external brief flag, stdin brief path, or a second shared brief, handoff, or note sidecar unless a flow clearly owns that extra file.
+- Use rooted Rally paths in authored source: `home:`, `flow:`, `workspace:`, and `host:`. Rally internals may also use `stdlib:`.
+- Do not use bare relative paths in `flow.yaml`, prompt `path:` fields, or MCP path values. In shell commands from the prepared home, plain paths like `repos/demo_repo` are fine.
+- Doctrine still owns prompt support-file resolution. Keep prompt `file:` and `example_file:` values in the compiler-safe form until Doctrine grows rooted support-file paths.
+- `home:issue.md` is the only shared run input and note file Rally sanctions by default. Do not add an external brief flag, stdin brief path, or a second shared brief, handoff, or note sidecar unless a flow clearly owns that extra file.
 - Doctrine owns the general language, compiler, and emitted build output. Treat it as a general framework, not a Rally extension point.
 - Every time you write or edit a `.prompt` file, stop and check whether Doctrine already has a built-in way to express the change.
 - Prefer Doctrine features such as imports, inheritance, abstract agents, shared inputs or outputs, reviews, workflow laws, and typed outputs over copied prose or Rally-only prompt patterns.
@@ -36,7 +39,7 @@
 ## Enduring Design Rules
 
 - Keep Rally CLI-first and filesystem-first. New operator-visible behavior should land in `rally` or repo files, not in a GUI, dashboard, or DB-only path.
-- Prefer front-door Rally paths. Notes, logs, history, and similar runtime behavior should flow through Rally-owned CLI and run files such as `home/issue.md` and `issue_history/`, not ad hoc scripts or direct adapter state.
+- Prefer front-door Rally paths. Notes, logs, history, and similar runtime behavior should flow through Rally-owned CLI and run files such as `home:issue.md` and `issue_history/`, not ad hoc scripts or direct adapter state.
 - Fail loud on dirty or unclear runtime state. Do not add silent retries, hidden cleanup, or background auto-heal behavior when Rally can stop with a clear blocker.
 - Keep run archaeology bundled under `runs/<run-id>/`. If a reader needs to understand a run, the useful files should live there.
 - Keep the operator surface small and explicit. Add a new command or runtime path only when it matches a real operator action or proof path.
@@ -86,7 +89,7 @@
 - Bad: `Preserve durable context for downstream turns.`
 - Good: `Pass the bug to ChangeEngineer.`
 - Bad: `Route to the structural next owner.`
-- Good: `Keep using artifacts/repair_plan.md.`
+- Good: `Keep using home:artifacts/repair_plan.md.`
 - Bad: `Keep the repair plan as the durable current basis.`
 - Good: `Check the test result.`
 - Bad: `Inspect the proof surface.`
