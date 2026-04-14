@@ -1,14 +1,13 @@
 ---
-title: "Rally - Phase 3 Communication Pivot"
-date: 2026-04-13
+title: "Rally Communication Model"
 status: shipped
 fallback_policy: forbidden
 owners: [aelaguiz]
 reviewers: []
-doc_type: architecture_status
+doc_type: architecture_detail
 related:
-  - docs/RALLY_MASTER_DESIGN_2026-04-12.md
-  - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
+  - docs/RALLY_MASTER_DESIGN.md
+  - docs/RALLY_RUNTIME.md
   - stdlib/rally/prompts/rally/base_agent.prompt
   - stdlib/rally/prompts/rally/notes.prompt
   - stdlib/rally/prompts/rally/turn_results.prompt
@@ -21,7 +20,7 @@ related:
 
 # Summary
 
-Phase 3 changed Rally to one simple communication model:
+Rally uses one simple communication model:
 
 - notes for context
 - one final JSON result for control
@@ -80,18 +79,18 @@ That still stays on the same one final-return path.
 
 # Proof
 
-The Phase 3 proof path is:
+The proof path is:
 
 - rebuild the affected flows with the paired Doctrine compiler into `flows/*/build/agents/*`
 - inspect emitted `AGENTS.md` and `AGENTS.contract.json`
 - run the focused Rally unit tests for note writes, shared launch-env setup,
   flow loading, and turn-result parsing
 
-# Live Truth
+# Canonical Homes
 
 Use these docs as the live design set:
 
-- `docs/RALLY_MASTER_DESIGN_2026-04-12.md`
-- `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`
+- `docs/RALLY_MASTER_DESIGN.md`
+- `docs/RALLY_RUNTIME.md`
 
 Treat older planning notes as history only.

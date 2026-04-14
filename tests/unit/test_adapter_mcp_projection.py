@@ -8,7 +8,7 @@ import tomllib
 import unittest
 from pathlib import Path
 
-from rally.adapters.claude_code.adapter import _build_mcp_config
+from rally.adapters.claude_code.adapter import CLAUDE_CODE_ADAPTER, _build_mcp_config, _write_claude_mcp_config
 from rally.adapters.codex.adapter import CODEX_ADAPTER, _write_codex_config
 from rally.domain.flow import (
     AdapterConfig,
@@ -266,8 +266,116 @@ class AdapterMcpProjectionTests(unittest.TestCase):
                 str(workspace_root / "fixtures" / "project"),
             )
 
+    def test_claude_readiness_reports_run_home_materialization_when_config_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_root = Path(temp_dir).resolve()
+            run_dir = workspace_root / "runs" / "DMO-1"
+            run_home = run_dir / "home"
+            _write_server_toml(
+                run_home=run_home,
+                mcp_name="fixture-repo",
+                body='command = "uv"\nargs = ["run", "fixture-repo-mcp"]\ntransport = "stdio"\n',
+            )
+            flow = _demo_flow(workspace_root=workspace_root, allowed_mcps=("fixture-repo",), adapter_name="claude_code")
+            fake_subprocess = _FakeClaudeReadinessSubprocess()
 
-def _demo_flow(*, workspace_root: Path, allowed_mcps: tuple[str, ...]) -> FlowDefinition:
+            failure = CLAUDE_CODE_ADAPTER.check_turn_readiness(
+                repo_root=workspace_root,
+                workspace=_demo_workspace_context(workspace_root=workspace_root),
+                run_dir=run_dir,
+                run_home=run_home,
+                flow=flow,
+                run_record=_demo_run_record(adapter_name="claude_code"),
+                agent=next(iter(flow.agents.values())),
+                turn_index=1,
+                recorder=RunEventRecorder(run_dir=run_dir, run_id="DMO-1", flow_code="DMO"),
+                subprocess_run=fake_subprocess,
+            )
+
+            # Rally must block before launch when the Claude bootstrap file is
+            # missing, because the user cannot recover from a hidden adapter
+            # config failure after the turn has already started.
+            self.assertIsNotNone(failure)
+            assert failure is not None
+            self.assertEqual(failure.failed_check, "run_home_materialization")
+            self.assertFalse(fake_subprocess.calls)
+
+    def test_claude_readiness_uses_generated_mcp_config_when_servers_are_healthy(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_root = Path(temp_dir).resolve()
+            run_dir = workspace_root / "runs" / "DMO-1"
+            run_home = run_dir / "home"
+            _write_server_toml(
+                run_home=run_home,
+                mcp_name="fixture-repo",
+                body=(
+                    'command = "uv"\n'
+                    'args = ["run", "fixture-repo-mcp", "--repo", "home:repos/demo_repo"]\n'
+                    'cwd = "host:/tmp/fixture-repo"\n'
+                    'transport = "stdio"\n'
+                ),
+            )
+            flow = _demo_flow(workspace_root=workspace_root, allowed_mcps=("fixture-repo",), adapter_name="claude_code")
+            _write_claude_mcp_config(workspace_root=workspace_root, run_home=run_home, flow=flow)
+            fake_subprocess = _FakeClaudeReadinessSubprocess()
+
+            failure = CLAUDE_CODE_ADAPTER.check_turn_readiness(
+                repo_root=workspace_root,
+                workspace=_demo_workspace_context(workspace_root=workspace_root),
+                run_dir=run_dir,
+                run_home=run_home,
+                flow=flow,
+                run_record=_demo_run_record(adapter_name="claude_code"),
+                agent=next(iter(flow.agents.values())),
+                turn_index=1,
+                recorder=RunEventRecorder(run_dir=run_dir, run_id="DMO-1", flow_code="DMO"),
+                subprocess_run=fake_subprocess,
+            )
+
+            # A healthy Claude readiness probe should treat a timed-out stdio
+            # launcher as "started" and use the generated run-home config.
+            self.assertIsNone(failure)
+            self.assertEqual(fake_subprocess.commands, [["uv", "run", "fixture-repo-mcp", "--repo", str(run_home / "repos" / "demo_repo")]])
+            self.assertEqual(fake_subprocess.cwd_values, {str(Path("/tmp/fixture-repo").resolve(strict=False))})
+
+    def test_claude_readiness_reports_command_startability_when_stdio_command_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_root = Path(temp_dir).resolve()
+            run_dir = workspace_root / "runs" / "DMO-1"
+            run_home = run_dir / "home"
+            _write_server_toml(
+                run_home=run_home,
+                mcp_name="fixture-repo",
+                body='command = "missing-fixture-mcp"\nargs = ["--repo", "home:repos/demo_repo"]\ntransport = "stdio"\n',
+            )
+            flow = _demo_flow(workspace_root=workspace_root, allowed_mcps=("fixture-repo",), adapter_name="claude_code")
+            _write_claude_mcp_config(workspace_root=workspace_root, run_home=run_home, flow=flow)
+            fake_subprocess = _FakeClaudeReadinessSubprocess()
+
+            failure = CLAUDE_CODE_ADAPTER.check_turn_readiness(
+                repo_root=workspace_root,
+                workspace=_demo_workspace_context(workspace_root=workspace_root),
+                run_dir=run_dir,
+                run_home=run_home,
+                flow=flow,
+                run_record=_demo_run_record(adapter_name="claude_code"),
+                agent=next(iter(flow.agents.values())),
+                turn_index=1,
+                recorder=RunEventRecorder(run_dir=run_dir, run_id="DMO-1", flow_code="DMO"),
+                subprocess_run=fake_subprocess,
+            )
+
+            # A missing required MCP launcher should block before Rally invokes
+            # Claude, so the operator sees a clear MCP failure instead of a
+            # generic adapter crash later in the turn.
+            self.assertIsNotNone(failure)
+            assert failure is not None
+            self.assertEqual(failure.failed_check, "command_startability")
+            self.assertEqual(failure.mcp_name, "fixture-repo")
+            self.assertIn("missing-fixture-mcp", failure.reason)
+
+
+def _demo_flow(*, workspace_root: Path, allowed_mcps: tuple[str, ...], adapter_name: str = "codex") -> FlowDefinition:
     flow_root = workspace_root / "flows" / "demo"
     prompt_path = flow_root / "prompts" / "AGENTS.prompt"
     markdown_path = flow_root / "build" / "agents" / "scope_lead" / "AGENTS.md"
@@ -310,7 +418,7 @@ def _demo_flow(*, workspace_root: Path, allowed_mcps: tuple[str, ...]) -> FlowDe
         guarded_git_repos=(),
         host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
         agents={agent.key: agent},
-        adapter=AdapterConfig(name="codex", prompt_input_command=None, args={}),
+        adapter=AdapterConfig(name=adapter_name, prompt_input_command=None, args={}),
     )
 
 
@@ -320,12 +428,12 @@ def _write_server_toml(*, run_home: Path, mcp_name: str, body: str) -> None:
     (server_root / "server.toml").write_text(body, encoding="utf-8")
 
 
-def _demo_run_record() -> RunRecord:
+def _demo_run_record(*, adapter_name: str = "codex") -> RunRecord:
     return RunRecord(
         id="DMO-1",
         flow_name="demo",
         flow_code="DMO",
-        adapter_name="codex",
+        adapter_name=adapter_name,
         start_agent_key="01_scope_lead",
         created_at="2026-04-14T00:00:00Z",
     )
@@ -443,6 +551,22 @@ class _FakeCodexReadinessSubprocess:
             "env_vars": server.get("env_vars") if isinstance(server.get("env_vars"), list) else [],
             "cwd": server.get("cwd"),
         }
+
+
+class _FakeClaudeReadinessSubprocess:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.commands: list[list[str]] = []
+        self.cwd_values: set[str] = set()
+
+    def __call__(self, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        self.calls.append({"command": command, "kwargs": kwargs})
+        self.commands.append(command)
+        self.cwd_values.add(str(Path(str(kwargs["cwd"])).resolve(strict=False)))
+        executable = command[0]
+        if executable.startswith("missing-"):
+            raise FileNotFoundError(executable)
+        raise subprocess.TimeoutExpired(cmd=command, timeout=float(kwargs["timeout"]))
 
 
 if __name__ == "__main__":

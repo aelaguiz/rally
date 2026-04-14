@@ -21,6 +21,7 @@ from rally.domain.flow import (
     ReviewOutcomeContract,
     ReviewOutputContract,
     flow_agent_key_to_slug,
+    normalize_flow_code,
 )
 from rally.domain.rooted_path import (
     FLOW_ROOT,
@@ -41,7 +42,7 @@ SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS = frozenset({1})
 def load_flow_code(*, repo_root: Path, flow_name: str) -> str:
     _flow_root, flow_file, payload = _load_flow_payload(repo_root=repo_root, flow_name=flow_name)
     _require_matching_flow_name(flow_name=flow_name, flow_file=flow_file, payload=payload)
-    return _require_string(payload, "code", context="flow.yaml")
+    return _require_flow_code(payload=payload, flow_file=flow_file)
 
 
 def load_flow_definition(
@@ -51,7 +52,7 @@ def load_flow_definition(
 ) -> FlowDefinition:
     flow_root, flow_file, payload = _load_flow_payload(repo_root=repo_root, flow_name=flow_name)
     _require_matching_flow_name(flow_name=flow_name, flow_file=flow_file, payload=payload)
-    flow_code = _require_string(payload, "code", context="flow.yaml")
+    flow_code = _require_flow_code(payload=payload, flow_file=flow_file)
 
     build_agents_dir = flow_root / "build" / "agents"
     compiled_agents = _load_compiled_agents(
@@ -166,6 +167,14 @@ def _require_matching_flow_name(*, flow_name: str, flow_file: Path, payload: Map
         raise RallyConfigError(
             f"Flow name mismatch in `{flow_file}`: expected `{flow_name}`, found `{flow_payload_name}`."
         )
+
+
+def _require_flow_code(*, payload: Mapping[str, Any], flow_file: Path) -> str:
+    raw_flow_code = _require_string(payload, "code", context="flow.yaml")
+    try:
+        return normalize_flow_code(raw_flow_code)
+    except ValueError as exc:
+        raise RallyConfigError(f"`code` in `{flow_file}` must be exactly three uppercase ASCII letters.") from exc
 
 
 def _load_compiled_agents(

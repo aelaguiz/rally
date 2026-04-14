@@ -52,7 +52,7 @@ Rally also ships narrower version lines.
 
 For the workspace manifest surface, use [README.md](../README.md).
 For the compiled contract surface, use
-[docs/RALLY_MASTER_DESIGN_2026-04-12.md](RALLY_MASTER_DESIGN_2026-04-12.md).
+[docs/RALLY_MASTER_DESIGN.md](RALLY_MASTER_DESIGN.md).
 
 ## Release Classes
 
@@ -274,5 +274,5 @@ If a public release is wrong:
 - [../CHANGELOG.md](../CHANGELOG.md): portable release history
 - [../SUPPORT.md](../SUPPORT.md): support paths
 - [../SECURITY.md](../SECURITY.md): private vulnerability reporting
-- [RALLY_MASTER_DESIGN_2026-04-12.md](RALLY_MASTER_DESIGN_2026-04-12.md):
+- [RALLY_MASTER_DESIGN.md](RALLY_MASTER_DESIGN.md):
   current runtime design

@@ -84,4 +84,4 @@ The first TestPyPI and PyPI setup checklist also lives in `docs/VERSIONING.md`.
 
 - `AGENTS.md`
 - `README.md`
-- `docs/RALLY_MASTER_DESIGN_2026-04-12.md`
+- `docs/RALLY_MASTER_DESIGN.md`
