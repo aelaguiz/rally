@@ -96,77 +96,25 @@ Non-negotiables
 <!-- arch_skill:block:implementation_audit:start -->
 # Implementation Audit (authoritative)
 Date: 2026-04-14
-Verdict (code): NOT COMPLETE
+Verdict (code): COMPLETE
 Manual QA: pending (non-blocking)
 
 ## Code blockers (why code is not done)
-- The live public release path is still unproven. Rally has no signed release
-  tag, no GitHub release, no `release`-event `publish.yml` run, and no
-  package-index artifact for `rally-agents`.
-- Because Phase 5 is false-complete, the later release-readiness work in Phase
-  6 is also false-complete.
+- None. Fresh audit confirmed the full approved ordered frontier through Phase
+  6 is now complete in repo code, GitHub workflow state, GitHub release state,
+  and package-index state.
 
 ## Reopened phases (false-complete fixes)
-- Phase 5 (Cut over GitHub draft, publish, and public trust surfaces) —
-  reopened because:
-  - no real GitHub release exists yet
-  - no `release.published` `publish.yml` run has uploaded dist assets to a
-    GitHub release
-  - no Trusted Publishing run has published `rally-agents`
-- Phase 6 (Prove full parity and release readiness) — reopened because:
-  - the only live publish proof is `workflow_dispatch` with
-    `publish_target=none`
-  - the repo still lacks a first signed-tag release walk and live
-    package-index proof
+- None.
 
 ## Missing items (code gaps; evidence-anchored; no tables)
-- Live GitHub release publication proof
-  - Evidence anchors:
-    - Phase 5 exit criteria in this doc
-    - `gh release list --limit 10` on 2026-04-14 returned no releases
-    - `gh release view v0.1.0` on 2026-04-14 returned `release not found`
-    - `gh run list --workflow publish.yml --event release --limit 20` on
-      2026-04-14 returned no runs
-  - Plan expects:
-    - GitHub releases attach the exact shipped artifacts
-    - `make release-publish` waits for the `release.published` workflow outcome
-  - Code reality:
-    - `.github/workflows/publish.yml` is wired for `release.published`, but
-      the repo has only `workflow_dispatch` dry runs `24403594896` and
-      `24412217176`
-    - both runs used `publish_target=none`, so the publish legs were skipped
-  - Fix:
-    - run one real signed-tag draft-to-publish flow so `publish.yml` executes
-      on the `release` event and uploads the built wheel and sdist to the
-      GitHub release
-- Live package-index publish proof for `rally-agents`
-  - Evidence anchors:
-    - Section 8.2 in this doc says the same version is published to PyPI
-    - Section 9.3 in this doc says the release runbook must confirm `PyPI
-      publish passed`
-    - `curl -fsS https://pypi.org/pypi/rally-agents/json` on 2026-04-14
-      returned 404
-    - `curl -fsS https://test.pypi.org/pypi/rally-agents/json` on 2026-04-14
-      returned 404
-    - `gh run list --workflow publish.yml --status completed --limit 20` on
-      2026-04-14 shows only two `workflow_dispatch` runs with no live publish
-      legs
-  - Plan expects:
-    - PyPI publish runs through Trusted Publishing
-    - Rally's first live release rehearsal confirms the publish leg, not just
-      the build leg
-  - Code reality:
-    - the package metadata, environments, and workflow are present, but there
-      is still no successful `publish-testpypi` or `publish-pypi` run
-    - no `rally-agents` project is published on PyPI or TestPyPI yet
-  - Fix:
-    - run the first live package-index proof now that the publishers exist:
-      either a TestPyPI rehearsal or the first real PyPI publish through the
-      signed release flow, then record the resulting workflow run
+- None.
 
 ## Non-blocking follow-ups (manual QA / screenshots / human verification)
-- After the live publish path closes, do one cold read of the public GitHub
-  release page and package page.
+- Do one cold read of the rendered GitHub release page plus the PyPI and
+  TestPyPI project pages now that the live release exists.
+- Do one rendered GitHub README cold read so the badge row and docs map are
+  checked in the public repo view.
 <!-- arch_skill:block:implementation_audit:end -->
 
 <!-- arch_skill:block:planning_passes:start -->
@@ -1281,7 +1229,7 @@ Completion proof already landed for the split PR and ruleset cutover:
 
 ## Phase 5 - Cut over GitHub draft, publish, and public trust surfaces
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 Completion proof:
 - After PR `#5` merged on 2026-04-14, `gh api repos/aelaguiz/rally/actions/workflows`
@@ -1302,13 +1250,24 @@ Completion proof:
   - `SUPPORT.md`
   - `CHANGELOG.md`
   - `docs/VERSIONING.md`
+- The first live TestPyPI rehearsal completed from this branch:
+  - workflow run: `24412949483`
+  - result: `metadata`, `build`, and `publish-testpypi` all passed
+  - release proof and Trusted Publishing both succeeded for distribution
+    `rally-agents`
+- The first live GitHub release publish completed from the signed tag:
+  - signed annotated tag: `v0.1.0`
+  - GitHub release URL:
+    `https://github.com/aelaguiz/rally/releases/tag/v0.1.0`
+  - release workflow run: `24413066602`
+  - result: `metadata`, `build`, and `publish-pypi` all passed
+  - uploaded release assets:
+    - `rally_agents-0.1.0.tar.gz`
+    - `rally_agents-0.1.0-py3-none-any.whl`
 
-Missing (code):
-- No live GitHub release exists yet, so `publish.yml` has not attached built
-  artifacts to a real release or exercised the `release.published` path.
-- No live Trusted Publishing run exists yet for `rally-agents`. The only
-  completed workflow runs used `publish_target=none`, and both package indexes
-  still return 404 for project `rally-agents`.
+Manual QA (non-blocking):
+- Do one cold read of the published GitHub release page plus the PyPI and
+  TestPyPI project pages.
 
 * Goal:
   Make the public GitHub release path, artifact publication path, and public
@@ -1371,7 +1330,7 @@ Missing (code):
 
 ## Phase 6 - Prove full parity and release readiness
 
-Status: REOPENED (audit found missing code work)
+Status: COMPLETE
 
 Completion proof already landed for the rest of this phase:
 - Local release proof stayed green after the clean-checkout repair:
@@ -1382,7 +1341,8 @@ Completion proof already landed for the rest of this phase:
   `24403594896` on `main` with `publish_target=none`.
 - The README host-repo path was followed by hand in a temp external workspace
   from the built wheel:
-  - installed `rally==0.1.0` plus Doctrine `v1.0.1` into an isolated venv
+  - installed `rally-agents==0.1.0` plus Doctrine `v1.0.1` into an isolated
+    venv
   - ran `rally run demo` with the venv `bin/` on `PATH`
   - confirmed Rally created `DMO-1`, synced `stdlib/rally/`,
     `skills/rally-kernel/`, and `skills/rally-memory/` into the host repo,
@@ -1394,14 +1354,19 @@ Completion proof already landed for the rest of this phase:
     CodeQL analyses passed
   - PR `#9` then merged to `main`, so the final readiness proof is now on the
     default branch rather than only in local notes
+- The live signed-tag release walk now completed end to end:
+  - `make release-tag RELEASE=v0.1.0 CHANNEL=stable`
+  - `make release-draft RELEASE=v0.1.0 CHANNEL=stable PREVIOUS_TAG=auto`
+  - `make release-publish RELEASE=v0.1.0`
+- The protected `pypi` environment gate was exercised for the release run and
+  approved through the GitHub Actions pending-deployments API.
+- Both package indexes now show the published package version:
+  - TestPyPI JSON: `rally-agents 0.1.0`
+  - PyPI JSON: `rally-agents 0.1.0`
 
-Missing (code):
-- No signed annotated release tag exists yet in this repo. `git tag -l` on
-  2026-04-14 returned no tags.
-- No first live release walk has been completed from `make release-tag` through
-  `make release-publish`. `gh release list --limit 10` is still empty, and
-  there is no `publish.yml` run from the `release` event.
-- No live package-index publish proof exists yet for `rally-agents`.
+Manual QA (non-blocking):
+- Do one rendered GitHub README cold read now that the badge row and docs map
+  are live on the public repo.
 
 * Goal:
   Prove that Rally now feels like a Doctrine-aligned extension at release time,
@@ -2352,3 +2317,42 @@ Follow-ups
 - Keep the earlier broad-parity proof intact.
 - Finish the first live release walk instead of reopening the already-landed
   governance and doc cutover work.
+
+## 2026-04-14 - Close the reopened live publish frontier with the first public release
+
+Context
+
+The earlier audit reopened Phase 5 and Phase 6 because Rally still lacked one
+real signed release, one real `release.published` workflow run, and one live
+package-index publish for `rally-agents`.
+
+Options
+
+- Stop after the local proof and the `publish_target=none` dry run.
+- Close the reopened frontier by running the first real TestPyPI rehearsal and
+  the first real signed public release.
+
+Decision
+
+Close the reopened frontier with live proof.
+
+- Pushed branch commit `32a628e` and ran TestPyPI rehearsal workflow
+  `24412949483`, which published `rally-agents 0.1.0` to TestPyPI.
+- Created and pushed signed annotated tag `v0.1.0`.
+- Created the GitHub draft release, published it, and watched release workflow
+  `24413066602` complete successfully.
+- Approved the protected `pypi` environment and confirmed the release workflow
+  published `rally-agents 0.1.0` to PyPI and attached both dist assets to the
+  GitHub release.
+
+Consequences
+
+- The reopened implementation frontier is now closed in code and ops reality.
+- The authoritative audit block now matches the live release proof.
+- Rally now has one real public release that proves the full Doctrine-aligned
+  release path instead of only dry runs.
+
+Follow-ups
+
+- Do one cold read of the public GitHub release page plus the PyPI and
+  TestPyPI project pages.

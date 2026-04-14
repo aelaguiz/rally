@@ -258,6 +258,7 @@ Plan doc: /Users/aelaguiz/workspace/rally/docs/RALLY_RELEASE_PACKAGING_VERSIONIN
 - Applied the matching live GitHub repo settings with `gh api`:
   - squash-only merges
   - auto-merge enabled
+
   - auto-delete merged branches enabled
   - branch update support enabled
   - GitHub Actions switched from `all` to `selected`
@@ -397,3 +398,56 @@ Plan doc: /Users/aelaguiz/workspace/rally/docs/RALLY_RELEASE_PACKAGING_VERSIONIN
   - Phase 4 and Phase 5 are still blocked on landing the branch changes on the
     default branch, because their proof requires live workflows on `main`.
 - Current phase: Phase 4 - Harden GitHub governance and PR CI.
+
+## 2026-04-14 - Live TestPyPI and PyPI publish proof landed
+- Re-armed the current loop controller for session
+  `019d8c66-ac8d-71c3-9cac-16c1f5c4b9b4` in
+  `.codex/implement-loop-state.019d8c66-ac8d-71c3-9cac-16c1f5c4b9b4.json`.
+- Restored the plan doc to active execution truth and updated
+  `docs/VERSIONING.md` so the current public Rally release version is
+  `v0.1.0`.
+- Committed the pre-release doc truth on this branch:
+  - commit `32a628e`
+  - message: `docs: reopen release parity plan for live publish proof`
+- Re-ran the live local proof from the tagged branch state:
+  - `uv sync --dev`
+  - `make verify`
+  - `make release-prepare RELEASE=v0.1.0 CLASS=additive CHANNEL=stable`
+- Configured repo-local SSH signing so Rally's release-tag path could stay
+  strict without changing code:
+  - `git config gpg.format ssh`
+  - `git config user.signingkey ~/.ssh/id_ed25519.pub`
+  - `git config gpg.ssh.allowedSignersFile ~/.config/git/allowed_signers`
+- Pushed `feat/rally-package-release-parity` with the pre-release doc commit.
+- Ran the first live TestPyPI rehearsal:
+  - command:
+    `gh workflow run publish.yml --ref feat/rally-package-release-parity -f ref=feat/rally-package-release-parity -f publish_target=testpypi`
+  - workflow run: `24412949483`
+  - result:
+    - `metadata` passed
+    - `build` passed
+    - `publish-testpypi` passed
+  - verified TestPyPI JSON now reports `rally-agents 0.1.0`
+- Cut the first signed public Rally release:
+  - `make release-tag RELEASE=v0.1.0 CHANNEL=stable`
+  - `make release-draft RELEASE=v0.1.0 CHANNEL=stable PREVIOUS_TAG=auto`
+  - `make release-publish RELEASE=v0.1.0`
+- The public release flow completed cleanly:
+  - signed annotated tag: `v0.1.0`
+  - GitHub release:
+    `https://github.com/aelaguiz/rally/releases/tag/v0.1.0`
+  - release workflow run: `24413066602`
+  - result:
+    - `metadata` passed
+    - `build` passed
+    - `publish-pypi` passed
+  - uploaded release assets:
+    - `rally_agents-0.1.0.tar.gz`
+    - `rally_agents-0.1.0-py3-none-any.whl`
+- The protected `pypi` environment was exercised for the real release and
+  approved through:
+  - `gh api --method POST repos/aelaguiz/rally/actions/runs/24413066602/pending_deployments --input -`
+- Verified the live PyPI JSON now reports `rally-agents 0.1.0`.
+- Current phase:
+  Phase 5 and Phase 6 execution work are complete, and the authoritative
+  audit block now matches the live release proof.
