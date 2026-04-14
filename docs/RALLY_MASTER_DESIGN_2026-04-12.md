@@ -193,10 +193,14 @@ After that:
 
 - agents assume home is already prepared
 - agents operate inside that home rather than inventing ad hoc repo-management behavior
-- skills are materialized from repo-root `skills/` from each agent's allowlist,
-  whether the source is markdown `SKILL.md` or Doctrine
-  `prompts/SKILL.prompt` plus emitted `build/SKILL.md`
-- MCP definitions are materialized from repo-root `mcps/` from each agent's allowlist
+- Rally refreshes one stable skill view per agent under
+  `home/sessions/<agent>/skills/` from repo-root `skills/`, whether the source
+  is markdown `SKILL.md` or Doctrine `prompts/SKILL.prompt` plus emitted
+  `build/SKILL.md`
+- before each turn, Rally copies the current agent's prebuilt skill view into
+  the live `home/skills/` tree
+- MCP definitions are still materialized from repo-root `mcps/` into shared
+  `home/mcps/` from the flow's per-agent allowlists
 - repos, artifacts, env files, and adapter-local state live there
 - agents do not escape home
 
@@ -214,8 +218,8 @@ Adapter-specific bootstrap rules still stay narrow:
 
 Follow-up gap to resolve later:
 
-- the current runtime still copies the union of all flow-allowed skills and MCPs into one shared run home
-- Rally still needs a clean enforcement story for agent-specific capability access during each turn
+- Rally still needs a clean runtime enforcement story for per-agent
+  `allowed_mcps`
 
 ### Ledger, Notes, And Turn Results
 
@@ -411,7 +415,9 @@ These are the stable runtime surfaces the design depends on:
 | `logs/rendered.log` | plain operator transcript |
 | `logs/adapter_launch/` | proof of the launch contract per turn |
 | `home/agents/` | per-run copy of compiled agent outputs, refreshed on each start or resume |
-| `home/skills/` and `home/mcps/` | materialized allowed capabilities, refreshed on each start or resume |
+| `home/skills/` | live adapter-facing skill tree for the current agent, refreshed before each turn |
+| `home/mcps/` | materialized allowed MCP capabilities, refreshed on each start or resume |
+| `home/sessions/<agent>/skills/` | stable per-agent skill views, refreshed on each start or resume |
 | `home/sessions/` | adapter session sidecars or stable references |
 
 ### Operator Surface
@@ -604,10 +610,11 @@ Phase 5 should also close the MCP gap with:
 - clear failure when a required MCP is missing or broken
 - proof that child agents keep the same MCP access on fresh runs and resumes
 
-Phase 5 should also close the per-agent capability gap with:
+Phase 5 should also close the remaining per-agent capability gap with:
 
-- real runtime enforcement of each agent's `allowed_skills` and `allowed_mcps`
-- either agent-specific home materialization or another equally clear per-turn isolation path
+- real runtime enforcement of each agent's `allowed_mcps`
+- a per-agent MCP isolation path that is as clear as the shipped per-turn
+  skill activation path
 
 ### Phase 6: Add Human-In-The-Loop Flow Requirements
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Sequence
 
 from rally.adapters.registry import get_adapter
-from rally.domain.flow import FlowDefinition
+from rally.domain.flow import FlowAgent, FlowDefinition
 from rally.domain.rooted_path import RootedPath, resolve_rooted_path
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError, RallyStateError, RallyUsageError
@@ -64,7 +64,10 @@ def materialize_run_home(
         event_recorder=event_recorder,
     )
     _sync_compiled_agents(run_home=run_home, flow=flow)
-    _copy_allowed_skills_and_mcps(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
+    # Refresh each agent's stable skill view here. The runner activates one
+    # of these views into the live `home/skills/` tree right before launch.
+    _refresh_agent_skill_views(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
+    _copy_allowed_mcps(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
     get_adapter(flow.adapter.name).prepare_home(
         repo_root=workspace_context.workspace_root,
         workspace=workspace_context,
@@ -310,19 +313,33 @@ def _remove_path(path: Path) -> None:
     path.unlink()
 
 
-def _copy_allowed_skills_and_mcps(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:
-    skill_sources: dict[str, Path] = {}
-    framework_root = resolve_framework_root()
-    for skill_name in _allowed_skill_names(flow):
-        bundle = resolve_skill_bundle_source(
-            repo_root=repo_root,
-            skill_name=skill_name,
-            framework_root=framework_root,
-        )
-        skill_sources[skill_name] = bundle.runtime_source_dir()
-
+def activate_agent_skills(*, run_home: Path, agent: FlowAgent) -> None:
+    skill_view_root = _agent_skill_view_root(run_home=run_home, agent_slug=agent.slug)
+    skill_sources = _load_agent_skill_view_sources(skill_view_root=skill_view_root, agent=agent)
     _sync_named_directories(target_root=run_home / "skills", sources_by_name=skill_sources)
 
+
+def _refresh_agent_skill_views(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:
+    sessions_root = run_home / "sessions"
+    expected_agent_slugs = {agent.slug for agent in flow.agents.values()}
+    for existing in sorted(sessions_root.iterdir()):
+        if existing.name in expected_agent_slugs:
+            continue
+        _remove_path(existing / "skills")
+
+    for agent in flow.agents.values():
+        skill_view_root = _agent_skill_view_root(run_home=run_home, agent_slug=agent.slug)
+        skill_view_root.mkdir(parents=True, exist_ok=True)
+        _sync_named_directories(
+            target_root=skill_view_root,
+            sources_by_name=_resolve_skill_sources(
+                repo_root=repo_root,
+                skill_names=_agent_skill_names(agent),
+            ),
+        )
+
+
+def _copy_allowed_mcps(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:
     mcp_sources: dict[str, Path] = {}
     for mcp_name in _allowed_mcp_names(flow):
         source = repo_root / "mcps" / mcp_name
@@ -333,15 +350,58 @@ def _copy_allowed_skills_and_mcps(*, repo_root: Path, run_home: Path, flow: Flow
     _sync_named_directories(target_root=run_home / "mcps", sources_by_name=mcp_sources)
 
 
-def _allowed_skill_names(flow: FlowDefinition) -> tuple[str, ...]:
+def _resolve_skill_sources(*, repo_root: Path, skill_names: tuple[str, ...]) -> dict[str, Path]:
+    skill_sources: dict[str, Path] = {}
+    framework_root = resolve_framework_root()
+    for skill_name in skill_names:
+        bundle = resolve_skill_bundle_source(
+            repo_root=repo_root,
+            skill_name=skill_name,
+            framework_root=framework_root,
+        )
+        skill_sources[skill_name] = bundle.runtime_source_dir()
+    return skill_sources
+
+
+def _load_agent_skill_view_sources(*, skill_view_root: Path, agent: FlowAgent) -> dict[str, Path]:
+    if not skill_view_root.is_dir():
+        raise RallyStateError(
+            f"Run home is missing the prebuilt skill view for `{agent.slug}` at `{skill_view_root}`."
+        )
+
+    skill_sources = {
+        existing.name: existing for existing in sorted(skill_view_root.iterdir()) if existing.is_dir()
+    }
+    expected_names = set(_agent_skill_names(agent))
+    actual_names = set(skill_sources)
+    if actual_names != expected_names:
+        missing_names = sorted(expected_names - actual_names)
+        unexpected_names = sorted(actual_names - expected_names)
+        mismatch_parts: list[str] = []
+        if missing_names:
+            mismatch_parts.append(f"missing {missing_names}")
+        if unexpected_names:
+            mismatch_parts.append(f"unexpected {unexpected_names}")
+        mismatch_text = ", ".join(mismatch_parts) if mismatch_parts else "unknown mismatch"
+        raise RallyStateError(
+            f"Run home skill view for `{agent.slug}` is out of sync at `{skill_view_root}`: {mismatch_text}."
+        )
+    return skill_sources
+
+
+def _agent_skill_names(agent: FlowAgent) -> tuple[str, ...]:
     return tuple(
         sorted(
             {
                 *(MANDATORY_SKILL_NAMES),
-                *(skill for agent in flow.agents.values() for skill in agent.allowed_skills),
+                *(agent.allowed_skills),
             }
         )
     )
+
+
+def _agent_skill_view_root(*, run_home: Path, agent_slug: str) -> Path:
+    return run_home / "sessions" / agent_slug / "skills"
 
 
 def _allowed_mcp_names(flow: FlowDefinition) -> tuple[str, ...]:

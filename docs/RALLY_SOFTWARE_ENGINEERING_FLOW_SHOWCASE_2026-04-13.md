@@ -258,7 +258,8 @@ Behavior-preservation evidence:
 - The shared ledger must stay `home/issue.md`.
 - The flow must stay self-contained to this repo.
 - Rally still rebuilds flows from paired Doctrine targets in `pyproject.toml`.
-- Rally currently copies the union of allowed skills into one run home.
+- Rally now refreshes stable per-agent skill views and activates one live
+  `home/skills/` tree per turn.
 - Rally already resolves skill roots as either markdown `SKILL.md` or Doctrine
   `prompts/SKILL.prompt`, and it validates emitted `build/SKILL.md` before
   materializing Doctrine skills.
@@ -295,16 +296,18 @@ Behavior-preservation evidence:
 - The cleanest long-term carry-forward repo history story may become a reusable
   Rally service, but the first pass can truthfully bootstrap from existing run
   data under `runs/` if that keeps the design simple.
-- Per-agent skill isolation is a real Rally gap today. The showcase should not
-  pretend that gap is solved before it is solved.
-- Accepted first-pass limit: authored role-local skill allowlists may stay true
-  in flow source while runtime skill exposure is still the per-flow union in
-  `home/skills/`. The plan should treat that as a real Rally gap, not as
-  solved behavior.
-- Current runtime now refreshes `home/agents/`, `home/skills/`, `home/mcps/`,
-  and `config.toml` on every start or resume, while still keeping
-  `setup_home_script` behind the one-time home-ready marker. That closes the
-  earlier capability-refresh blocker and becomes a behavior we must keep.
+- Rally now ships real per-agent skill isolation. It refreshes stable
+  per-agent skill views under `home/sessions/<agent>/skills/` and activates
+  the current agent's live `home/skills/` tree before each turn.
+- Accepted first-pass limit: MCP exposure may still stay broader than
+  per-agent `allowed_mcps` because Codex and Claude build MCP access from
+  separate generated config files today.
+- Current runtime now refreshes `home/agents/`,
+  `home/sessions/<agent>/skills/`, `home/mcps/`, and `config.toml` on every
+  start or resume, then activates the current agent's live `home/skills/` tree
+  before each turn, while still keeping `setup_home_script` behind the one-time
+  home-ready marker. That closes the earlier capability-refresh blocker and
+  becomes a behavior we must keep.
 
 # 2) Problem Statement (existing architecture + why change)
 
@@ -320,8 +323,9 @@ Behavior-preservation evidence:
   kind.
 - `src/rally/services/home_materializer.py` copies allowed skills through that
   shared source-kind resolver and materializes Doctrine skills from `build/`.
-- `src/rally/services/home_materializer.py` copies the per-flow union of
-  allowed skills and MCPs into one run home.
+- `src/rally/services/home_materializer.py` refreshes stable per-agent skill
+  views under `home/sessions/<agent>/skills/` and refreshes allowlisted MCPs
+  into one run home.
 - `src/rally/services/home_materializer.py` refreshes `home/agents/` on every
   start or resume, and it now refreshes skills, MCPs, and `config.toml` before
   it checks the home-ready marker.
@@ -395,10 +399,11 @@ Behavior-preservation evidence:
   - `src/rally/services/flow_build.py` — current canonical flow build path; it
     runs `doctrine.emit_docs` for flows and `doctrine.emit_skill` for allowed
     Doctrine skills today.
-  - `src/rally/services/home_materializer.py` — current run-home sync and skill
-    copy path; it refreshes `home/skills/`, `home/mcps/`, and `config.toml` on
-    each start or resume, and still copies the union of all agent allowlists
-    into one shared `home/skills/`.
+  - `src/rally/services/home_materializer.py` — current run-home sync and
+    skill copy path; it refreshes per-agent skill views under
+    `home/sessions/<agent>/skills/`, refreshes `home/mcps/` and `config.toml`
+    on each start or resume, and leaves the live `home/skills/` tree to the
+    turn runner.
   - `src/rally/services/skill_bundles.py` — current skill source-kind contract;
     it resolves markdown versus Doctrine roots and validates emitted Doctrine
     skill readback before runtime copy.
@@ -473,8 +478,9 @@ Behavior-preservation evidence:
   - `skills/*/SKILL.md` versus `skills/*/prompts/SKILL.prompt` — this is the
     mixed skill-source seam Rally now owns through `skill_bundles.py`.
   - `FlowAgent.allowed_skills` in `src/rally/domain/flow.py` versus the
-    per-flow union copy in `src/rally/services/home_materializer.py` — authored
-    role boundaries do not match runtime exposure today.
+    live turn activation in `src/rally/services/runner.py` — authored role
+    boundaries now match runtime skill exposure for skills, while MCP isolation
+    still remains a later follow-up.
 - `docs/LESSONS_RALLY_PORT_GAP_READ_2026-04-13.md` — this repo already argues
   for flow-local prompt-input reducers when a flow needs route or review facts,
   so the showcase can reuse that direction instead of inventing a new control
@@ -503,8 +509,8 @@ Behavior-preservation evidence:
   `tests/unit/test_runner.py` now covers both capability refresh and stale
   capability removal on resume.
 - Accepted first-pass limitation:
-  - authored per-agent skill boundaries already exist, but Rally still copies
-    the per-flow union of skills into one shared `home/skills/`
+  - per-agent skill isolation is now shipped for `allowed_skills`, but
+    per-agent `allowed_mcps` still stays outside this first pass
   - checked `src/rally/services/home_materializer.py`,
     `src/rally/domain/flow.py`,
     `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, and
@@ -560,8 +566,8 @@ Current command path for one flow:
 5. `src/rally/services/home_materializer.py:materialize_run_home`
    - requires non-empty `home/issue.md`
    - syncs compiled agents into `home/agents/`
-   - refreshes the union of allowed skills and MCPs into `home/skills/` and
-     `home/mcps/` on every start or resume
+   - refreshes per-agent skill views under `home/sessions/<agent>/skills/`
+     and allowlisted MCPs under `home/mcps/` on every start or resume
    - resolves each skill root as markdown or Doctrine before copy
    - rewrites `config.toml` on every start or resume
    - runs `setup_home_script` once
@@ -779,8 +785,8 @@ Prompt versus deterministic split:
     `resume`
   - `setup_home_script` still stays one-time behind the home-ready marker
 - Accepted first-pass limitation:
-  - runtime skill exposure may still be the per-flow union
-  - do not claim per-agent skill isolation at runtime
+  - runtime skill exposure now follows per-agent `allowed_skills`
+  - do not claim per-agent MCP isolation at runtime yet
 
 ## 5.5 UI surfaces (ASCII mockups, if UI work)
 
@@ -799,7 +805,7 @@ Not a UI feature. No mockup needed.
 | Build orchestration | `src/rally/services/flow_build.py` | `ensure_flow_assets_built` | already rebuilds flows and allowed Doctrine skills before run start | extend existing orchestration to cover `demo-git` through flow allowlists | keep build ownership in one runtime path | build flow plus Doctrine skill packages from flow-owned allowlists | flow build tests |
 | Flow runtime contract | `src/rally/domain/flow.py` | `FlowDefinition` | no guarded repo list | add `guarded_git_repos` to the loaded flow contract | runner needs a typed runtime source for git guards | `runtime.guarded_git_repos: [run-home-relative path, ...]` | flow loader tests |
 | Flow loader | `src/rally/services/flow_loader.py` | `load_flow_definition` | validates adapter, turn cap, prompt inputs, and setup script only | load and validate `guarded_git_repos` and the new flow's prompt-input reducer path | keep new runtime facts in `flow.yaml`, not in code constants | non-empty list of run-home-relative repo paths plus one flow-local `runtime.prompt_input_command` path | flow loader tests |
-| Skill source-kind resolution | `src/rally/services/skill_bundles.py`, `src/rally/services/home_materializer.py` | `resolve_skill_bundle_source`, `_copy_allowed_skills_and_mcps`, `materialize_run_home` | already resolves markdown versus Doctrine skill roots and copies Doctrine skills from `build/` | reuse the shipped mixed-skill path for `demo-git` and keep failure cases honest | keep one skill product story | exactly one source kind per skill root; Doctrine skills copy from `build/` | runner tests |
+| Skill source-kind resolution | `src/rally/services/skill_bundles.py`, `src/rally/services/home_materializer.py` | `resolve_skill_bundle_source`, `_refresh_agent_skill_views`, `activate_agent_skills`, `materialize_run_home` | already resolves markdown versus Doctrine skill roots and copies Doctrine skills from `build/` | reuse the shipped mixed-skill path for `demo-git` and keep failure cases honest | keep one skill product story | exactly one source kind per skill root; Doctrine skills copy from `build/` | runner tests |
 | Guarded git repo check | `src/rally/services/runner.py` | `_execute_single_turn` after `load_turn_result` and before accepted state write | no repo cleanliness check exists | block the run if any guarded repo is dirty | enforce the commit-after-turn rule honestly | guarded repo dirtiness blocks handoff or done | runner tests |
 | Run replacement source | `src/rally/services/run_store.py`, `src/rally/services/runner.py` | `archive_run`, `_maybe_archive_replaced_run` | archives prior active run and increments run id | reuse archived runs as the carry-forward demo repo source | avoid a second repo-history registry | newest archived done `SED-*` run is the first-pass carry-forward source | runner tests, run store tests |
 | Demo flow runtime config | `flows/software_engineering_demo/flow.yaml` | new file | flow does not exist | declare owners, allowlists, start owner, setup script, guarded repos, and turn cap | ship the showcase flow contract | `SED` runtime contract | flow loader and build tests |
@@ -850,7 +856,7 @@ Not a UI feature. No mockup needed.
 | Carry-forward repo source | `flows/software_engineering_demo/setup/prepare_home.sh` | scan archived done runs before inventing a registry | keeps the first pass filesystem-first | include |
 | Critic control-only states | `flows/software_engineering_demo/prompts/**` | limited `route_only` branch only when there is no artifact to review | avoids forcing fake reviews while keeping the main loop artifact-based | include |
 | Existing markdown skills | `skills/repo-search`, `skills/pytest-local` | convert to Doctrine `SKILL.prompt` | not required to ship the demo | defer |
-| Per-agent skill isolation | `src/rally/services/home_materializer.py` | runtime role-local skill exposure | real gap, but user accepted it as first-pass limitation | defer |
+| Per-agent skill isolation | `src/rally/services/home_materializer.py`, `src/rally/services/runner.py` | reuse the shipped shared-runtime skill isolation path | keeps the showcase on the same per-agent skill rule Rally now ships for all flows | include |
 | Generic previous-run helper | `src/rally/services/run_store.py` or new helper module | reusable helper for “newest archived done run with repo path” | may be useful later, but setup script can own the first pass | defer |
 <!-- arch_skill:block:call_site_audit:end -->
 
@@ -870,7 +876,7 @@ Not a UI feature. No mockup needed.
     `skills/rally-kernel/prompts/SKILL.prompt`,
     `skills/rally-kernel/build/`, `flow_build.ensure_flow_assets_built`,
     `skill_bundles.resolve_skill_bundle_source`, and
-    `home_materializer._copy_allowed_skills_and_mcps`
+    `home_materializer._refresh_agent_skill_views`
   - verified the `implement-loop` Stop-hook preflight is green for this Codex
     session and armed execution is allowed to start
   - added `demo-git` as a second Doctrine-authored skill package on the same
@@ -1116,14 +1122,13 @@ Not a UI feature. No mockup needed.
   - after the mixed-skill truth update, one real drift remained: target
     architecture still named the demo Doctrine skill as `skills/demo-git/SKILL.prompt`
     even though Rally's shipped pattern is `skills/<skill>/prompts/SKILL.prompt`
-  - the approved first-pass exception for per-flow union runtime skill exposure
-    remains visible, but it is an accepted limitation rather than an open
-    blocker
+  - the remaining first-pass exception is now per-agent MCP isolation, not
+    runtime skill exposure
 - Integrated repairs:
   - normalized the Doctrine skill path across current architecture, target
     architecture, and runtime boundary rules to use `prompts/SKILL.prompt`
-  - kept the accepted per-agent skill-isolation exception explicit across the
-    artifact instead of treating it as a hidden open question
+  - updated the accepted first-pass limitation so it now points at MCP
+    isolation instead of already-shipped skill isolation
   - kept the shipped mixed-skill `rally-kernel` path, Doctrine `grounding`,
     prompt-input facts, and narrow Critic `route_only` use aligned across the
     main sections and decision log
@@ -1150,9 +1155,9 @@ Not a UI feature. No mockup needed.
   instead of restarting from a blank repo each time.
 - 2026-04-13: If planning finds a real Rally or Doctrine gap, that gap must be
   discussed before the plan moves on.
-- 2026-04-13: The first demo may keep per-flow union runtime skill exposure
-  even though authored per-agent skill boundaries already exist. This is an
-  accepted Rally limitation for the first pass, not solved behavior.
+- 2026-04-13: The first demo may keep broader MCP exposure even though authored
+  per-agent `allowed_mcps` already exist. This is an accepted Rally limitation
+  for the first pass, not solved behavior.
 - 2026-04-13: Deep-dive pass 2 found a second Rally runtime gap: run homes
   refresh compiled agents on start or resume, but not skills, MCPs, or
   `config.toml` after first materialization. Planning stops here until the
