@@ -134,38 +134,44 @@ class FlowLoaderTests(unittest.TestCase):
                 (RootedPath(root="workspace", path_text="fixtures/psmobile"),),
             )
 
-    def test_load_flow_definition_uses_framework_stdlib_when_workspace_has_no_local_stdlib(self) -> None:
+    def test_load_flow_definition_loads_env_backed_host_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir).resolve()
-            repo_root = root / "workspace"
-            framework_root = root / "framework"
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                host_inputs_yaml=textwrap.dedent(
+                    """\
+                    host_inputs:
+                      required_env: [PSMOBILE_SOURCE_REPO]
+                      required_directories:
+                        - host:$PSMOBILE_SOURCE_REPO
+                    """
+                ),
+            )
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            self.assertEqual(flow.host_inputs.required_env, ("PSMOBILE_SOURCE_REPO",))
+            self.assertEqual(
+                flow.host_inputs.required_directories,
+                (RootedPath(root="host", path_text="$PSMOBILE_SOURCE_REPO"),),
+            )
+
+    def test_load_flow_definition_rejects_missing_workspace_stdlib(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve() / "workspace"
             self._write_fixture_repo(
                 repo_root=repo_root,
                 schema_file="stdlib:schemas/rally_turn_result.schema.json",
                 example_file="stdlib:examples/rally_turn_result.example.json",
             )
             shutil.rmtree(repo_root / "stdlib")
-            (framework_root / "stdlib" / "rally" / "schemas").mkdir(parents=True)
-            (framework_root / "stdlib" / "rally" / "examples").mkdir(parents=True)
-            (framework_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").write_text(
-                self._schema_text(include_next_owner=True),
-                encoding="utf-8",
-            )
-            (framework_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json").write_text(
-                '{"kind":"done","summary":"ok"}\n',
-                encoding="utf-8",
-            )
 
-            flow = load_flow_definition(
-                repo_root=repo_root,
-                flow_name="demo",
-                framework_root=framework_root,
-            )
-
-            self.assertEqual(
-                flow.agent("01_scope_lead").compiled.final_output.schema_file,
-                framework_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
-            )
+            with self.assertRaisesRegex(RallyConfigError, "workspace/stdlib/rally/schemas/rally_turn_result.schema.json"):
+                load_flow_definition(
+                    repo_root=repo_root,
+                    flow_name="demo",
+                )
 
     def test_load_flow_definition_rejects_non_list_host_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

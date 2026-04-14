@@ -241,7 +241,7 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("### Findings First", issue_text)
             self.assertIn("The poem is ready to keep as written.", issue_text)
 
-    def test_run_flow_uses_framework_builtin_skills_without_workspace_copies(self) -> None:
+    def test_run_flow_syncs_builtin_skills_into_workspace_when_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_demo_repo(repo_root=repo_root, copy_framework_builtins=False)
@@ -281,8 +281,8 @@ class RunnerTests(unittest.TestCase):
 
             run_dir = find_run_dir(repo_root=repo_root, run_id="DMO-1")
             self.assertEqual(result.status, RunStatus.DONE)
-            self.assertFalse((repo_root / "skills" / "rally-kernel").exists())
-            self.assertFalse((repo_root / "skills" / "rally-memory").exists())
+            self.assertTrue((repo_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
+            self.assertTrue((repo_root / "skills" / "rally-memory" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
 

@@ -17,7 +17,8 @@ from rally.services.issue_ledger import snapshot_issue_log
 from rally.services.run_events import RunEventRecorder
 from rally.services.run_store import find_run_dir
 from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
-from rally.services.workspace import WorkspaceContext, resolve_framework_root, workspace_context_from_root
+from rally.services.bundled_assets import ensure_workspace_builtins_synced
+from rally.services.workspace import WorkspaceContext, workspace_context_from_root
 
 _HOME_READY_MARKER = ".rally_home_ready"
 
@@ -63,8 +64,12 @@ def materialize_run_home(
         run_id=run_record.id,
         event_recorder=event_recorder,
     )
+    ensure_workspace_builtins_synced(
+        workspace_root=workspace_context.workspace_root,
+        pyproject_path=workspace_context.pyproject_path,
+    )
     _sync_compiled_agents(run_home=run_home, flow=flow)
-    _copy_allowed_skills_and_mcps(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
+    _copy_allowed_skills_and_mcps(workspace=workspace_context, run_home=run_home, flow=flow)
     get_adapter(flow.adapter.name).prepare_home(
         repo_root=workspace_context.workspace_root,
         workspace=workspace_context,
@@ -310,14 +315,12 @@ def _remove_path(path: Path) -> None:
     path.unlink()
 
 
-def _copy_allowed_skills_and_mcps(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:
+def _copy_allowed_skills_and_mcps(*, workspace: WorkspaceContext, run_home: Path, flow: FlowDefinition) -> None:
     skill_sources: dict[str, Path] = {}
-    framework_root = resolve_framework_root()
     for skill_name in _allowed_skill_names(flow):
         bundle = resolve_skill_bundle_source(
-            repo_root=repo_root,
+            repo_root=workspace.workspace_root,
             skill_name=skill_name,
-            framework_root=framework_root,
         )
         skill_sources[skill_name] = bundle.runtime_source_dir()
 
@@ -325,7 +328,7 @@ def _copy_allowed_skills_and_mcps(*, repo_root: Path, run_home: Path, flow: Flow
 
     mcp_sources: dict[str, Path] = {}
     for mcp_name in _allowed_mcp_names(flow):
-        source = repo_root / "mcps" / mcp_name
+        source = workspace.workspace_root / "mcps" / mcp_name
         if not source.is_dir():
             raise RallyConfigError(f"Allowed MCP does not exist: `{source}`.")
         mcp_sources[mcp_name] = source

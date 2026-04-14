@@ -293,7 +293,6 @@ class CliTests(unittest.TestCase):
         return workspace_context_from_root(
             repo_root,
             cli_bin=repo_root / "bin" / "rally",
-            framework_root=Path(__file__).resolve().parents[2],
         )
 
 

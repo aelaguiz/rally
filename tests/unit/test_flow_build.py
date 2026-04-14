@@ -96,24 +96,15 @@ class FlowBuildTests(unittest.TestCase):
                     str(repo_root / "pyproject.toml"),
                     "--target",
                     "demo-git",
-                    "--target",
-                    "rally-kernel",
-                    "--target",
-                    "rally-memory",
                 ],
             )
 
     def test_ensure_flow_assets_built_skips_builtin_skill_emit_in_external_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir).resolve()
-            framework_root = root / "framework"
-            repo_root = root / "workspace"
+            repo_root = Path(temp_dir).resolve() / "workspace"
             repo_root.mkdir(parents=True)
             (repo_root / "pyproject.toml").write_text("[project]\nname = 'workspace'\n", encoding="utf-8")
             self._write_flow_file(repo_root=repo_root, allowed_skills=())
-            self._write_framework_builtin_skill(framework_root=framework_root, skill_name="rally-kernel")
-            self._write_framework_builtin_skill(framework_root=framework_root, skill_name="rally-memory")
-            (framework_root / "stdlib" / "rally").mkdir(parents=True)
             calls: list[dict[str, object]] = []
 
             def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -124,7 +115,6 @@ class FlowBuildTests(unittest.TestCase):
                 workspace=workspace_context_from_root(
                     repo_root,
                     cli_bin=repo_root / "bin" / "rally",
-                    framework_root=framework_root,
                 ),
                 flow_name="demo",
                 subprocess_run=fake_run,
@@ -132,6 +122,9 @@ class FlowBuildTests(unittest.TestCase):
 
             self.assertEqual(len(calls), 1)
             self.assertEqual(calls[0]["command"][2], "doctrine.emit_docs")
+            self.assertTrue((repo_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
+            self.assertTrue((repo_root / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertTrue((repo_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").is_file())
 
     def test_ensure_flow_assets_built_rejects_missing_workspace_pyproject(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -254,6 +247,35 @@ class FlowBuildTests(unittest.TestCase):
             self.assertEqual(len(calls), 1)
             self.assertEqual(calls[0]["command"][2], "doctrine.emit_docs")
 
+    def test_ensure_flow_assets_built_renders_role_soul_sidecars_into_agent_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve() / "rally"
+            repo_root.mkdir(parents=True)
+            (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally'\n", encoding="utf-8")
+            self._write_flow_file(repo_root=repo_root, allowed_skills=())
+            self._write_markdown_skill(repo_root=repo_root, skill_name="rally-kernel")
+            self._write_markdown_skill(repo_root=repo_root, skill_name="rally-memory")
+            self._write_role_soul_prompt(repo_root=repo_root, role_slug="scope_lead")
+            stale_sidecar = repo_root / "flows" / "demo" / "build" / "agents" / "stale_role" / "SOUL.md"
+            stale_sidecar.parent.mkdir(parents=True, exist_ok=True)
+            stale_sidecar.write_text("stale\n", encoding="utf-8")
+            calls: list[dict[str, object]] = []
+
+            def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                calls.append({"command": command, "kwargs": kwargs})
+                return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+
+            ensure_flow_assets_built(
+                workspace=self._workspace(repo_root),
+                flow_name="demo",
+                subprocess_run=fake_run,
+            )
+
+            soul_path = repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "SOUL.md"
+            self.assertTrue(soul_path.is_file())
+            self.assertIn("You are Scope Lead.", soul_path.read_text(encoding="utf-8"))
+            self.assertFalse(stale_sidecar.exists())
+
     def _write_flow_file(self, *, repo_root: Path, allowed_skills: tuple[str, ...]) -> None:
         flow_root = repo_root / "flows" / "demo"
         flow_root.mkdir(parents=True)
@@ -311,30 +333,16 @@ class FlowBuildTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def _write_framework_builtin_skill(self, *, framework_root: Path, skill_name: str) -> None:
-        skill_root = framework_root / "skills" / skill_name
-        (skill_root / "prompts").mkdir(parents=True, exist_ok=True)
-        (skill_root / "prompts" / "SKILL.prompt").write_text(
+    def _write_role_soul_prompt(self, *, repo_root: Path, role_slug: str) -> None:
+        role_root = repo_root / "flows" / "demo" / "prompts" / "roles" / role_slug
+        role_root.mkdir(parents=True, exist_ok=True)
+        (role_root / "SOUL.prompt").write_text(
             textwrap.dedent(
-                f"""\
-                skill package BuiltinSkill: "Builtin Skill"
-                    metadata:
-                        name: "{skill_name}"
-                    "A framework-owned skill."
-                """
-            ),
-            encoding="utf-8",
-        )
-        (skill_root / "build").mkdir(parents=True, exist_ok=True)
-        (skill_root / "build" / "SKILL.md").write_text(
-            textwrap.dedent(
-                f"""\
-                ---
-                name: {skill_name}
-                description: "A framework-owned skill."
-                ---
-
-                # {skill_name}
+                """\
+                agent ScopeLead:
+                    role: "You are Scope Lead."
+                    workflow: "Identity"
+                        "Keep scope clear."
                 """
             ),
             encoding="utf-8",
@@ -344,7 +352,6 @@ class FlowBuildTests(unittest.TestCase):
         return workspace_context_from_root(
             repo_root,
             cli_bin=repo_root / "bin" / "rally",
-            framework_root=repo_root,
         )
 
 

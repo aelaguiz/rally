@@ -1,0 +1,11 @@
+input RallyIssueLedger: "Issue Ledger"
+    source: File
+        path: "home:issue.md"
+    shape: MarkdownDocument
+    requirement: Required
+    "Use `home:issue.md` as the shared run ledger."
+
+
+output target RallyIssueNoteAppend: "Rally Issue Note Append"
+    required: "Required Target Keys"
+        append_with: "Append With"

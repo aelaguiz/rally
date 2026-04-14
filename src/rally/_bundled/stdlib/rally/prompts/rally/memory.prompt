@@ -1,0 +1,33 @@
+skill RallyMemorySkill: "rally-memory"
+    purpose: "Use the shared Rally memory skill to search, use, save, and refresh cross-run memory through Rally CLI."
+
+    use_when: "Use When"
+        "Use this for tasks like past work."
+        "Use this when you had to fix your own work and learned a lesson worth keeping."
+
+document RallyMemoryEntryDocument: "Rally Memory Entry"
+    section lesson: "Lesson"
+        "State the lesson in plain words."
+
+    section when_this_matters: "When This Matters"
+        "Say when this lesson should be used."
+
+    section what_to_do: "What To Do"
+        "Say the next action in plain steps."
+
+
+workflow RallyReadFirst: "Read First"
+    read_order: "Read Order"
+        "Read the issue first."
+        "Then read this role's local rules, files, and outputs."
+        "Check memory for tasks like this one."
+
+
+workflow RallyHowToTakeATurn: "Memory Turn Rules"
+    turn_sequence: "Turn Sequence"
+        "Start with the current issue and this role's local job."
+        "For tasks like this one, check `rally-memory` first."
+        "Use a memory only when it clearly fits this issue, role, and repo state."
+        "If you had to fix your own work, save the general lesson for later."
+        "Keep notes run-local and keep memory cross-run."
+        "Keep routing, `done`, `blocker`, and `sleep` in final JSON, not in memory."

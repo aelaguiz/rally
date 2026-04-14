@@ -1,0 +1,4 @@
+recursive-include src/rally/_bundled *
+include CHANGELOG.md
+include docs/VERSIONING.md
+global-exclude __pycache__ *.py[cod]

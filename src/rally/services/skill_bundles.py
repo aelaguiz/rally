@@ -39,16 +39,10 @@ def resolve_skill_bundle_source(
     *,
     repo_root: Path,
     skill_name: str,
-    framework_root: Path | None = None,
 ) -> SkillBundleSource:
     root_dir = repo_root / "skills" / skill_name
     if not root_dir.is_dir():
-        if framework_root is not None and skill_name in MANDATORY_SKILL_NAMES:
-            fallback_root = framework_root / "skills" / skill_name
-            if fallback_root.is_dir():
-                root_dir = fallback_root
-        if not root_dir.is_dir():
-            raise RallyConfigError(f"Allowed skill does not exist: `{root_dir}`.")
+        raise RallyConfigError(f"Allowed skill does not exist: `{root_dir}`.")
 
     markdown_file = root_dir / "SKILL.md"
     doctrine_entrypoint = root_dir / "prompts" / "SKILL.prompt"

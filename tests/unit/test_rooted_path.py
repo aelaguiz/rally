@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from rally.domain.rooted_path import (
     FLOW_ROOT,
@@ -73,14 +75,12 @@ class RootedPathTests(unittest.TestCase):
                 workspace_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
             )
 
-    def test_resolve_stdlib_path_from_framework_root(self) -> None:
+    def test_resolve_stdlib_path_from_workspace_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir).resolve()
-            workspace_root = root / "workspace"
+            workspace_root = Path(temp_dir).resolve() / "workspace"
             flow_root = workspace_root / "flows" / "demo"
-            framework_root = root / "framework"
             flow_root.mkdir(parents=True)
-            (framework_root / "stdlib" / "rally" / "schemas").mkdir(parents=True)
+            (workspace_root / "stdlib" / "rally" / "schemas").mkdir(parents=True)
 
             stdlib_path = parse_rooted_path(
                 "stdlib:schemas/rally_turn_result.schema.json",
@@ -94,10 +94,9 @@ class RootedPathTests(unittest.TestCase):
                     stdlib_path,
                     workspace_root=workspace_root,
                     flow_root=flow_root,
-                    framework_root=framework_root,
                     context="stdlib schema",
                 ),
-                framework_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
+                workspace_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
             )
 
     def test_parse_workspace_and_host_paths(self) -> None:
@@ -116,6 +115,37 @@ class RootedPathTests(unittest.TestCase):
 
         self.assertEqual(workspace_path, RootedPath(root="workspace", path_text="fixtures/demo.txt"))
         self.assertEqual(host_path, RootedPath(root="host", path_text="/tmp/demo.txt"))
+
+    def test_parse_and_resolve_host_path_from_env_var(self) -> None:
+        rooted = parse_rooted_path(
+            "host:$PSMOBILE_SOURCE_REPO",
+            context="host directory",
+            allowed_roots={HOST_ROOT},
+            example="host:$PSMOBILE_SOURCE_REPO",
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            os.environ,
+            {"PSMOBILE_SOURCE_REPO": temp_dir},
+            clear=False,
+        ):
+            self.assertEqual(rooted, RootedPath(root="host", path_text="$PSMOBILE_SOURCE_REPO"))
+            self.assertEqual(
+                resolve_rooted_path(rooted, context="host directory"),
+                Path(temp_dir).resolve(),
+            )
+
+    def test_rejects_unresolved_host_env_var(self) -> None:
+        rooted = parse_rooted_path(
+            "host:$PSMOBILE_SOURCE_REPO",
+            context="host directory",
+            allowed_roots={HOST_ROOT},
+            example="host:$PSMOBILE_SOURCE_REPO",
+        )
+
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RallyConfigError, "unresolved env var"):
+                resolve_rooted_path(rooted, context="host directory")
 
     def test_rejects_bare_relative_paths(self) -> None:
         with self.assertRaisesRegex(RallyConfigError, "rooted Rally path"):
