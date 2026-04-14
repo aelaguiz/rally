@@ -207,6 +207,43 @@ class FlowBuildTests(unittest.TestCase):
             with self.assertRaisesRegex(RallyConfigError, "rooted Rally path"):
                 ensure_flow_assets_built(workspace=self._workspace(repo_root), flow_name="demo")
 
+    def test_ensure_flow_assets_built_allows_symbolic_artifact_prompt_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve() / "rally"
+            repo_root.mkdir(parents=True)
+            (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally'\n", encoding="utf-8")
+            self._write_flow_file(repo_root=repo_root, allowed_skills=())
+            self._write_markdown_skill(repo_root=repo_root, skill_name="rally-kernel")
+
+            prompt_root = repo_root / "flows" / "demo" / "prompts"
+            prompt_root.mkdir(parents=True, exist_ok=True)
+            (prompt_root / "AGENTS.prompt").write_text(
+                textwrap.dedent(
+                    """\
+                    output SectionPlan: "Section Plan"
+                        target: File
+                            path: "section_root/_authoring/SECTION_PLAN.md"
+                        shape: MarkdownDocument
+                        requirement: Required
+                    """
+                ),
+                encoding="utf-8",
+            )
+            calls: list[dict[str, object]] = []
+
+            def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                calls.append({"command": command, "kwargs": kwargs})
+                return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+
+            ensure_flow_assets_built(
+                workspace=self._workspace(repo_root),
+                flow_name="demo",
+                subprocess_run=fake_run,
+            )
+
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0]["command"][2], "doctrine.emit_docs")
+
     def _write_flow_file(self, *, repo_root: Path, allowed_skills: tuple[str, ...]) -> None:
         flow_root = repo_root / "flows" / "demo"
         flow_root.mkdir(parents=True)

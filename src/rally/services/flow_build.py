@@ -34,6 +34,8 @@ _PROMPT_PATH_RULES = (
     ),
 )
 
+_SYMBOLIC_ARTIFACT_PATH_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*_root(?:/|$)")
+
 
 def ensure_flow_assets_built(
     *,
@@ -214,8 +216,11 @@ def _validate_prompt_file_rooted_paths(prompt_file: Path) -> None:
             match = rule.pattern.match(line)
             if match is None:
                 continue
+            value = match.group("value")
+            if _SYMBOLIC_ARTIFACT_PATH_RE.match(value):
+                continue
             parse_rooted_path(
-                match.group("value"),
+                value,
                 context=f"`{prompt_file}:{line_number}` {rule.field_name}",
                 allowed_roots=rule.allowed_roots,
                 example=rule.example,

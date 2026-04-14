@@ -10,17 +10,12 @@ from rally.services.workspace import workspace_context_from_root
 
 
 class FrameworkAssetsTests(unittest.TestCase):
-    def test_ensure_framework_builtins_materializes_missing_reserved_paths(self) -> None:
+    def test_ensure_framework_builtins_materializes_missing_framework_skill(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir).resolve()
             framework_root = root / "framework"
             workspace_root = root / "workspace"
-            (framework_root / "stdlib" / "rally" / "prompts").mkdir(parents=True)
             (framework_root / "skills" / "rally-kernel").mkdir(parents=True)
-            (framework_root / "stdlib" / "rally" / "prompts" / "base.prompt").write_text(
-                "prompt\n",
-                encoding="utf-8",
-            )
             (framework_root / "skills" / "rally-kernel" / "SKILL.md").write_text(
                 "# Rally Kernel\n",
                 encoding="utf-8",
@@ -34,10 +29,6 @@ class FrameworkAssetsTests(unittest.TestCase):
 
             ensure_framework_builtins(workspace)
 
-            self.assertEqual(
-                (workspace_root / "stdlib" / "rally" / "prompts" / "base.prompt").read_text(encoding="utf-8"),
-                "prompt\n",
-            )
             self.assertEqual(
                 (workspace_root / "skills" / "rally-kernel" / "SKILL.md").read_text(encoding="utf-8"),
                 "# Rally Kernel\n",

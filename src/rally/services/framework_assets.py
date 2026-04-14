@@ -7,7 +7,6 @@ from rally.errors import RallyConfigError
 from rally.services.workspace import WorkspaceContext
 
 _RESERVED_FRAMEWORK_PATHS = (
-    ("stdlib", "rally"),
     ("skills", "rally-kernel"),
 )
 
