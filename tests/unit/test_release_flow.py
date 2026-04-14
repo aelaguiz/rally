@@ -76,8 +76,8 @@ class ReleaseFlowTests(unittest.TestCase):
         self.assertIn("Package metadata status: ready (`0.2.0`)", worksheet)
         self.assertIn("Current workspace manifest version: 1", worksheet)
         self.assertIn("Current compiled contract version: 1", worksheet)
-        self.assertIn("Current minimum Doctrine release: v1.0.1", worksheet)
-        self.assertIn("Current supported Doctrine package line: doctrine>=1.0.1,<2", worksheet)
+        self.assertIn("Current minimum Doctrine release: v1.0.2", worksheet)
+        self.assertIn("Current supported Doctrine package line: doctrine-agents>=1.0.2,<2", worksheet)
         self.assertIn("Changelog entry status: ready (`v0.2.0 - 2026-04-14`)", worksheet)
         self.assertIn("make build-dist", worksheet)
         self.assertIn("make verify-package", worksheet)
@@ -95,8 +95,8 @@ class ReleaseFlowTests(unittest.TestCase):
         self.assertEqual(load_package_metadata_version(self.root), "0.1.0")
         self.assertEqual(load_workspace_version(self.root), 1)
         self.assertEqual(load_compiled_contract_version(self.root), 1)
-        self.assertEqual(load_doctrine_floor(self.root), "v1.0.1")
-        self.assertEqual(load_doctrine_package_line(self.root), "doctrine>=1.0.1,<2")
+        self.assertEqual(load_doctrine_floor(self.root), "v1.0.2")
+        self.assertEqual(load_doctrine_package_line(self.root), "doctrine-agents>=1.0.2,<2")
 
     def test_prepare_release_reports_package_metadata_status(self) -> None:
         self._tag("v0.1.0")
@@ -440,7 +440,7 @@ class ReleaseFlowTests(unittest.TestCase):
                 version = "{package_version}"
                 requires-python = ">=3.14"
                 dependencies = [
-                    "doctrine>=1.0.1,<2",
+                    "doctrine-agents>=1.0.2,<2",
                 ]
 
                 [tool.rally.workspace]
@@ -460,8 +460,8 @@ class ReleaseFlowTests(unittest.TestCase):
         *,
         public_release: str,
         package_version: str,
-        doctrine_floor: str = "v1.0.1",
-        doctrine_package_line: str = "doctrine>=1.0.1,<2",
+        doctrine_floor: str = "v1.0.2",
+        doctrine_package_line: str = "doctrine-agents>=1.0.2,<2",
     ) -> None:
         (self.root / "docs" / "VERSIONING.md").write_text(
             textwrap.dedent(

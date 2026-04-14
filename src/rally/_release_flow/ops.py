@@ -123,14 +123,13 @@ def render_release_worksheet(plan: ReleasePlan) -> str:
                 "proof for the touched public surface",
             ]
         )
-    doctrine_source = f"git+https://github.com/aelaguiz/doctrine.git@{plan.current_doctrine_floor}"
     verify_commands = [
         "uv run python tools/sync_bundled_assets.py --check",
         "uv run pytest tests/unit/test_package_release.py -q",
         "uv run pytest tests/unit/test_release_flow.py -q",
         "make build-dist",
         "make verify-package",
-        f"RALLY_TEST_DOCTRINE_SOURCE={doctrine_source} uv run pytest tests/integration/test_packaged_install.py -q",
+        "uv run pytest tests/integration/test_packaged_install.py -q",
         "uv run pytest tests/unit -q",
         "make verify",
     ]

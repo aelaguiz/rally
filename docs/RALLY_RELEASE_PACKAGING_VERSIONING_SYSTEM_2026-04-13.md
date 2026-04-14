@@ -165,7 +165,7 @@ repo.
   versions separate from Doctrine release and language versions.
 - One explicit minimum Doctrine release version that Rally declares in package
   metadata, docs, release notes, and external-user tests. The current floor
-  for this plan is Doctrine `v1.0.1`.
+  for this plan is Doctrine `v1.0.2`.
 - Keeping Doctrine-style explicit package version truth in `pyproject.toml`.
 - Keeping a Rally-owned release helper stack that mirrors Doctrine's:
   `release-prepare`, `release-tag`, `release-draft`, and `release-publish`.
@@ -361,7 +361,7 @@ Behavior-preservation evidence:
   version, and narrow support-surface versions. Rally must copy that structure
   without inventing a fake language version.
 - Rally still needs one exact minimum Doctrine public release floor. The
-  current anchor is `v1.0.1`.
+  current anchor is `v1.0.2`.
 
 ## 1.3 Architectural principles (rules we will enforce)
 
@@ -402,7 +402,7 @@ Behavior-preservation evidence:
 
 - Rally is already a real `src/rally/` runtime package with packaged built-ins,
   a working installed CLI, and a credible external-user artifact proof.
-- Rally already declares `doctrine>=1.0.1,<2` and proves that floor through the
+- Rally already declares `doctrine-agents>=1.0.2,<2` and proves that floor through the
   packaged-install test.
 - Rally already has explicit package-version truth in `pyproject.toml`, a
   Doctrine-style `Makefile`, `src/rally/release_flow.py`,
@@ -518,7 +518,7 @@ Behavior-preservation evidence:
 - Rally's current code and docs on 2026-04-14 already show that most of the
   broad parity plan landed:
   - `pyproject.toml` already has explicit `version = "0.1.0"` and
-    `doctrine>=1.0.1,<2`
+    `doctrine-agents>=1.0.2,<2`
   - `Makefile` already exposes `setup`, `tests`, `verify`,
     `release-prepare`, `release-tag`, `release-draft`, and
     `release-publish`
@@ -991,7 +991,7 @@ Status: COMPLETED
   - `uv run python tools/sync_bundled_assets.py --check`
   - `uv run pytest tests/unit -q`
   - `uv build`
-  - `RALLY_TEST_DOCTRINE_SOURCE=git+https://github.com/aelaguiz/doctrine.git@v1.0.1 uv run pytest tests/integration/test_packaged_install.py -q`
+  - `uv run pytest tests/integration/test_packaged_install.py -q`
 * Docs/comments (propagation; only if needed):
   - none beyond keeping current docs honest while later phases rewrite the
     release system
@@ -1022,8 +1022,8 @@ Status: COMPLETED
     - `Current Rally package version: X.Y.Z`
     - `Current workspace manifest version: 1`
     - `Current compiled agent contract version: 1`
-    - `Current minimum Doctrine release: v1.0.1`
-    - `Current supported Doctrine package line: doctrine>=1.0.1,<2`
+    - `Current minimum Doctrine release: v1.0.2`
+    - `Current supported Doctrine package line: doctrine-agents>=1.0.2,<2`
   - Replace `dynamic = ["version"]` with explicit package version truth in
     `pyproject.toml`.
   - Remove `[tool.setuptools_scm]` from `pyproject.toml`.
@@ -1341,7 +1341,7 @@ Completion proof already landed for the rest of this phase:
   `24403594896` on `main` with `publish_target=none`.
 - The README host-repo path was followed by hand in a temp external workspace
   from the built wheel:
-  - installed `rally-agents==0.1.0` plus Doctrine `v1.0.1` into an isolated
+  - installed `rally-agents==0.1.0` plus Doctrine `v1.0.2` into an isolated
     venv
   - ran `rally run demo` with the venv `bin/` on `PATH`
   - confirmed Rally created `DMO-1`, synced `stdlib/rally/`,
@@ -1387,7 +1387,7 @@ Manual QA (non-blocking):
   - `uv run python tools/sync_bundled_assets.py --check`
   - `uv run pytest tests/unit -q`
   - `uv build`
-  - `RALLY_TEST_DOCTRINE_SOURCE=git+https://github.com/aelaguiz/doctrine.git@v1.0.1 uv run pytest tests/integration/test_packaged_install.py -q`
+  - `uv run pytest tests/integration/test_packaged_install.py -q`
   - `uv run pytest tests/unit/test_release_flow.py -q`
   - one successful `make release-prepare ...` rehearsal in the real repo
   - one successful publish-workflow dry run or first real release rehearsal
@@ -1442,7 +1442,7 @@ Doctrine-style release helper rules fail loudly in unit tests.
   external-user proof.
 - That proof must continue to cover:
   - built wheel install
-  - install against Doctrine `v1.0.1`
+  - install against Doctrine `v1.0.2`
   - `rally --help`
   - `rally run demo`
   - workspace-local built-in sync
@@ -1784,7 +1784,7 @@ Follow-ups
 - Once Doctrine finalizes its support/security wording, do one wording-aligned
   pass across the matching Rally docs.
 
-## 2026-04-14 - Lock the Doctrine floor to v1.0.1
+## 2026-04-14 - Lock the Doctrine floor to v1.0.2
 
 Context
 
@@ -1799,14 +1799,14 @@ Options
 
 Decision
 
-Use Doctrine public release `v1.0.1` as Rally's minimum dependency floor for
+Use Doctrine public release `v1.0.2` as Rally's minimum dependency floor for
 first public ship.
 
 Consequences
 
 - Rally can now continue the full planning arc without guessing at the
   dependency floor.
-- Later phases must wire `v1.0.1` into Rally package metadata, docs, release
+- Later phases must wire `v1.0.2` into Rally package metadata, docs, release
   notes, and external-user tests.
 - Rally must keep treating Doctrine package metadata `0.0.0` as non-public
   placeholder truth.
@@ -1814,7 +1814,7 @@ Consequences
 Follow-ups
 
 - Deep-dive the exact dependency-spec form Rally should publish.
-- Carry `v1.0.1` through the phase plan, verification matrix, and release
+- Carry `v1.0.2` through the phase plan, verification matrix, and release
   docs.
 
 ## 2026-04-14 - Use a generated in-package built-in bundle and workspace-only runtime lookup
@@ -1906,7 +1906,7 @@ Decision
 
 Use tag-derived Rally versions through `setuptools-scm` and publish one
 transitive compatibility contract in Rally package metadata:
-`doctrine>=1.0.1,<2`.
+`doctrine-agents>=1.0.2,<2`.
 
 Consequences
 
