@@ -258,6 +258,37 @@ Plan doc: /Users/aelaguiz/workspace/rally/docs/RALLY_RELEASE_PACKAGING_VERSIONIN
 - Re-checked the live GitHub workflow surface after the local fix:
   - `gh api repos/aelaguiz/rally/actions/workflows`
   - `gh run list --workflow pr.yml ...`
+
+## 2026-04-14 - Live PR gate and publish dry-run proof completed
+- Merged PR `#5` (`release: align rally with doctrine conventions`) into
+  `main` after the live required checks passed under the active ruleset.
+- The live PR proof now exists in GitHub, not just locally:
+  - `bundled-assets`
+  - `unit`
+  - `packaged-install`
+  - `security / dependency-review`
+- After merge, `gh api repos/aelaguiz/rally/actions/workflows` showed the new
+  default-branch workflow set live on `main`:
+  - `dependency-review.yml`
+  - `pr.yml`
+  - `publish.yml`
+  - `scorecards.yml`
+- Ran the publish transport dry run on `main`:
+  - `gh workflow run publish.yml --ref main -f ref=main -f publish_target=none`
+  - workflow run `24403594896`
+  - result: success
+  - the `build` job passed bundled-assets, unit, build, and packaged-install,
+    then stored the distribution artifacts
+  - the TestPyPI and PyPI publish jobs skipped cleanly because the dry run used
+    `publish_target=none`
+- Followed the README host-repo path by hand in a temp external workspace from
+  the built wheel:
+  - installed Rally `0.1.0` plus Doctrine `v1.0.1` into an isolated venv
+  - ran `rally run demo` with the venv `bin/` on `PATH`
+  - confirmed Rally created `DMO-1`, synced `stdlib/rally/`,
+    `skills/rally-kernel/`, and `skills/rally-memory/` into the host repo,
+    and stopped at the documented pending `home/issue.md` step
+- Current phase: complete pending fresh implementation audit.
   - `gh run list --workflow publish.yml ...`
 - Result: the default branch still exposes only `ci.yml` and CodeQL, and both
   `pr.yml` and `publish.yml` still return `404` on `main`.
