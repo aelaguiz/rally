@@ -12,7 +12,6 @@ from rally.domain.flow import FlowDefinition
 from rally.domain.rooted_path import RootedPath, resolve_rooted_path
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError, RallyStateError, RallyUsageError
-from rally.services.framework_assets import ensure_framework_builtins
 from rally.services.issue_editor import edit_issue_file_in_editor, resolve_interactive_issue_editor
 from rally.services.issue_ledger import snapshot_issue_log
 from rally.services.run_events import RunEventRecorder
@@ -59,7 +58,6 @@ def materialize_run_home(
     issue_path = run_home / "issue.md"
 
     _ensure_run_layout(run_dir=run_dir, run_home=run_home)
-    ensure_framework_builtins(workspace_context)
     _require_issue_ready(
         issue_path=issue_path,
         run_id=run_record.id,

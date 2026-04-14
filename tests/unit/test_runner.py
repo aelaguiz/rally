@@ -241,6 +241,51 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("### Findings First", issue_text)
             self.assertIn("The poem is ready to keep as written.", issue_text)
 
+    def test_run_flow_uses_framework_builtin_skills_without_workspace_copies(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root, copy_framework_builtins=False)
+            self.assertFalse((repo_root / "skills" / "rally-kernel").exists())
+            self.assertFalse((repo_root / "skills" / "rally-memory").exists())
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Fix the pagination bug.\n", encoding="utf-8")
+                return IssueEditorResult(status="saved", cleaned_text="Fix the pagination bug.\n")
+
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                result = run_flow(
+                    repo_root=repo_root,
+                    request=RunRequest(flow_name="demo"),
+                    subprocess_run=_FakeCodexRun(
+                        [
+                            {
+                                "thread_id": "session-1",
+                                "last_message": {
+                                    "kind": "done",
+                                    "next_owner": None,
+                                    "summary": "verified",
+                                    "reason": None,
+                                    "sleep_duration_seconds": None,
+                                },
+                            }
+                        ]
+                    ),
+                )
+
+            run_dir = find_run_dir(repo_root=repo_root, run_id="DMO-1")
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertFalse((repo_root / "skills" / "rally-kernel").exists())
+            self.assertFalse((repo_root / "skills" / "rally-memory").exists())
+            self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
+            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
+
     def test_resume_run_passes_workspace_dir_to_prompt_input_command(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -2290,6 +2335,7 @@ class RunnerTests(unittest.TestCase):
         required_env: list[str] | None = None,
         required_files: list[str] | None = None,
         required_directories: list[str] | None = None,
+        copy_framework_builtins: bool = True,
     ) -> None:
         source_root = Path(__file__).resolve().parents[2]
         (repo_root / "skills" / "repo-search").mkdir(parents=True)
@@ -2306,8 +2352,9 @@ class RunnerTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        shutil.copytree(source_root / "skills" / "rally-kernel", repo_root / "skills" / "rally-kernel")
-        shutil.copytree(source_root / "skills" / "rally-memory", repo_root / "skills" / "rally-memory")
+        if copy_framework_builtins:
+            shutil.copytree(source_root / "skills" / "rally-kernel", repo_root / "skills" / "rally-kernel")
+            shutil.copytree(source_root / "skills" / "rally-memory", repo_root / "skills" / "rally-memory")
         shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
 
         flow_root = repo_root / "flows" / "demo"
@@ -2401,11 +2448,12 @@ class RunnerTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def _write_poem_repo(self, *, repo_root: Path) -> None:
+    def _write_poem_repo(self, *, repo_root: Path, copy_framework_builtins: bool = True) -> None:
         source_root = Path(__file__).resolve().parents[2]
         shutil.copytree(source_root / "flows" / "poem_loop", repo_root / "flows" / "poem_loop")
-        shutil.copytree(source_root / "skills" / "rally-kernel", repo_root / "skills" / "rally-kernel")
-        shutil.copytree(source_root / "skills" / "rally-memory", repo_root / "skills" / "rally-memory")
+        if copy_framework_builtins:
+            shutil.copytree(source_root / "skills" / "rally-kernel", repo_root / "skills" / "rally-kernel")
+            shutil.copytree(source_root / "skills" / "rally-memory", repo_root / "skills" / "rally-memory")
         shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
 
     def _write_markdown_skill(
