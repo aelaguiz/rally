@@ -61,7 +61,7 @@ def sync_bundled_assets(*, repo_root: Path, check: bool = False) -> list[str]:
 
 def ensure_workspace_builtins_synced(*, workspace_root: Path, pyproject_path: Path) -> list[str]:
     workspace_root = workspace_root.resolve()
-    if _is_rally_source_workspace(pyproject_path=pyproject_path):
+    if workspace_owns_rally_builtins(pyproject_path=pyproject_path):
         return []
 
     copied: list[str] = []
@@ -74,6 +74,10 @@ def ensure_workspace_builtins_synced(*, workspace_root: Path, pyproject_path: Pa
             _replace_tree(source_root=source, target_root=target)
             copied.append(spec.workspace_relative.as_posix())
     return copied
+
+
+def workspace_owns_rally_builtins(*, pyproject_path: Path) -> bool:
+    return _is_rally_source_workspace(pyproject_path=pyproject_path)
 
 
 @contextmanager

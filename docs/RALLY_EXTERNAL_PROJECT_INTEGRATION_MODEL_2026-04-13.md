@@ -28,6 +28,8 @@ Rally can run from another repo, such as `../paperclip_agents`, without
 treating the Rally source tree as the only valid home. The host repo becomes
 the Rally workspace. Rally itself provides the runtime and built-in shared
 parts.
+`rally workspace sync` is the front door when that host repo needs
+`stdlib/rally/` or Rally's built-in skills before the first run.
 
 ## Problem
 
@@ -75,6 +77,16 @@ Current proof keeps both paths honest:
 - `uv run pytest tests/unit -q` passes on current head
 - Rally also proved the workspace contract in `../paperclip_agents`
 
+Operator path for host repos:
+
+1. add the Rally workspace manifest and Doctrine emit config
+2. run `rally workspace sync`
+3. run Doctrine emit from the host repo when needed
+4. run `rally run <flow>`
+
+In most host repos, the synced `stdlib/rally/` and `skills/rally-*` trees
+should be ignored in git unless the repo chooses to vendor them on purpose.
+
 ## Non-negotiables
 
 - No command may depend on the Rally source checkout being the workspace.
@@ -85,5 +97,4 @@ Current proof keeps both paths honest:
 - If Doctrine cannot consume Rally's built-in shared assets cleanly through the
   chosen boundary, we stop and name that Doctrine gap instead of patching
   around it in Rally.
-
 

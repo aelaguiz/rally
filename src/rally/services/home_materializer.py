@@ -17,8 +17,8 @@ from rally.services.issue_ledger import snapshot_issue_log
 from rally.services.run_events import RunEventRecorder
 from rally.services.run_store import find_run_dir
 from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
-from rally.services.bundled_assets import ensure_workspace_builtins_synced
 from rally.services.workspace import WorkspaceContext, workspace_context_from_root
+from rally.services.workspace_sync import sync_workspace_builtins
 
 _HOME_READY_MARKER = ".rally_home_ready"
 
@@ -64,10 +64,7 @@ def materialize_run_home(
         run_id=run_record.id,
         event_recorder=event_recorder,
     )
-    ensure_workspace_builtins_synced(
-        workspace_root=workspace_context.workspace_root,
-        pyproject_path=workspace_context.pyproject_path,
-    )
+    sync_workspace_builtins(workspace=workspace_context)
     _sync_compiled_agents(run_home=run_home, flow=flow)
     # Refresh each agent's stable skill view here. The runner activates one
     # of these views into the live `home/skills/` tree right before launch.

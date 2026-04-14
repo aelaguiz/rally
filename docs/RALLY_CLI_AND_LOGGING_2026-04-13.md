@@ -36,6 +36,34 @@ If this file and the code disagree, the code wins.
 
 The current checked-in CLI is small and explicit.
 
+### `rally workspace sync`
+
+Current shape:
+
+```bash
+rally workspace sync
+```
+
+What it does today:
+
+- resolves the current Rally workspace from `pyproject.toml`
+- syncs Rally-owned built-ins into the workspace at
+  `stdlib/rally/`, `skills/rally-kernel/`, and `skills/rally-memory/`
+- prints one short result line with the synced paths
+- does not create a run
+- does not create `runs/active/<run-id>/`
+- does not prepare a run home
+- does not launch an adapter
+
+Current limits:
+
+- it only syncs Rally-owned built-ins
+- it does not rebuild a flow or skill
+- it does not replace `rally run` or `rally resume`
+
+If the current workspace is the Rally source repo itself, the command is a
+no-op and says the workspace already owns those built-ins.
+
 ### `rally run`
 
 Current shape:

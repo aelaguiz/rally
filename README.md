@@ -112,16 +112,43 @@ entrypoint = "flows/demo/prompts/AGENTS.prompt"
 output_dir = "flows/demo/build/agents"
 ```
 
-Author your flow under `flows/demo/`, then run it:
+Author your flow under `flows/demo/`, then sync Rally's built-ins into the
+workspace:
+
+```bash
+rally workspace sync
+```
+
+That writes Rally-owned built-ins into `stdlib/rally/`,
+`skills/rally-kernel/`, and `skills/rally-memory/`.
+Do not point support files at `../rally/stdlib/...`.
+Rally copies the support files into the host workspace so Doctrine emit stays
+inside the project root.
+
+If you want a manual build before the first run, emit from the host repo after
+the sync:
+
+```bash
+uv run python -m doctrine.emit_docs --pyproject pyproject.toml --target demo
+```
+
+Then run the flow:
 
 ```bash
 rally run demo
 ```
 
-On the first build or run, Rally syncs its own built-ins into your workspace
-under `stdlib/rally/`, `skills/rally-kernel/`, and `skills/rally-memory/`.
-Do not point support files at `../rally/stdlib/...`. Rally copies the support
-files into the host workspace so Doctrine emit stays inside the project root.
+`rally run` and `rally resume` still refresh those built-ins before each
+start or resume.
+
+In most host repos, treat the synced built-ins as generated framework files and
+ignore them in git unless you are choosing to vendor them on purpose:
+
+```gitignore
+stdlib/rally/
+skills/rally-kernel/
+skills/rally-memory/
+```
 
 If Rally opens `home:issue.md`, write the issue there and resume:
 

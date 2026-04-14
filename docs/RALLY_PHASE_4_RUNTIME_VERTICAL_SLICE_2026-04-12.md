@@ -78,11 +78,14 @@ What is real today:
   `runtime.guarded_git_repos`
 - dirty guarded-repo failures that block `handoff` or `done` loud instead of
   letting Rally claim a clean finish
+- `rally workspace sync`
 - `rally run`
 - `rally run --new`
 - `rally resume`
 - `rally resume --edit`
 - `rally resume --restart`
+- workspace built-ins can sync before a manual Doctrine emit or before the
+  first run without creating run state
 - live operator stream on a TTY with plain fallback off TTY
 - chained multi-turn execution across handoffs
 - per-flow `runtime.max_command_turns`

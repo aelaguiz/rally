@@ -38,6 +38,7 @@ class PackagedInstallTests(unittest.TestCase):
             self.assertIn("usage: rally", help_result.stdout)
             self.assertIn("run", help_result.stdout)
             self.assertIn("resume", help_result.stdout)
+            self.assertIn("workspace", help_result.stdout)
 
             self._write_host_workspace(host_root)
 
@@ -53,20 +54,9 @@ class PackagedInstallTests(unittest.TestCase):
             )
             self.assertNotEqual(version_result.stdout.strip(), "0.0.0")
 
-            run_result = self._run([str(rally_bin), "run", "demo"], cwd=host_root, check=False)
-            self.assertEqual(run_result.returncode, 2)
-            self.assertIn("waiting for `", run_result.stderr)
-            self.assertIn("home/issue.md", run_result.stderr)
-            self.assertIn("rally resume DMO-1", run_result.stderr)
-
-            run_dir = host_root / "runs" / "active" / "DMO-1"
-            self.assertTrue((run_dir / "run.yaml").is_file())
-            self.assertTrue((run_dir / "state.yaml").is_file())
-            self.assertTrue((run_dir / "logs" / "rendered.log").is_file())
-            self.assertIn("status: pending", (run_dir / "state.yaml").read_text(encoding="utf-8"))
-            rendered_log = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
-            self.assertIn("Prepared run home shell", rendered_log)
-            self.assertIn("waiting for `home/issue.md`", rendered_log)
+            sync_result = self._run([str(rally_bin), "workspace", "sync"], cwd=host_root)
+            self.assertIn("Synced Rally built-ins into", sync_result.stdout)
+            self.assertFalse((host_root / "runs" / "active").exists())
 
             self.assertTrue((host_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").is_file())
             self.assertTrue((host_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
@@ -98,6 +88,21 @@ class PackagedInstallTests(unittest.TestCase):
                 "stdlib/rally/examples/rally_turn_result.example.json",
             )
             self.assertNotIn("../rally/", contract_path.read_text(encoding="utf-8"))
+
+            run_result = self._run([str(rally_bin), "run", "demo"], cwd=host_root, check=False)
+            self.assertEqual(run_result.returncode, 2)
+            self.assertIn("waiting for `", run_result.stderr)
+            self.assertIn("home/issue.md", run_result.stderr)
+            self.assertIn("rally resume DMO-1", run_result.stderr)
+
+            run_dir = host_root / "runs" / "active" / "DMO-1"
+            self.assertTrue((run_dir / "run.yaml").is_file())
+            self.assertTrue((run_dir / "state.yaml").is_file())
+            self.assertTrue((run_dir / "logs" / "rendered.log").is_file())
+            self.assertIn("status: pending", (run_dir / "state.yaml").read_text(encoding="utf-8"))
+            rendered_log = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+            self.assertIn("Prepared run home shell", rendered_log)
+            self.assertIn("waiting for `home/issue.md`", rendered_log)
 
     def _latest_wheel(self) -> Path:
         metadata = load_package_release_metadata(REPO_ROOT)

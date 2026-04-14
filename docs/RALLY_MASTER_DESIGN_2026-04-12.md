@@ -86,6 +86,7 @@ This is the canonical split between Doctrine and Rally.
 ### Rally owns
 
 - the standard library contents under `stdlib/rally/`
+- the workspace built-in sync path through `rally workspace sync`
 - flow runtime contract under `flows/*/flow.yaml`
 - the run model, run ids, logs, sessions, and locks
 - home preparation and home materialization
@@ -573,6 +574,7 @@ At a high level, Phase 4 owns:
 
 - the first real `src/rally/` runtime package
 - the first real `rally` CLI entrypoint
+- the `rally workspace sync` front door for host-local built-ins
 - the shared adapter boundary
 - one real Codex adapter path
 - one real Claude adapter path
