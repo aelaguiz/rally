@@ -7,10 +7,10 @@ owners: [aelaguiz]
 reviewers: []
 doc_type: architectural_change
 related:
-  - docs/RALLY_MASTER_DESIGN_2026-04-12.md
-  - docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md
-  - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
-  - docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
+  - docs/RALLY_MASTER_DESIGN.md
+  - docs/RALLY_COMMUNICATION_MODEL.md
+  - docs/RALLY_RUNTIME.md
+  - docs/RALLY_CLI_AND_LOGGING.md
   - stdlib/rally/prompts/rally/base_agent.prompt
   - stdlib/rally/prompts/rally/issue_ledger.prompt
   - stdlib/rally/prompts/rally/notes.prompt
@@ -52,17 +52,17 @@ Manual QA: n/a (non-blocking)
 
 ## Missing items (code gaps; evidence-anchored; no tables)
 - None.
-- Evidence anchors:
-  - `stdlib/rally/prompts/rally/base_agent.prompt:88`
-  - `skills/rally-kernel/prompts/SKILL.prompt:54`
-  - `flows/_stdlib_smoke/prompts/AGENTS.prompt:32`
-  - `flows/_stdlib_smoke/build/agents/plan_author/AGENTS.md:177`
-  - `src/rally/services/final_response_loader.py:23`
-  - `src/rally/services/runner.py:1340`
-  - `docs/RALLY_MASTER_DESIGN_2026-04-12.md:255`
-  - `docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md:33`
-  - `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md:131`
-  - `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md:32`
+  - Evidence anchors:
+    - `stdlib/rally/prompts/rally/base_agent.prompt:88`
+    - `skills/rally-kernel/prompts/SKILL.prompt:54`
+    - `flows/_stdlib_smoke/prompts/AGENTS.prompt:32`
+    - `flows/_stdlib_smoke/build/agents/plan_author/AGENTS.md:177`
+    - `src/rally/services/final_response_loader.py:23`
+    - `src/rally/services/runner.py:1340`
+    - `docs/RALLY_MASTER_DESIGN.md:255`
+    - `docs/RALLY_COMMUNICATION_MODEL.md:33`
+    - `docs/RALLY_RUNTIME.md:131`
+    - `docs/RALLY_CLI_AND_LOGGING.md:32`
   - `tests/unit/test_flow_loader.py:234`
   - `tests/unit/test_final_response_loader.py:126`
   - `tests/unit/test_runner.py:169`
@@ -586,7 +586,7 @@ Not a UI change.
 | Generated readback | `flows/software_engineering_demo/build/agents/**`, `flows/poem_loop/build/agents/**`, `skills/rally-kernel/build/SKILL.md` | emitted markdown and contract readback | Generated outputs still tell the old five-key story | Rebuild after source edits and inspect the changed readback | Prevent stale emitted docs from contradicting source | emitted readback matches the shared default and local opt-out story | Flow/skill compile inspection |
 | Bundled copies | `src/rally/_bundled/**`, `tools/sync_bundled_assets.py`, `tests/unit/test_bundled_assets.py` | bundled stdlib and skill copies | Packaged built-ins mirror repo-root source | Sync bundled copies after shared-source changes and keep drift check green | Prevent installed-package drift | Bundled copies match repo-root source | `tests/unit/test_bundled_assets.py` |
 | External compile proof | `tests/integration/test_packaged_install.py` | packaged install compile flow | Confirms an external workspace can compile against Rally built-ins | Likely no source change; keep it green after the shared contract expands | Protect the shipped workspace story | external compile still resolves the shared turn-result contract | `tests/integration/test_packaged_install.py` |
-| Live docs | `docs/RALLY_MASTER_DESIGN_2026-04-12.md`, `docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md`, `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` | communication model text | Several docs still describe a five-key shared result | Update the live story in one pass | Prevent doc drift | Shared final JSON story includes passive `agent_issues` and local prompt-level opt-out | Docs inspection after code change |
+| Live docs | `docs/RALLY_MASTER_DESIGN.md`, `docs/RALLY_COMMUNICATION_MODEL.md`, `docs/RALLY_RUNTIME.md`, `docs/RALLY_CLI_AND_LOGGING.md` | communication model text | Several docs still describe a five-key shared result | Update the live story in one pass | Prevent doc drift | Shared final JSON story includes passive `agent_issues` and local prompt-level opt-out | Docs inspection after code change |
 
 ## 6.2 Migration notes
 
@@ -761,10 +761,10 @@ Proof:
   Make every shipped Rally truth surface tell the same story and prove the
   packaged workspace path still works.
 - Work:
-  - Update `docs/RALLY_MASTER_DESIGN_2026-04-12.md`,
-    `docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md`,
-    `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`, and
-    `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` to replace stale five-key-only
+  - Update `docs/RALLY_MASTER_DESIGN.md`,
+    `docs/RALLY_COMMUNICATION_MODEL.md`,
+    `docs/RALLY_RUNTIME.md`, and
+    `docs/RALLY_CLI_AND_LOGGING.md` to replace stale five-key-only
     wording with the new shared-contract story while keeping the existing
     review-native exception explicit.
   - Rebuild affected flow and skill readback one more time after the final
