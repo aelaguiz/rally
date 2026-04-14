@@ -99,6 +99,49 @@ class FlowBuildTests(unittest.TestCase):
                 ],
             )
 
+    def test_ensure_flow_assets_built_emits_mandatory_doctrine_skills_in_rally_source_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve() / "rally"
+            repo_root.mkdir(parents=True)
+            (repo_root / "pyproject.toml").write_text(
+                "[project]\nname = 'rally'\n\n[tool.rally.workspace]\nversion = 1\n",
+                encoding="utf-8",
+            )
+            self._write_flow_file(repo_root=repo_root, allowed_skills=())
+            self._write_doctrine_skill(repo_root=repo_root, skill_name="rally-kernel")
+            self._write_doctrine_skill(repo_root=repo_root, skill_name="rally-memory")
+            calls: list[dict[str, object]] = []
+
+            def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                calls.append({"command": command, "kwargs": kwargs})
+                return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+
+            ensure_flow_assets_built(
+                workspace=self._workspace(repo_root),
+                flow_name="demo",
+                subprocess_run=fake_run,
+            )
+
+            # In the Rally source workspace, edits to built-in Doctrine skills
+            # must rebuild their emitted bundles so live runs do not keep stale
+            # `build/SKILL.md` output.
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[0]["command"][2], "doctrine.emit_docs")
+            self.assertEqual(
+                calls[1]["command"],
+                [
+                    sys.executable,
+                    "-m",
+                    "doctrine.emit_skill",
+                    "--pyproject",
+                    str(repo_root / "pyproject.toml"),
+                    "--target",
+                    "rally-kernel",
+                    "--target",
+                    "rally-memory",
+                ],
+            )
+
     def test_ensure_flow_assets_built_skips_builtin_skill_emit_in_external_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve() / "workspace"

@@ -11,11 +11,12 @@ from typing import Iterator
 
 import yaml
 
+from rally.domain.flow import normalize_flow_code
 from rally.domain.flow import FlowDefinition
 from rally.domain.run import RunRecord, RunState, RunStatus
 from rally.errors import RallyStateError
 
-_RUN_ID_RE = re.compile(r"^(?P<flow_code>[A-Z0-9]+)-(?P<sequence>\d+)$")
+_RUN_ID_RE = re.compile(r"^(?P<flow_code>[A-Z]{3})-(?P<sequence>\d+)$")
 
 
 def active_runs_dir(repo_root: Path) -> Path:
@@ -45,20 +46,21 @@ def create_run(
     now: datetime | None = None,
 ) -> RunRecord:
     timestamp = _render_time(now)
-    active_run = find_active_run_for_flow(repo_root=repo_root, flow_code=flow.code)
+    flow_code = _require_flow_code(flow.code, context="Flow definition")
+    active_run = find_active_run_for_flow(repo_root=repo_root, flow_code=flow_code)
     if active_run is not None:
         raise RallyStateError(
             f"Flow `{flow.name}` already has an active run: `{active_run.id}`."
         )
 
-    run_id = allocate_run_id(repo_root=repo_root, flow_code=flow.code)
+    run_id = allocate_run_id(repo_root=repo_root, flow_code=flow_code)
     run_dir = active_runs_dir(repo_root) / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
 
     record = RunRecord(
         id=run_id,
         flow_name=flow.name,
-        flow_code=flow.code,
+        flow_code=flow_code,
         adapter_name=flow.adapter.name,
         start_agent_key=flow.start_agent_key,
         created_at=timestamp,
@@ -76,6 +78,7 @@ def create_run(
 
 
 def find_active_run_for_flow(*, repo_root: Path, flow_code: str) -> RunRecord | None:
+    flow_code = _require_flow_code(flow_code, context="Flow code")
     runs_dir = active_runs_dir(repo_root)
     if not runs_dir.is_dir():
         return None
@@ -103,6 +106,7 @@ def archive_run(*, repo_root: Path, run_id: str) -> Path:
 
 
 def allocate_run_id(*, repo_root: Path, flow_code: str) -> str:
+    flow_code = _require_flow_code(flow_code, context="Flow code")
     highest = 0
     for run_dir in _iter_known_run_dirs(repo_root):
         match = _RUN_ID_RE.match(run_dir.name)
@@ -114,10 +118,14 @@ def allocate_run_id(*, repo_root: Path, flow_code: str) -> str:
 
 def load_run_record(*, run_dir: Path) -> RunRecord:
     payload = _load_yaml_map(run_dir / "run.yaml")
+    flow_code = _require_flow_code(
+        _require_string(payload, "flow_code", context=str(run_dir / "run.yaml")),
+        context=str(run_dir / "run.yaml"),
+    )
     return RunRecord(
         id=_require_string(payload, "id", context=str(run_dir / "run.yaml")),
         flow_name=_require_string(payload, "flow_name", context=str(run_dir / "run.yaml")),
-        flow_code=_require_string(payload, "flow_code", context=str(run_dir / "run.yaml")),
+        flow_code=flow_code,
         adapter_name=_require_string(payload, "adapter_name", context=str(run_dir / "run.yaml")),
         start_agent_key=_require_string(payload, "start_agent_key", context=str(run_dir / "run.yaml")),
         created_at=_require_string(payload, "created_at", context=str(run_dir / "run.yaml")),
@@ -164,6 +172,7 @@ def write_run_state(*, run_dir: Path, state: RunState) -> Path:
 
 @contextmanager
 def flow_lock(*, repo_root: Path, flow_code: str) -> Iterator[Path]:
+    flow_code = _require_flow_code(flow_code, context="Flow code")
     locks_dir = repo_root / "runs" / "locks"
     locks_dir.mkdir(parents=True, exist_ok=True)
     lock_path = locks_dir / f"{flow_code}.lock"
@@ -232,3 +241,10 @@ def _require_int(payload: dict[str, object], field: str, *, context: str) -> int
     if not isinstance(value, int) or value < 0:
         raise RallyStateError(f"{context} requires non-negative integer field `{field}`.")
     return value
+
+
+def _require_flow_code(flow_code: str, *, context: str) -> str:
+    try:
+        return normalize_flow_code(flow_code)
+    except ValueError as exc:
+        raise RallyStateError(f"{context} flow code must be exactly three uppercase ASCII letters.") from exc

@@ -43,6 +43,16 @@ class FlowLoaderTests(unittest.TestCase):
 
             self.assertEqual(load_flow_code(repo_root=repo_root, flow_name="demo"), "DMO")
 
+    def test_load_flow_definition_rejects_invalid_flow_code(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(repo_root=repo_root, flow_code="DEMO")
+
+            # Flow codes become run ids and memory paths, so the loader must
+            # stop bad values before the runtime starts writing files.
+            with self.assertRaisesRegex(RallyConfigError, "exactly three uppercase ASCII letters"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
     def test_load_flow_definition_uses_compiled_slug_mapping(self) -> None:
         repo_root = self.repo_root
 
@@ -364,6 +374,7 @@ class FlowLoaderTests(unittest.TestCase):
         self,
         *,
         repo_root: Path,
+        flow_code: str = "DMO",
         contract_version: int = 1,
         include_next_owner: bool = True,
         include_max_command_turns: bool = True,
@@ -388,7 +399,7 @@ class FlowLoaderTests(unittest.TestCase):
 
         flow_yaml = (
             "name: demo\n"
-            "code: DEMO\n"
+            f"code: {flow_code}\n"
             "start_agent: 01_scope_lead\n"
             "setup_home_script: flow:setup/prepare_home.sh\n"
             f"{host_inputs_yaml}"
@@ -465,7 +476,7 @@ class FlowLoaderTests(unittest.TestCase):
             textwrap.dedent(
                 """\
                 name: demo
-                code: DEMO
+                code: DMO
                 start_agent: 01_scope_lead
                 agents:
                   01_scope_lead:

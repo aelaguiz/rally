@@ -1,16 +1,15 @@
 # Rally Master Design
 
-Date: 2026-04-12
 Status: working draft
-Purpose: define Rally's stable design law, ownership boundary, core runtime contract, and roadmap without duplicating the exact Phase 3 and Phase 4 specs.
+Purpose: define Rally's stable design law, ownership boundary, core runtime contract, and roadmap without duplicating the exact communication, runtime, and CLI detail docs.
 
 This doc is intentionally the constitutional version of the design.
 It should stay short enough to orient a fresh reader quickly.
 Exact implementation details now live in:
 
-- [RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md](RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md)
-- [RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md](RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md)
-- [RALLY_CLI_AND_LOGGING_2026-04-13.md](RALLY_CLI_AND_LOGGING_2026-04-13.md)
+- [RALLY_COMMUNICATION_MODEL.md](RALLY_COMMUNICATION_MODEL.md)
+- [RALLY_RUNTIME.md](RALLY_RUNTIME.md)
+- [RALLY_CLI_AND_LOGGING.md](RALLY_CLI_AND_LOGGING.md)
 
 ## Repo Guide
 
@@ -518,11 +517,11 @@ What must not move into Doctrine:
 
 ## Roadmap Summary
 
-### Phase 1: Build The Rally Standard Library
+### Shared Foundations
 
 Status: the authored standard-library baseline is done in this repo.
 
-What survives from this phase:
+What this gives Rally:
 
 - the shared `rally.turn_results` contract
 - schema and example assets for that contract
@@ -531,24 +530,24 @@ What survives from this phase:
 What remains true:
 
 - legacy note and handoff output shapes are transitional
-- runtime execution belongs to Phase 4
+- runtime execution belongs to the runtime doc
 
-### Phase 2: Build One Narrow Authored Flow
+### First Authored Flow
 
 Status: the first enduring authored flow is now `poem_loop`.
 
-What this phase gives Rally:
+What this flow proves:
 
 - one enduring authored flow under `flows/poem_loop/`
 - one small multi-agent loop with durable notes and one durable artifact
 - one authored shape that later runtime work must satisfy without changing the prompt contract
 
-### Phase 3: Pivot Issue Communication To A Rally-Owned Skill
+### Communication Model
 
 Owner doc:
-[RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md](RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md)
+[RALLY_COMMUNICATION_MODEL.md](RALLY_COMMUNICATION_MODEL.md)
 
-Phase 3 locks the communication pivot:
+The communication model locks these rules:
 
 - no human handoff
 - no separate authored handoff object
@@ -557,20 +556,17 @@ Phase 3 locks the communication pivot:
 - `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_TURN_NUMBER` injected on every Rally-managed launch
 - the tiny schema-bound helper seam exists on the same adapter stack
 
-The exact Phase 3 deliverables, acceptance criteria, and non-goals live in the Phase 3 doc rather than here.
+The exact shipped rules live in the communication model doc rather than here.
 
-### Phase 4: Build The First Runnable Runtime Slice
+### Runtime
 
 Owner doc:
-[RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md](RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md)
+[RALLY_RUNTIME.md](RALLY_RUNTIME.md)
 
-Phase 4 is the first runtime phase.
-It began by proving Rally could execute the authored assets from Phase 1
-through Phase 3 honestly on Codex.
-The shipped runtime now extends that slice through one shared adapter boundary
-with `codex` and `claude_code`.
+The runtime now runs through one shared adapter boundary with `codex` and
+`claude_code`.
 
-At a high level, Phase 4 owns:
+At a high level, the runtime doc owns:
 
 - the first real `src/rally/` runtime package
 - the first real `rally` CLI entrypoint
@@ -581,15 +577,16 @@ At a high level, Phase 4 owns:
 - one real end-to-end execution path for `poem_loop`
 - run storage, home preparation, note and final-response materialization, sessions, and logs
 
-The exact checked-in structure, runtime-created structure, behavior list, and acceptance criteria now live in the Phase 4 doc rather than here.
+The exact checked-in structure, runtime-created structure, behavior list, and
+acceptance criteria now live in the runtime doc rather than here.
 
-### Phase 5: Make Rally Operator-Native And Prove The Shape Repeats
+### Next Runtime Work
 
-Phase 5 begins only after Phase 4 proves the first honest runnable flow.
-That proof now exists for `poem_loop` on the Codex path.
+The first honest runnable flow proof now exists for `poem_loop` on the Codex
+path.
 
 Its job is to make the runtime believable as a narrow v1 without broadening the product shape.
-At a high level, Phase 5 should add:
+At a high level, the next work should add:
 
 - real archive behavior
 - dirty-state refusal and stale-run diagnosis

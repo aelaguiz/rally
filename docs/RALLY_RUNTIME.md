@@ -1,16 +1,15 @@
 ---
-title: "Rally - Phase 4 Runtime Vertical Slice"
-date: 2026-04-12
+title: "Rally Runtime"
 status: shipped
 fallback_policy: forbidden
 owners: [aelaguiz]
 reviewers: []
-doc_type: architecture_status
+doc_type: architecture_detail
 related:
-  - docs/RALLY_MASTER_DESIGN_2026-04-12.md
-  - docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md
-  - docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
-  - docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md
+  - docs/RALLY_MASTER_DESIGN.md
+  - docs/RALLY_COMMUNICATION_MODEL.md
+  - docs/RALLY_CLI_AND_LOGGING.md
+  - docs/RALLY_MEMORY.md
   - flows/poem_loop/flow.yaml
   - stdlib/rally/prompts/rally/base_agent.prompt
   - stdlib/rally/prompts/rally/turn_results.prompt
@@ -27,9 +26,9 @@ related:
 
 # Summary
 
-Phase 4 began as the first real Codex runtime slice.
-The shipped runtime now extends that slice through one shared adapter boundary
-with `codex` and `claude_code`.
+This file records the shipped Rally runtime.
+Rally now runs through one shared adapter boundary with `codex` and
+`claude_code`.
 
 Rally can now:
 
@@ -40,8 +39,7 @@ Rally can now:
 - drive authored flows to real handoff, done, blocker, or sleep states through
   one shared run model
 
-The current repo also ships the first built-in Rally memory slice on top of
-that shared runtime:
+The current repo also ships built-in Rally memory on top of that runtime:
 
 - shared Doctrine memory contract
 - repo-local markdown memory truth
@@ -49,10 +47,10 @@ that shared runtime:
 - Rally memory CLI
 - visible memory runtime events
 
-Use `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` for the focused command and
+Use `docs/RALLY_CLI_AND_LOGGING.md` for the focused command and
 logging contract.
 
-What is real today:
+What ships today:
 
 - per-command Doctrine rebuild for the current flow before Rally loads compiled
   agents
@@ -115,7 +113,7 @@ What is real today:
 - one second `software_engineering_demo` proof that stacked `issue/sed-4` on
   top of accepted `issue/sed-3` history
 
-What is still outside Phase 4:
+What is not shipped yet:
 
 - `rally archive`
 - deeper stale-run diagnosis
@@ -359,9 +357,9 @@ The next honest work after this slice is:
 
 Use this doc with:
 
-- `docs/RALLY_MASTER_DESIGN_2026-04-12.md`
-- `docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md`
-- `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md`
-- `docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md`
+- `docs/RALLY_MASTER_DESIGN.md`
+- `docs/RALLY_COMMUNICATION_MODEL.md`
+- `docs/RALLY_CLI_AND_LOGGING.md`
+- `docs/RALLY_MEMORY.md`
 
 Treat older planning docs as history only.

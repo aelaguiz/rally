@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Callable, Mapping, Protocol
 
 import yaml
 
+from rally.domain.flow import normalize_flow_code
 from rally.errors import RallyStateError
 from rally.memory.logging import MEMORY_EVENT_MODE_ADAPTER, MEMORY_EVENT_MODE_ENV
 from rally.services.run_events import RunEventRecorder
@@ -150,6 +151,10 @@ def build_rally_launch_env(
         raise RallyStateError("Run id must not be empty.")
     if not flow_code.strip():
         raise RallyStateError("Flow code must not be empty.")
+    try:
+        flow_code = normalize_flow_code(flow_code)
+    except ValueError as exc:
+        raise RallyStateError(str(exc)) from exc
     if not agent_slug.strip():
         raise RallyStateError("Agent slug must not be empty.")
     if turn_index < 1:

@@ -20,6 +20,7 @@ from rally.adapters.base import (
 )
 from rally.adapters.claude_code.event_stream import ClaudeCodeEventStreamParser, extract_structured_output
 from rally.adapters.claude_code.launcher import build_claude_code_launch_env, write_claude_code_launch_record
+from rally.adapters.mcp_readiness import allowed_mcp_names, probe_stdio_startability
 from rally.adapters.claude_code.session_store import (
     load_session as load_claude_code_session,
     prepare_turn_artifacts as prepare_claude_code_turn_artifacts,
@@ -68,13 +69,7 @@ class ClaudeCodeAdapter(RallyAdapter):
         event_recorder: RunEventRecorder | None,
     ) -> None:
         del workspace, run_record, event_recorder
-        claude_root = run_home / "claude_code"
-        claude_root.mkdir(parents=True, exist_ok=True)
-        (claude_root / "mcp.json").write_text(
-            json.dumps(_build_mcp_config(workspace_root=repo_root, run_home=run_home, flow=flow), indent=2, sort_keys=True)
-            + "\n",
-            encoding="utf-8",
-        )
+        _write_claude_mcp_config(workspace_root=repo_root, run_home=run_home, flow=flow)
         _sync_claude_skills(run_home=run_home)
 
     def prepare_turn_artifacts(
@@ -129,7 +124,48 @@ class ClaudeCodeAdapter(RallyAdapter):
         recorder: RunEventRecorder,
         subprocess_run: SubprocessRunner,
     ) -> AdapterReadinessFailure | None:
-        del repo_root, workspace, run_dir, run_home, flow, run_record, agent, turn_index, recorder, subprocess_run
+        del repo_root, workspace, run_dir, run_record, agent, turn_index, recorder
+        config_file = run_home / "claude_code" / "mcp.json"
+        config, failure = _load_claude_mcp_config(config_file=config_file)
+        if failure is not None:
+            return failure
+
+        required_mcp_names = allowed_mcp_names(flow)
+        if not required_mcp_names:
+            return None
+
+        servers = config.get("mcpServers")
+        if not isinstance(servers, dict):
+            return AdapterReadinessFailure(
+                failed_check="claude_config_visibility",
+                reason="Generated Claude MCP config did not contain an `mcpServers` map.",
+            )
+
+        for mcp_name in required_mcp_names:
+            server_file = run_home / "mcps" / mcp_name / "server.toml"
+            if not server_file.is_file():
+                return AdapterReadinessFailure(
+                    failed_check="run_home_materialization",
+                    reason=f"Expected projected MCP file at `{server_file}`.",
+                    mcp_name=mcp_name,
+                )
+
+            server_config = servers.get(mcp_name)
+            if not isinstance(server_config, dict):
+                return AdapterReadinessFailure(
+                    failed_check="claude_config_visibility",
+                    reason="Generated Claude MCP config did not include this required server.",
+                    mcp_name=mcp_name,
+                )
+
+            start_failure = _probe_stdio_startability(
+                mcp_name=mcp_name,
+                server_config=server_config,
+                run_home=run_home,
+                subprocess_run=subprocess_run,
+            )
+            if start_failure is not None:
+                return start_failure
         return None
 
     def invoke(
@@ -492,7 +528,7 @@ def _coerce_stream_text(raw_value: str | bytes | None) -> str:
 
 def _build_mcp_config(*, workspace_root: Path, run_home: Path, flow: FlowDefinition) -> dict[str, object]:
     mcp_servers: dict[str, object] = {}
-    for mcp_name in sorted({mcp for agent in flow.agents.values() for mcp in agent.allowed_mcps}):
+    for mcp_name in allowed_mcp_names(flow):
         server_file = run_home / "mcps" / mcp_name / "server.toml"
         payload = tomllib.loads(server_file.read_text(encoding="utf-8"))
         expanded_payload = _expand_mcp_payload(
@@ -531,6 +567,60 @@ def _build_mcp_config(*, workspace_root: Path, run_home: Path, flow: FlowDefinit
             server_payload["cwd"] = cwd
         mcp_servers[mcp_name] = server_payload
     return {"mcpServers": mcp_servers}
+
+
+def _write_claude_mcp_config(*, workspace_root: Path, run_home: Path, flow: FlowDefinition) -> Path:
+    claude_root = run_home / "claude_code"
+    claude_root.mkdir(parents=True, exist_ok=True)
+    config_file = claude_root / "mcp.json"
+    config_file.write_text(
+        json.dumps(_build_mcp_config(workspace_root=workspace_root, run_home=run_home, flow=flow), indent=2, sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    return config_file
+
+
+def _load_claude_mcp_config(*, config_file: Path) -> tuple[dict[str, object], AdapterReadinessFailure | None]:
+    if not config_file.is_file():
+        return {}, AdapterReadinessFailure(
+            failed_check="run_home_materialization",
+            reason=f"Expected Claude MCP config at `{config_file}`.",
+        )
+    try:
+        payload = json.loads(config_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return {}, AdapterReadinessFailure(
+            failed_check="claude_config_visibility",
+            reason=f"Generated Claude MCP config was not valid JSON: {exc}.",
+        )
+    if not isinstance(payload, dict):
+        return {}, AdapterReadinessFailure(
+            failed_check="claude_config_visibility",
+            reason="Generated Claude MCP config did not decode to a JSON object.",
+        )
+    return payload, None
+
+
+def _probe_stdio_startability(
+    *,
+    mcp_name: str,
+    server_config: dict[str, object],
+    run_home: Path,
+    subprocess_run: SubprocessRunner,
+) -> AdapterReadinessFailure | None:
+    return probe_stdio_startability(
+        mcp_name=mcp_name,
+        command_name=server_config.get("command"),
+        raw_args=server_config.get("args"),
+        raw_env=server_config.get("env"),
+        raw_cwd=server_config.get("cwd"),
+        run_home=run_home,
+        env=os.environ,
+        subprocess_run=subprocess_run,
+        config_label="Claude MCP config",
+        timeout_sec=5,
+    )
 
 
 def _expand_mcp_payload(

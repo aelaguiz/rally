@@ -12,7 +12,7 @@ body:
     id: target
     attributes:
       label: Which page or example should change?
-      placeholder: README, docs/RALLY_CLI_AND_LOGGING_2026-04-13.md, demo flow docs, etc.
+      placeholder: README, docs/RALLY_CLI_AND_LOGGING.md, docs/RALLY_RUNTIME.md, etc.
   - type: textarea
     id: suggestion
     attributes:

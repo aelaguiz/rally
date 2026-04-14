@@ -68,6 +68,25 @@ class LauncherTests(unittest.TestCase):
                     turn_index=1,
                 )
 
+    def test_build_codex_launch_env_rejects_non_contract_flow_code(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            run_home = repo_root / "runs" / "FLW-1" / "home"
+            run_home.mkdir(parents=True)
+
+            # Launch env is the last gate before adapters receive the flow code
+            # in env vars and log files, so invalid values must stop here.
+            with self.assertRaisesRegex(RallyStateError, "exactly three uppercase ASCII letters"):
+                build_codex_launch_env(
+                    workspace_dir=repo_root,
+                    cli_bin=repo_root / "bin" / "rally",
+                    run_home=run_home,
+                    run_id="FLW-1",
+                    flow_code="DEMO",
+                    agent_slug="scope_lead",
+                    turn_index=1,
+                )
+
     def test_build_codex_launch_env_rejects_non_positive_turn_index(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()

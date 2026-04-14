@@ -347,6 +347,9 @@ def _copy_allowed_mcps(*, repo_root: Path, run_home: Path, flow: FlowDefinition)
         source = repo_root / "mcps" / mcp_name
         if not source.is_dir():
             raise RallyConfigError(f"Allowed MCP does not exist: `{source}`.")
+        server_file = source / "server.toml"
+        if not server_file.is_file():
+            raise RallyConfigError(f"Allowed MCP `{mcp_name}` is missing `server.toml`: `{server_file}`.")
         mcp_sources[mcp_name] = source
 
     _sync_named_directories(target_root=run_home / "mcps", sources_by_name=mcp_sources)

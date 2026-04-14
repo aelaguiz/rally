@@ -1,11 +1,10 @@
 ---
 title: "Rally CLI and Logging"
-date: 2026-04-13
 status: active
 doc_type: architecture_detail
 related:
-  - docs/RALLY_MASTER_DESIGN_2026-04-12.md
-  - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
+  - docs/RALLY_MASTER_DESIGN.md
+  - docs/RALLY_RUNTIME.md
   - src/rally/cli.py
   - src/rally/adapters/base.py
   - src/rally/adapters/claude_code/launcher.py
@@ -27,7 +26,7 @@ related:
 # Summary
 
 This file keeps the concrete CLI and logging rules in one place.
-Use it with the master design and the Phase 4 runtime doc.
+Use it with the master design and the runtime doc.
 If this file and the code disagree, the code wins.
 
 # What Rally Ships Today
@@ -396,7 +395,7 @@ The runtime also:
 - uses `RALLY_TURN_NUMBER` so in-turn `rally issue note` calls can stamp the
   right turn without asking the agent to manage that metadata
 
-## MCP Readiness Gap
+## MCP Readiness
 
 Today Rally refreshes adapter bootstrap on each `run` or `resume`.
 For Codex that still means `config.toml` plus auth links.
@@ -509,9 +508,9 @@ The main operator-side gaps are now:
 
 Use the docs in this order:
 
-1. `docs/RALLY_MASTER_DESIGN_2026-04-12.md`
+1. `docs/RALLY_MASTER_DESIGN.md`
 2. this doc
-3. `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`
+3. `docs/RALLY_RUNTIME.md`
 4. the current code in `src/rally/cli.py`, `src/rally/services/issue_ledger.py`,
    `src/rally/adapters/base.py`, and the adapter launchers
 

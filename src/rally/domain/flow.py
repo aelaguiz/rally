@@ -9,6 +9,7 @@ from typing import Mapping
 from rally.domain.rooted_path import RootedPath
 
 _FLOW_KEY_PREFIX_RE = re.compile(r"^\d+_")
+_FLOW_CODE_RE = re.compile(r"^[A-Z]{3}$")
 FieldPath = tuple[str, ...]
 
 
@@ -17,6 +18,13 @@ def flow_agent_key_to_slug(agent_key: str) -> str:
     if not slug:
         raise ValueError("Flow agent key must resolve to a non-empty compiled slug.")
     return slug
+
+
+def normalize_flow_code(flow_code: str) -> str:
+    normalized = flow_code.strip()
+    if not _FLOW_CODE_RE.fullmatch(normalized):
+        raise ValueError("Flow code must be exactly three uppercase ASCII letters.")
+    return normalized
 
 
 @dataclass(frozen=True)

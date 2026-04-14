@@ -13,6 +13,7 @@ from rally.domain.flow import (
     FlowDefinition,
     FlowHostInputs,
 )
+from rally.errors import RallyStateError
 from rally.services.run_store import archive_run, create_run, load_run_record
 
 
@@ -53,6 +54,30 @@ class RunStoreTests(unittest.TestCase):
             self.assertEqual(record.id, "DMO-7")
             self.assertEqual(record.flow_name, "demo")
             self.assertEqual(record.issue_file, "home/issue.md")
+
+    def test_load_run_record_rejects_invalid_flow_code(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir).resolve() / "runs" / "active" / "DMO-7"
+            run_dir.mkdir(parents=True)
+            (run_dir / "run.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    id: DMO-7
+                    flow_name: demo
+                    flow_code: DEMO
+                    adapter_name: codex
+                    start_agent_key: 01_scope_lead
+                    created_at: "2026-04-13T00:00:00Z"
+                    issue_file: home/issue.md
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            # Resume should fail on a bad stored flow code before it builds lock
+            # paths or adapter env from that value.
+            with self.assertRaisesRegex(RallyStateError, "exactly three uppercase ASCII letters"):
+                load_run_record(run_dir=run_dir)
 
     def test_archive_run_moves_active_run_to_archive(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

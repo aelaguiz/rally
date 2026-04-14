@@ -12,6 +12,12 @@ from rally.memory.store import load_memory_entry_from_path, save_memory_entry
 
 
 class MemoryStoreTests(unittest.TestCase):
+    def test_memory_scope_rejects_invalid_flow_code(self) -> None:
+        # Memory directories are keyed by flow code, so invalid values must fail
+        # before path building can write to the wrong place.
+        with self.assertRaisesRegex(ValueError, "exactly three uppercase ASCII letters"):
+            MemoryScope(flow_code="DEMO", agent_slug="poem_writer")
+
     def test_save_memory_entry_creates_markdown_file_with_frontmatter(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
