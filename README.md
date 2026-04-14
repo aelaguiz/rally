@@ -61,8 +61,12 @@ rally --help
 
 Rally requires Python 3.14 or newer and currently supports
 `doctrine>=1.0.1,<2`.
-The published package name is `rally-agents`. The import path and CLI stay
-`rally`.
+The name split is on purpose:
+
+- GitHub repo and source checkout: `rally`
+- Published package: `rally-agents`
+- Python import: `rally`
+- CLI command: `rally`
 
 If you want Rally inside a repo-local environment instead of a tool install:
 
@@ -134,6 +138,9 @@ git clone https://github.com/aelaguiz/rally.git
 cd rally
 uv sync --dev
 ```
+
+Source contributors still work in repo `rally`. Only the published package
+uses the name `rally-agents`.
 
 Run the smallest shipped demo:
 

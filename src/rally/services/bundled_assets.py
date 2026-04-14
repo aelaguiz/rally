@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.resources import as_file, files
 from pathlib import Path
+import tomllib
 from typing import Iterator
 
 from rally.errors import RallyConfigError
@@ -15,6 +16,7 @@ _BUNDLED_PACKAGE = "rally._bundled"
 _BUNDLED_ROOT = Path("src") / "rally" / "_bundled"
 _IGNORED_BUNDLE_DIR_NAMES = {"__pycache__"}
 _IGNORED_BUNDLE_SUFFIXES = {".pyc", ".pyo"}
+_RALLY_SOURCE_WORKSPACE_PROJECT_NAMES = frozenset({"rally", "rally-agents"})
 
 
 @dataclass(frozen=True)
@@ -183,5 +185,14 @@ def _replace_tree(*, source_root: Path, target_root: Path) -> None:
 def _is_rally_source_workspace(*, pyproject_path: Path) -> bool:
     if not pyproject_path.is_file():
         return False
-    text = pyproject_path.read_text(encoding="utf-8")
-    return 'name = "rally"' in text or "name = 'rally'" in text
+    try:
+        raw = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, tomllib.TOMLDecodeError):
+        return False
+    project = raw.get("project")
+    if not isinstance(project, dict):
+        return False
+    name = project.get("name")
+    if not isinstance(name, str):
+        return False
+    return name.strip() in _RALLY_SOURCE_WORKSPACE_PROJECT_NAMES
