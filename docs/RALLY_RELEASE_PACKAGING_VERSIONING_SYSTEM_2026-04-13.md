@@ -1,7 +1,7 @@
 ---
 title: "Rally - Release Packaging Versioning System - Architecture Plan"
 date: 2026-04-13
-status: complete
+status: active
 fallback_policy: forbidden
 owners: [aelaguiz]
 reviewers: []
@@ -96,42 +96,77 @@ Non-negotiables
 <!-- arch_skill:block:implementation_audit:start -->
 # Implementation Audit (authoritative)
 Date: 2026-04-14
-Verdict (code): COMPLETE
+Verdict (code): NOT COMPLETE
 Manual QA: pending (non-blocking)
 
 ## Code blockers (why code is not done)
-- none. Fresh repo and GitHub proof close the approved six-phase frontier.
+- The live public release path is still unproven. Rally has no signed release
+  tag, no GitHub release, no `release`-event `publish.yml` run, and no
+  package-index artifact for `rally-agents`.
+- Because Phase 5 is false-complete, the later release-readiness work in Phase
+  6 is also false-complete.
 
 ## Reopened phases (false-complete fixes)
-- none.
+- Phase 5 (Cut over GitHub draft, publish, and public trust surfaces) —
+  reopened because:
+  - no real GitHub release exists yet
+  - no `release.published` `publish.yml` run has uploaded dist assets to a
+    GitHub release
+  - no Trusted Publishing run has published `rally-agents`
+- Phase 6 (Prove full parity and release readiness) — reopened because:
+  - the only live publish proof is `workflow_dispatch` with
+    `publish_target=none`
+  - the repo still lacks a first signed-tag release walk and live
+    package-index proof
 
 ## Missing items (code gaps; evidence-anchored; no tables)
-- none for the approved implementation frontier.
+- Live GitHub release publication proof
   - Evidence anchors:
-    - `make verify` on 2026-04-14
-    - `gh api repos/aelaguiz/rally/rulesets/15059522` on 2026-04-14
-    - `gh pr view 9 --json statusCheckRollup,...` on 2026-04-14
-    - `gh run view 24403594896 --json jobs,...` on 2026-04-14
+    - Phase 5 exit criteria in this doc
+    - `gh release list --limit 10` on 2026-04-14 returned no releases
+    - `gh release view v0.1.0` on 2026-04-14 returned `release not found`
+    - `gh run list --workflow publish.yml --event release --limit 20` on
+      2026-04-14 returned no runs
   - Plan expects:
-    - Phase 4 requires the finished PR gate, including CodeQL, on `main`
-    - Phase 5 requires the publish dry run and public trust-surface cutover
-    - Phase 6 requires final live readiness proof under the finished ruleset
+    - GitHub releases attach the exact shipped artifacts
+    - `make release-publish` waits for the `release.published` workflow outcome
   - Code reality:
-    - the live `main` ruleset now includes both the split required status
-      checks and a `code_scanning` rule for `CodeQL`
-    - merged PR `#9` shows the split PR checks plus all three live CodeQL
-      analyses passing under that finished ruleset
-    - publish run `24403594896` succeeded on `main`
-    - the current worktree still preserves that implementation: `make verify`
-      passed on 2026-04-14
+    - `.github/workflows/publish.yml` is wired for `release.published`, but
+      the repo has only `workflow_dispatch` dry runs `24403594896` and
+      `24412217176`
+    - both runs used `publish_target=none`, so the publish legs were skipped
   - Fix:
-    - none.
+    - run one real signed-tag draft-to-publish flow so `publish.yml` executes
+      on the `release` event and uploads the built wheel and sdist to the
+      GitHub release
+- Live package-index publish proof for `rally-agents`
+  - Evidence anchors:
+    - Section 8.2 in this doc says the same version is published to PyPI
+    - Section 9.3 in this doc says the release runbook must confirm `PyPI
+      publish passed`
+    - `curl -fsS https://pypi.org/pypi/rally-agents/json` on 2026-04-14
+      returned 404
+    - `curl -fsS https://test.pypi.org/pypi/rally-agents/json` on 2026-04-14
+      returned 404
+    - `gh run list --workflow publish.yml --status completed --limit 20` on
+      2026-04-14 shows only two `workflow_dispatch` runs with no live publish
+      legs
+  - Plan expects:
+    - PyPI publish runs through Trusted Publishing
+    - Rally's first live release rehearsal confirms the publish leg, not just
+      the build leg
+  - Code reality:
+    - the package metadata, environments, and workflow are present, but there
+      is still no successful `publish-testpypi` or `publish-pypi` run
+    - no `rally-agents` project is published on PyPI or TestPyPI yet
+  - Fix:
+    - run the first live package-index proof now that the publishers exist:
+      either a TestPyPI rehearsal or the first real PyPI publish through the
+      signed release flow, then record the resulting workflow run
 
 ## Non-blocking follow-ups (manual QA / screenshots / human verification)
-- Walk the first real signed-tag release once before the first public Rally
-  release.
-- If the package-release follow-up should continue, open or explicitly reopen a
-  separate plan instead of narrowing this completed artifact.
+- After the live publish path closes, do one cold read of the public GitHub
+  release page and package page.
 <!-- arch_skill:block:implementation_audit:end -->
 
 <!-- arch_skill:block:planning_passes:start -->
@@ -1246,7 +1281,7 @@ Completion proof already landed for the split PR and ruleset cutover:
 
 ## Phase 5 - Cut over GitHub draft, publish, and public trust surfaces
 
-Status: COMPLETED
+Status: IN PROGRESS
 
 Completion proof:
 - After PR `#5` merged on 2026-04-14, `gh api repos/aelaguiz/rally/actions/workflows`
@@ -1267,6 +1302,13 @@ Completion proof:
   - `SUPPORT.md`
   - `CHANGELOG.md`
   - `docs/VERSIONING.md`
+
+Missing (code):
+- No live GitHub release exists yet, so `publish.yml` has not attached built
+  artifacts to a real release or exercised the `release.published` path.
+- No live Trusted Publishing run exists yet for `rally-agents`. The only
+  completed workflow runs used `publish_target=none`, and both package indexes
+  still return 404 for project `rally-agents`.
 
 * Goal:
   Make the public GitHub release path, artifact publication path, and public
@@ -1329,7 +1371,7 @@ Completion proof:
 
 ## Phase 6 - Prove full parity and release readiness
 
-Status: COMPLETED
+Status: REOPENED (audit found missing code work)
 
 Completion proof already landed for the rest of this phase:
 - Local release proof stayed green after the clean-checkout repair:
@@ -1352,6 +1394,14 @@ Completion proof already landed for the rest of this phase:
     CodeQL analyses passed
   - PR `#9` then merged to `main`, so the final readiness proof is now on the
     default branch rather than only in local notes
+
+Missing (code):
+- No signed annotated release tag exists yet in this repo. `git tag -l` on
+  2026-04-14 returned no tags.
+- No first live release walk has been completed from `make release-tag` through
+  `make release-publish`. `gh release list --limit 10` is still empty, and
+  there is no `publish.yml` run from the `release` event.
+- No live package-index publish proof exists yet for `rally-agents`.
 
 * Goal:
   Prove that Rally now feels like a Doctrine-aligned extension at release time,
@@ -2266,3 +2316,39 @@ Follow-ups
 
 - Keep `pyproject.toml`, `docs/VERSIONING.md`, `README.md`, `CHANGELOG.md`,
   and package-release tests aligned on the `rally-agents` distribution name.
+
+## 2026-04-14 - Reopen the live publish proof after the `rally-agents` cutover
+
+Context
+
+The `rally-agents` package-name cutover landed after the earlier audit marked
+this artifact complete. The repo now has the metadata, docs, workflow, and
+GitHub environments, but it still has only `workflow_dispatch` dry runs with
+`publish_target=none`.
+
+Options
+
+- Keep treating the artifact as complete because the dry runs stayed green.
+- Explicitly reopen the tail of this artifact until the live release and
+  package-index path is exercised.
+
+Decision
+
+Explicitly reopen the tail of this artifact.
+
+- Phase 5 stays reopened until one real GitHub release publish run attaches
+  the built artifacts and drives the live publish path.
+- Phase 6 stays reopened until one live package-index publish proof lands for
+  `rally-agents` and the first signed-tag release walk is complete.
+
+Consequences
+
+- The authoritative audit block is now `NOT COMPLETE`.
+- Phase 5 and Phase 6 are the only reopened phases.
+- Phase 1 through Phase 4 stay complete.
+
+Follow-ups
+
+- Keep the earlier broad-parity proof intact.
+- Finish the first live release walk instead of reopening the already-landed
+  governance and doc cutover work.
