@@ -53,6 +53,7 @@ class AdapterMcpProjectionTests(unittest.TestCase):
 
             config_text = (run_home / "config.toml").read_text(encoding="utf-8")
 
+            self.assertIn("project_doc_max_bytes = 0", config_text)
             self.assertIn('command = "uv"', config_text)
             self.assertIn(
                 f'args = ["run", "fixture-repo-mcp", "--repo", "{run_home / "repos" / "demo_repo"}"]',

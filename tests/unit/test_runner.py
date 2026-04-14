@@ -1073,7 +1073,6 @@ class RunnerTests(unittest.TestCase):
             flow_text = flow_path.read_text(encoding="utf-8")
             flow_text = flow_text.replace("  adapter: codex\n", "  adapter: claude_code\n")
             flow_text = flow_text.replace("    allowed_mcps: []\n", "    allowed_mcps: [fixture-repo]\n")
-            flow_text = flow_text.replace("    project_doc_max_bytes: 0\n", "")
             flow_path.write_text(flow_text, encoding="utf-8")
 
             run_dir = self._create_pending_run(repo_root=repo_root)
@@ -1152,7 +1151,6 @@ class RunnerTests(unittest.TestCase):
             flow_text = flow_path.read_text(encoding="utf-8")
             flow_text = flow_text.replace("  adapter: codex\n", "  adapter: claude_code\n")
             flow_text = flow_text.replace("    allowed_mcps: []\n", "    allowed_mcps: [fixture-repo]\n")
-            flow_text = flow_text.replace("    project_doc_max_bytes: 0\n", "")
             flow_path.write_text(flow_text, encoding="utf-8")
 
             (repo_root / "mcps" / "fixture-repo" / "server.toml").write_text(
@@ -1325,7 +1323,6 @@ class RunnerTests(unittest.TestCase):
                 "    timeout_sec: 60\n"
                 "    allowed_skills: [pytest-local]\n",
             )
-            flow_text = flow_text.replace("    project_doc_max_bytes: 0\n", "")
             flow_path.write_text(flow_text, encoding="utf-8")
 
             run_dir = self._create_pending_run(repo_root=repo_root)
@@ -1394,7 +1391,6 @@ class RunnerTests(unittest.TestCase):
             flow_text = flow_path.read_text(encoding="utf-8")
             flow_text = flow_text.replace("  adapter: codex\n", "  adapter: claude_code\n")
             flow_text = flow_text.replace("    model: gpt-5.4\n", "    model: sonnet\n")
-            flow_text = flow_text.replace("    project_doc_max_bytes: 0\n", "")
             flow_path.write_text(flow_text, encoding="utf-8")
 
             review_payload = {
@@ -1865,7 +1861,6 @@ class RunnerTests(unittest.TestCase):
             flow_path = repo_root / "flows" / "demo" / "flow.yaml"
             flow_text = flow_path.read_text(encoding="utf-8")
             flow_text = flow_text.replace("    allowed_mcps: []\n", "    allowed_mcps: [fixture-repo]\n")
-            flow_text = flow_text.replace("    project_doc_max_bytes: 0\n", "    project_doc_max_bytes: 2048\n")
             flow_path.write_text(flow_text, encoding="utf-8")
 
             def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
@@ -1908,7 +1903,7 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "mcps" / "fixture-repo" / "server.toml").is_file())
             config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
-            self.assertIn("project_doc_max_bytes = 2048", config_text)
+            self.assertIn("project_doc_max_bytes = 0", config_text)
             self.assertIn('[mcp_servers."fixture-repo"]', config_text)
             self.assertIn('command = "uv"', config_text)
             self.assertIn(
@@ -2021,7 +2016,6 @@ class RunnerTests(unittest.TestCase):
             flow_path = repo_root / "flows" / "demo" / "flow.yaml"
             flow_text = flow_path.read_text(encoding="utf-8")
             flow_text = flow_text.replace("    allowed_mcps: []\n", "    allowed_mcps: [fixture-repo]\n")
-            flow_text = flow_text.replace("    project_doc_max_bytes: 0\n", "    project_doc_max_bytes: 512\n")
             flow_path.write_text(flow_text, encoding="utf-8")
 
             run_dir = self._create_pending_run(repo_root=repo_root)
@@ -2059,7 +2053,6 @@ class RunnerTests(unittest.TestCase):
             flow_text = flow_path.read_text(encoding="utf-8")
             flow_text = flow_text.replace("    allowed_skills: [repo-search]\n", "    allowed_skills: []\n")
             flow_text = flow_text.replace("    allowed_mcps: [fixture-repo]\n", "    allowed_mcps: []\n")
-            flow_text = flow_text.replace("    project_doc_max_bytes: 512\n", "    project_doc_max_bytes: 0\n")
             flow_path.write_text(flow_text, encoding="utf-8")
 
             def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
@@ -3692,7 +3685,6 @@ class RunnerTests(unittest.TestCase):
                 "  adapter_args:\n"
                 "    model: gpt-5.4\n"
                 "    reasoning_effort: medium\n"
-                "    project_doc_max_bytes: 0\n"
             ),
             encoding="utf-8",
         )

@@ -349,7 +349,7 @@ Current Codex launch facts:
 
 - set `CODEX_HOME` to the run home
 - launch with `--dangerously-bypass-approvals-and-sandbox`
-- disable ambient project-doc discovery with `project_doc_max_bytes = 0`
+- disable ambient project-doc discovery inside the Codex adapter
 - assemble MCP config through the Codex home files Rally prepares
 
 Current Claude launch facts:

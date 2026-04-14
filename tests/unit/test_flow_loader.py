@@ -202,6 +202,43 @@ class FlowLoaderTests(unittest.TestCase):
                 },
             )
 
+    def test_load_flow_definition_accepts_legacy_codex_project_doc_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(repo_root=repo_root)
+
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_path.write_text(
+                flow_text.replace(
+                    "    model: gpt-5.4\n",
+                    "    model: gpt-5.4\n    project_doc_max_bytes: 0\n",
+                ),
+                encoding="utf-8",
+            )
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            self.assertEqual(flow.adapter.args["project_doc_max_bytes"], 0)
+
+    def test_load_flow_definition_rejects_non_zero_codex_project_doc_setting(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(repo_root=repo_root)
+
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_path.write_text(
+                flow_text.replace(
+                    "    model: gpt-5.4\n",
+                    "    model: gpt-5.4\n    project_doc_max_bytes: 512\n",
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RallyConfigError, "no longer configurable"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
     def test_load_flow_definition_rejects_missing_workspace_stdlib(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve() / "workspace"
@@ -302,6 +339,8 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertIn("Artistic Rationale", writer_readback)
         self.assertIn("### Rally Turn Result", writer_readback)
         self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', writer_readback)
+        self.assertIn("For this turn, read skills from `home:skills/`.", writer_readback)
+        self.assertIn("On Codex turns, that same folder is `$CODEX_HOME/skills/`.", writer_readback)
         self.assertNotIn("### Issue Note", critic_readback)
         self.assertIn("## Poem Review", critic_readback)
         self.assertIn("### Poem Review Response", critic_readback)

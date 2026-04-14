@@ -453,7 +453,7 @@ The runtime also:
 - appends runtime prompt inputs when the flow declares a prompt-input command
 - merges optional flow `runtime.env` values before startup host-input checks,
   setup, and adapter launch
-- keeps Codex project-doc discovery off with `project_doc_max_bytes = 0`
+- keeps Codex project-doc discovery off inside the adapter
 - saves one adapter session id per agent for later resume
 - uses `RALLY_TURN_NUMBER` so in-turn `rally issue note` calls can stamp the
   right turn without asking the agent to manage that metadata
