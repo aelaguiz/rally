@@ -6,14 +6,16 @@ PYTHON ?= python
 UV_RUN := $(UV) run $(PYTHON)
 DOCTRINE_SOURCE ?= git+https://github.com/aelaguiz/doctrine.git@v1.0.1
 
-.PHONY: help setup test tests verify check release-prepare release-tag release-draft release-publish
+.PHONY: help setup test tests build-dist verify-package-wheel verify-package-sdist verify-package verify check release-prepare release-tag release-draft release-publish
 
 help:
 	@printf '%s\n' \
 		'make setup             Sync Rally dev dependencies.' \
 		'make tests             Run the Rally unit suite.' \
 		'make test              Alias for make tests.' \
-		'make verify            Run the release proof path.' \
+		'make build-dist        Build the Rally wheel and sdist.' \
+		'make verify-package    Run the built-package smoke proof for wheel and sdist.' \
+		'make verify            Run the broader Rally release proof path.' \
 		'make check             Alias for make verify.' \
 		'make release-prepare   Validate release inputs and print the release worksheet.' \
 		'make release-tag       Create and push one signed annotated public release tag.' \
@@ -28,11 +30,26 @@ tests:
 
 test: tests
 
+build-dist:
+	rm -rf dist
+	$(UV) build
+
+verify-package-wheel: build-dist
+	RALLY_TEST_DOCTRINE_SOURCE=$(DOCTRINE_SOURCE) $(UV_RUN) -m rally._package_release smoke --artifact-type wheel
+
+verify-package-sdist: build-dist
+	RALLY_TEST_DOCTRINE_SOURCE=$(DOCTRINE_SOURCE) $(UV_RUN) -m rally._package_release smoke --artifact-type sdist
+
+verify-package: build-dist
+	RALLY_TEST_DOCTRINE_SOURCE=$(DOCTRINE_SOURCE) $(UV_RUN) -m rally._package_release smoke --artifact-type wheel
+	RALLY_TEST_DOCTRINE_SOURCE=$(DOCTRINE_SOURCE) $(UV_RUN) -m rally._package_release smoke --artifact-type sdist
+
 verify:
 	$(UV) run python tools/sync_bundled_assets.py --check
+	$(UV) run pytest tests/unit/test_package_release.py -q
 	$(UV) run pytest tests/unit/test_release_flow.py -q
 	$(UV) run pytest tests/unit -q
-	$(UV) build
+	$(MAKE) verify-package
 	RALLY_TEST_DOCTRINE_SOURCE=$(DOCTRINE_SOURCE) $(UV) run pytest tests/integration/test_packaged_install.py -q
 
 check: verify

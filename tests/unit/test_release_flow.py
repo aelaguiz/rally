@@ -79,6 +79,13 @@ class ReleaseFlowTests(unittest.TestCase):
         self.assertIn("Current minimum Doctrine release: v1.0.1", worksheet)
         self.assertIn("Current supported Doctrine package line: doctrine>=1.0.1,<2", worksheet)
         self.assertIn("Changelog entry status: ready (`v0.2.0 - 2026-04-14`)", worksheet)
+        self.assertIn("make build-dist", worksheet)
+        self.assertIn("make verify-package", worksheet)
+        self.assertIn("tests/unit/test_package_release.py -q", worksheet)
+        self.assertIn(
+            "Before the first real TestPyPI or PyPI publish for `rally-agents`",
+            worksheet,
+        )
         self.assertIn(
             "make release-draft RELEASE=v0.2.0 CHANNEL=stable PREVIOUS_TAG=auto",
             worksheet,
@@ -429,7 +436,7 @@ class ReleaseFlowTests(unittest.TestCase):
                 build-backend = "setuptools.build_meta"
 
                 [project]
-                name = "rally"
+                name = "rally-agents"
                 version = "{package_version}"
                 requires-python = ">=3.14"
                 dependencies = [
@@ -438,6 +445,11 @@ class ReleaseFlowTests(unittest.TestCase):
 
                 [tool.rally.workspace]
                 version = {workspace_version}
+
+                [tool.rally.package]
+                import_name = "rally"
+                pypi_environment = "pypi"
+                testpypi_environment = "testpypi"
                 """
             ),
             encoding="utf-8",

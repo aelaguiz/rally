@@ -1,7 +1,7 @@
 # Rally
 
 [![CI](https://img.shields.io/github/actions/workflow/status/aelaguiz/rally/pr.yml?branch=main&label=pr)](https://github.com/aelaguiz/rally/actions/workflows/pr.yml)
-[![PyPI](https://img.shields.io/pypi/v/rally)](https://pypi.org/project/rally/)
+[![PyPI](https://img.shields.io/pypi/v/rally-agents)](https://pypi.org/project/rally-agents/)
 [![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-3776AB.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/aelaguiz/rally/badge)](https://scorecard.dev/viewer/?uri=github.com/aelaguiz/rally)
@@ -52,17 +52,19 @@ Use Rally if you want:
 Rally is an ordinary Python package with one CLI:
 
 ```bash
-uv tool install rally
+uv tool install rally-agents
 rally --help
 ```
 
 Rally requires Python 3.14 or newer and currently supports
 `doctrine>=1.0.1,<2`.
+The published package name is `rally-agents`. The import path and CLI stay
+`rally`.
 
 If you want Rally inside a repo-local environment instead of a tool install:
 
 ```bash
-uv add --dev rally
+uv add --dev rally-agents
 uv run rally --help
 ```
 
@@ -166,9 +168,11 @@ uv run pytest tests/unit -q
 ```
 
 Cut a public release with the repo-owned flow:
-Cut a public release with the repo-owned flow:
 
 ```bash
+make build-dist
+make verify-package
+make verify
 make release-prepare RELEASE=v0.1.0 CLASS=additive CHANNEL=stable
 make release-tag RELEASE=v0.1.0 CHANNEL=stable
 make release-draft RELEASE=v0.1.0 CHANNEL=stable PREVIOUS_TAG=auto
@@ -176,7 +180,8 @@ make release-publish RELEASE=v0.1.0
 ```
 
 The full rules live in [docs/VERSIONING.md](docs/VERSIONING.md). The release
-history lives in [CHANGELOG.md](CHANGELOG.md).
+history lives in [CHANGELOG.md](CHANGELOG.md). The first TestPyPI and PyPI
+setup steps also live in `docs/VERSIONING.md`.
 
 ## What ships today
 

@@ -10,6 +10,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from rally._package_release import load_package_release_metadata
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PUBLIC_DOCTRINE_INSTALL_TARGET = "git+https://github.com/aelaguiz/doctrine.git@v1.0.1"
@@ -98,8 +100,10 @@ class PackagedInstallTests(unittest.TestCase):
             self.assertNotIn("../rally/", contract_path.read_text(encoding="utf-8"))
 
     def _latest_wheel(self) -> Path:
+        metadata = load_package_release_metadata(REPO_ROOT)
+        wheel_prefix = metadata.distribution_name.replace("-", "_")
         wheels = sorted(
-            REPO_ROOT.glob("dist/rally-*.whl"),
+            REPO_ROOT.glob(f"dist/{wheel_prefix}-*.whl"),
             key=lambda path: path.stat().st_mtime,
         )
         if not wheels:

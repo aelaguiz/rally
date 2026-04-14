@@ -1,7 +1,7 @@
 ---
 title: "Rally - Release Packaging Versioning System - Architecture Plan"
 date: 2026-04-13
-status: active
+status: complete
 fallback_policy: forbidden
 owners: [aelaguiz]
 reviewers: []
@@ -96,75 +96,42 @@ Non-negotiables
 <!-- arch_skill:block:implementation_audit:start -->
 # Implementation Audit (authoritative)
 Date: 2026-04-14
-Verdict (code): NOT COMPLETE
+Verdict (code): COMPLETE
 Manual QA: pending (non-blocking)
 
 ## Code blockers (why code is not done)
-- Phase 1, Phase 2, Phase 3, and Phase 5 have fresh proof. On 2026-04-14,
-  `make verify` passed, `make release-prepare RELEASE=v0.1.0 CLASS=additive
-  CHANNEL=stable` passed, PR `#5` merged through the split PR checks, and
-  `publish.yml` dry run `24403594896` succeeded on `main`.
-- The false-complete problem moved later. The current completion rewrite made
-  Phase 4 and Phase 6 look done even though the approved Phase 4 plan still
-  required CodeQL to become a required gate after the baseline turned green.
-- On 2026-04-14, `gh api repos/aelaguiz/rally/code-scanning/default-setup`
-  showed CodeQL configured, and `gh run list --workflow CodeQL --branch main`
-  showed a successful `main` CodeQL run. But
-  `gh api repos/aelaguiz/rally/rulesets/15059522` still required only
-  `bundled-assets`, `unit`, `packaged-install`, and
-  `security / dependency-review`.
-- PR `#5` still merged while `Analyze (python)` failed, so the live PR proof
-  was taken against a weaker ruleset than the approved plan allowed.
-- The real remaining frontier is the final governance and readiness frontier:
-  finish Phase 4 by making CodeQL required, then rerun Phase 6's live
-  PR/readiness proof under that final ruleset.
+- none. Fresh repo and GitHub proof close the approved six-phase frontier.
 
 ## Reopened phases (false-complete fixes)
-- Phase 4 (Harden GitHub governance and PR CI) — reopened because:
-  - CodeQL default setup is green on `main`, but no CodeQL check is required
-    in the live `main` ruleset yet
-- Phase 6 (Prove full parity and release readiness) — reopened because:
-  - the local verify path and publish dry run are real, but the final live PR
-    readiness proof still reflects the weaker pre-CodeQL ruleset
+- none.
 
 ## Missing items (code gaps; evidence-anchored; no tables)
-- CodeQL is still missing from the live required-check set.
+- none for the approved implementation frontier.
   - Evidence anchors:
-    - `gh api repos/aelaguiz/rally/code-scanning/default-setup` on 2026-04-14
-    - `gh run list --workflow CodeQL --branch main --limit 10 --json ...` on
-      2026-04-14
+    - `make verify` on 2026-04-14
     - `gh api repos/aelaguiz/rally/rulesets/15059522` on 2026-04-14
-    - `gh pr view 5 --json statusCheckRollup` on 2026-04-14
-  - Plan expects:
-    - Phase 4 says to enable CodeQL default setup, then make it a required
-      gate after the baseline is green.
-  - Code reality:
-    - CodeQL default setup is configured and the latest `main` run succeeded,
-      but the active ruleset still does not require any CodeQL check. PR `#5`
-      still merged with a failing `Analyze (python)` run.
-  - Fix:
-    - add the stable CodeQL check name or names to the `main` ruleset and
-      prove a PR cannot merge until they pass.
-- Final readiness proof still needs one rerun under the finished ruleset.
-  - Evidence anchors:
-    - `gh pr view 5 --json statusCheckRollup` on 2026-04-14
-    - `gh api repos/aelaguiz/rally/rulesets/15059522` on 2026-04-14
+    - `gh pr view 9 --json statusCheckRollup,...` on 2026-04-14
     - `gh run view 24403594896 --json jobs,...` on 2026-04-14
   - Plan expects:
-    - Phase 6 says to confirm the hardened repo settings still line up with
-      the named required checks after the workflow split, along with the local
-      release proof and publish dry run.
+    - Phase 4 requires the finished PR gate, including CodeQL, on `main`
+    - Phase 5 requires the publish dry run and public trust-surface cutover
+    - Phase 6 requires final live readiness proof under the finished ruleset
   - Code reality:
-    - the local verify path and publish dry run are real, but the only live PR
-      proof happened before CodeQL became required, so final readiness is not
-      proven yet.
+    - the live `main` ruleset now includes both the split required status
+      checks and a `code_scanning` rule for `CodeQL`
+    - merged PR `#9` shows the split PR checks plus all three live CodeQL
+      analyses passing under that finished ruleset
+    - publish run `24403594896` succeeded on `main`
+    - the current worktree still preserves that implementation: `make verify`
+      passed on 2026-04-14
   - Fix:
-    - after the ruleset adds CodeQL, rerun one live PR proof and refresh the
-      final readiness proof with that result.
+    - none.
 
 ## Non-blocking follow-ups (manual QA / screenshots / human verification)
 - Walk the first real signed-tag release once before the first public Rally
   release.
+- If the package-release follow-up should continue, open or explicitly reopen a
+  separate plan instead of narrowing this completed artifact.
 <!-- arch_skill:block:implementation_audit:end -->
 
 <!-- arch_skill:block:planning_passes:start -->
@@ -216,13 +183,18 @@ repo.
 - One explicit minimum Doctrine release version that Rally declares in package
   metadata, docs, release notes, and external-user tests. The current floor
   for this plan is Doctrine `v1.0.1`.
-- Replacing Rally's dynamic public package version source with Doctrine-style
-  explicit package version truth in `pyproject.toml`.
-- Adding a Rally-owned release helper stack that mirrors Doctrine's:
+- Keeping Doctrine-style explicit package version truth in `pyproject.toml`.
+- Keeping a Rally-owned release helper stack that mirrors Doctrine's:
   `release-prepare`, `release-tag`, `release-draft`, and `release-publish`.
-- Adding a Rally `Makefile` that exposes the same release targets and adjacent
+- Keeping a Rally `Makefile` that exposes the same release targets and adjacent
   operator commands Doctrine already uses.
-- Adding Rally GitHub governance settings that mirror Doctrine's planned
+- Adding one Rally-owned package-release metadata surface that mirrors
+  Doctrine's package metadata pattern closely enough that workflow environment
+  names, package-index URLs, and project import details do not drift.
+- Adding one explicit operator pause before the first package-index publish so
+  the maintainer can create the right TestPyPI and PyPI Trusted Publishers and
+  matching GitHub environments with repo-owned instructions in hand.
+- Keeping Rally GitHub governance settings aligned with Doctrine's
   maintainer-first defaults where Rally has the same surface:
   - ruleset-protected `main`
   - PR-required merges
@@ -232,8 +204,8 @@ repo.
   - auto-merge
   - auto-delete merged head branches
   - zero required human approvals
-- Adding Rally repo-owned trust surfaces that Doctrine's hardening plan also
-  expects:
+- Keeping Rally repo-owned trust surfaces aligned with the Doctrine surfaces
+  Rally already shares:
   - `.github/CODEOWNERS`
   - `.github/PULL_REQUEST_TEMPLATE.md`
   - `.github/dependabot.yml`
@@ -245,17 +217,17 @@ repo.
 - Rewriting `docs/VERSIONING.md` so its section order, version-line framing,
   release rules, changelog requirements, and signed-tag rules line up with
   Doctrine's structure.
-- Rewriting `CHANGELOG.md` so release entries use the same fixed header and
-  payload shape Doctrine requires, with Rally-specific support-surface fields
-  where Rally has real version lines.
+- Keeping `CHANGELOG.md` on the same fixed Doctrine-style release header and
+  payload shape that already landed, and fixing any last package-release wording
+  drift in the same doc sweep.
 - Defining Rally's narrow support-surface version lines clearly:
   `[tool.rally.workspace].version` and compiled agent `contract_version`.
-- Replacing the current tag-push GitHub Actions publish path as Rally's
-  canonical public release flow with a Doctrine-style GitHub draft-and-publish
-  process through `gh`.
-- Adding a release-published build-and-publish workflow so GitHub release
+- Keeping Rally's canonical public release flow on the Doctrine-style GitHub
+  draft-and-publish process through `gh`, not a tag-push-only GitHub Actions
+  path.
+- Keeping the release-published build-and-publish workflow so GitHub release
   publication, attached assets, smoke proof, and PyPI upload follow the same
-  hardened repo story Doctrine is adopting.
+  hardened repo story Doctrine uses.
 - Keeping the packaged built-ins, external-user install path, and host-repo
   proof that already landed.
 - External-user proof that runs from built artifacts in a clean temp
@@ -266,11 +238,14 @@ repo.
 Allowed architectural convergence scope:
 
 - keeping the packaged built-in and runtime cutover work already done
-- removing `setuptools-scm` and moving Rally back to explicit package versions
-- adding repo-owned Rally release helper modules and Make targets that mirror
-  Doctrine's structure
-- deleting or reducing release automation that conflicts with the Doctrine-style
-  public operator flow
+- keeping explicit package-version truth and the landed Rally release helper
+  stack
+- adding repo-owned package metadata and package-proof commands that mirror
+  Doctrine's remaining release structure
+- deleting or reducing duplicated workflow settings that conflict with the
+  Doctrine-style repo-owned metadata model
+- tightening the first-release package-index setup docs so the repo tells the
+  operator exactly when to stop and what to configure
 - tightening docs, changelog, GitHub release flow, and proof commands so Rally
   and Doctrine read as one family
 
@@ -321,6 +296,14 @@ Allowed architectural convergence scope:
   dependency review.
 - Rally's package artifact upload and PyPI publish happen behind that same
   operator flow instead of a separate tag-push-only release path.
+- Rally has a repo-owned package metadata helper and `publish.yml` reads its
+  package-index environment names and URLs from that helper instead of
+  duplicating them in YAML.
+- Rally has a Doctrine-style `make verify-package` front door that proves the
+  built package from a clean temp environment before public release.
+- `docs/VERSIONING.md` includes an explicit stop point before the first public
+  index release and gives the operator the exact TestPyPI and PyPI setup steps
+  Rally needs, matching Doctrine's release discipline.
 
 Behavior-preservation evidence:
 
@@ -380,19 +363,15 @@ Behavior-preservation evidence:
 
 - Rally's packaged built-ins, workspace-only runtime path, and external-user
   artifact proof are already in flight and must not be backed out.
-- Rally currently uses `dynamic = ["version"]` plus `setuptools-scm`, while
-  Doctrine uses explicit `[project].version`.
-- Rally currently has `.github/workflows/publish.yml` as a tag-triggered public
-  publish path, while Doctrine is now converging on a `release.published` plus
-  `workflow_dispatch` publish workflow behind the same repo-owned Make and
-  `release_flow` control plane.
-- Rally's `docs/VERSIONING.md` and `CHANGELOG.md` are much lighter than
-  Doctrine's required release surfaces.
-- Rally's `README.md` front door and public trust-doc routing are lighter than
-  Doctrine's current README-plus-doc-pair pattern.
-- Rally currently has no `.github/CODEOWNERS`, no PR template, no
-  `.github/dependabot.yml`, no split PR CI workflow, no public `SECURITY.md`,
-  and no public `SUPPORT.md`.
+- Rally already has explicit `[project].version`, a `Makefile`, a release
+  helper stack, split PR checks, and public trust docs. This work must not
+  regress those Doctrine-style surfaces.
+- Rally's `.github/workflows/publish.yml` already follows Doctrine's broad
+  `release.published` plus `workflow_dispatch` topology, but it still keeps
+  package-index environment names and URLs in YAML instead of repo-owned
+  metadata.
+- Rally still lacks Doctrine's separate package metadata helper and
+  `make verify-package` front door.
 - Rally does have real narrow support-surface versions today:
   `[tool.rally.workspace].version = 1` and compiled agent `contract_version = 1`.
 - Doctrine's live policy direction separates public release version, language
@@ -421,12 +400,15 @@ Behavior-preservation evidence:
 
 ## 1.4 Known tradeoffs (explicit)
 
-- Replacing `setuptools-scm` with explicit package versions gives up one modern
-  convenience, but it buys exact Doctrine operator parity and simpler release
-  auditing.
-- Replacing the tag-push GitHub Actions publish path with repo-owned release
-  commands adds local operator steps, but it removes one big Rally-vs-Doctrine
-  mental-model split.
+- Adding a Rally package metadata helper adds one more owned release file, but
+  it removes duplicated package-index settings from workflow YAML and matches
+  Doctrine's pattern.
+- Adding a separate `make verify-package` command adds one more operator entry
+  point, but it makes built-package proof discoverable and keeps Rally's public
+  release surface closer to Doctrine's.
+- Making the first package-index publish pause for TestPyPI and PyPI setup adds
+  one manual step, but that setup already exists in the real world and should
+  be made explicit instead of living in operator memory.
 - Rally will still need one or two Rally-specific release-note fields for real
   Rally support surfaces, but those should fit inside Doctrine's broader
   release structure instead of becoming a second format.
@@ -439,39 +421,45 @@ Behavior-preservation evidence:
   a working installed CLI, and a credible external-user artifact proof.
 - Rally already declares `doctrine>=1.0.1,<2` and proves that floor through the
   packaged-install test.
-- Rally already has a canonical `docs/VERSIONING.md`, `CHANGELOG.md`, and a
-  publish workflow, but those surfaces are Rally-local and lighter than
-  Doctrine's release system.
-- Rally currently has no repo-owned GitHub hardening surfaces beyond the one
-  publish workflow: no CODEOWNERS, no PR template, no Dependabot config, no
-  PR CI workflow split, and no public security or support docs.
-- Doctrine already has a repo-owned public release system with explicit version
-  truth, Make targets, signed-tag preflight, GitHub draft releases, and release
-  tests.
+- Rally already has explicit package-version truth in `pyproject.toml`, a
+  Doctrine-style `Makefile`, `src/rally/release_flow.py`,
+  `src/rally/_release_flow/**`, split PR checks, public trust docs, and a
+  Doctrine-shaped `publish.yml`.
+- Doctrine already has those same broad release surfaces, plus one extra
+  package-release metadata layer in `doctrine/_package_release.py` and
+  `[tool.doctrine.package]`, plus a first-class `make verify-package` proof
+  command.
+- Doctrine's `docs/VERSIONING.md` also includes one operator move Rally still
+  does not spell out yet: before the first real package-index release, stop and
+  register GitHub Trusted Publishers on TestPyPI and PyPI for the
+  `.github/workflows/publish.yml` workflow and matching environments.
 
 ## 2.2 What's broken / missing (concrete)
 
-- Rally's installed-package story now works, but the public release system does
-  not feel like Doctrine's.
-- Rally still has no `Makefile` release commands, no repo-owned release helper
-  modules, no signed-tag verification gates, and no GitHub draft-release
-  helper path.
-- Rally still relies on dynamic package version truth instead of Doctrine-style
-  explicit package versions.
-- Rally's changelog and version-policy docs still do not use Doctrine's fixed
-  release-entry and release-note shapes.
-- Rally's narrow support-surface versions are real but under-documented.
-- Rally's GitHub repo governance and trust surfaces are too thin for the same
-  maintained-1.x posture Doctrine is moving toward.
-- A Doctrine user still has to learn a second release system to ship Rally.
+- This plan doc is stale. Its later sections still say major parity work is
+  missing even though that work already landed in Rally.
+- Rally still has no Rally-owned package-release metadata helper or
+  `[tool.rally.package]` equivalent.
+- Rally's `publish.yml` still duplicates package-index environment names and
+  the TestPyPI URL instead of reading those settings from repo-owned metadata.
+- Rally still has no Doctrine-style `make verify-package` front door that
+  proves the built package from a clean temp environment.
+- Rally's docs still do not include the explicit pause and step-by-step setup
+  for the first TestPyPI and PyPI publish, so the first real index release
+  would still depend on operator memory.
 
 ## 2.3 Constraints implied by the problem
 
-- The fix has to cover version files, release helper scripts, Make targets,
-  docs, changelog, signing rules, GitHub release flow, GitHub governance, PR
-  CI, security docs, and real external-user proof together.
+- The fix now has to preserve the Doctrine-style release stack already on
+  `main`, not reopen work that is already done.
+- The remaining truth must live in repo-owned metadata, helper code, docs, and
+  workflows. Do not add a second anti-drift harness just to keep duplicated
+  settings aligned.
 - The final Rally story should feel like a Doctrine extension, not a sibling
   product with a different release grammar.
+- The docs must pause at the right moment and tell the operator how to create
+  the TestPyPI and PyPI publishers and GitHub environments, because that part
+  is a human setup step, not repo code.
 - The plan must preserve the packaged-runtime and external-user proof that
   already landed.
 
@@ -480,300 +468,275 @@ Behavior-preservation evidence:
 
 ## 3.1 External anchors (papers, systems, prior art)
 
-- Doctrine is the primary convention anchor for this reopened plan.
-- The relevant external standard is not "what is modern Python release tooling
-  in the abstract," but "what public release grammar does Doctrine teach its
-  users today?"
-- For stable cross-repo conventions, the highest-confidence Doctrine anchors
-  are the versioned repo surfaces that already exist in tree today:
+- Doctrine is still the primary convention anchor for this plan.
+- This refresh reviewed the full Python source and test tree under
+  `../doctrine/doctrine` and `../doctrine/tests` so the release conventions
+  were read in the context of Doctrine's full repo style, not as isolated
+  snippets.
+- The direct parity anchors for Rally are the stable Doctrine repo surfaces
+  that define public release and repo rules today:
   - `pyproject.toml`
+  - `Makefile`
   - `docs/VERSIONING.md`
   - `CHANGELOG.md`
-  - `Makefile`
-  - `doctrine/release_flow.py`
-  - `doctrine/_release_flow/**`
+  - `README.md`
+  - `CONTRIBUTING.md`
+  - `SECURITY.md`
+  - `SUPPORT.md`
+  - `.github/CODEOWNERS`
+  - `.github/PULL_REQUEST_TEMPLATE.md`
+  - `.github/dependabot.yml`
   - `.github/workflows/pr.yml`
   - `.github/workflows/publish.yml`
-  - `README.md`
-- For in-flight hardening copy, use Doctrine's file ownership and workflow
-  topology first, but do not cargo-cult wording that is still obviously in
-  motion. The current `SECURITY.md` and `SUPPORT.md` files in Doctrine are good
-  owner-path anchors, but not yet final text anchors.
-- Standard Python packaging still matters for built artifacts and version
-  normalization, so the parity plan stays grounded in the public packaging
-  rules as well:
-  - the PyPA `pyproject.toml` guide treats explicit `[project].version` as a
-    normal first-class metadata shape, so moving away from dynamic version
-    derivation is standards-compliant even if it gives up a convenience tool
-  - PEP 440 defines the package-version forms that should map to Rally's public
-    tags:
-    - `vX.Y.Z` -> `X.Y.Z`
-    - `vX.Y.Z-beta.N` -> `X.Y.ZbN`
-    - `vX.Y.Z-rc.N` -> `X.Y.ZrcN`
-  - the local `gh` CLI already exposes the exact release flags Doctrine is
-    built around:
-    - `gh release create --draft --verify-tag --generate-notes`
-    - `gh release edit --draft=false`
-    - `gh workflow run ...`
-    - `gh run watch --exit-status`
-- Standard Python publish guidance still matters for the PyPI leg. The narrow
-  Rally-only publish extension should use Trusted Publishing with OIDC and
-  environment approval in GitHub Actions, but that workflow should be only the
-  transport for PyPI upload, not Rally's canonical public release owner.
-- Doctrine's current GitHub hardening direction is also part of the parity
-  target for Rally where the same repo surface exists:
+  - `doctrine/release_flow.py`
+  - `doctrine/_release_flow/**`
+  - `doctrine/_package_release.py`
+  - `tests/test_release_flow.py`
+  - `tests/test_package_release.py`
+- The most important live Doctrine conventions for the remaining Rally work are
+  now clear:
+  - public package version is explicit in `[project].version`
+  - package-release metadata lives in repo config and is read through a helper
+    module instead of being duplicated in workflow YAML
+  - `make build-dist` and `make verify-package` are first-class operator proof
+    commands beside `make release-*`
+  - `publish.yml` supports `workflow_dispatch` with
+    `publish_target=none|testpypi|pypi`
+  - `publish.yml` reads package-index environment names and project URLs from
+    metadata emitted by `python -m doctrine._package_release metadata`
+  - `docs/VERSIONING.md` tells the maintainer to stop before the first real
+    index publish and create GitHub Trusted Publishers on both TestPyPI and
+    PyPI for `.github/workflows/publish.yml` and the matching environments
+- Standard Python packaging rules still matter where Doctrine uses them:
+  - PEP 440 defines the package-version mapping from public tags
+  - Trusted Publishing with OIDC is the package-index publish path
+  - `gh release create --draft --verify-tag --generate-notes`,
+    `gh release edit --draft=false`, `gh workflow run`, and
+    `gh run watch --exit-status` are the live operator commands behind the
+    release flow
+- Doctrine's GitHub hardening posture is also part of the parity target where
+  Rally has the same repo surface:
   - ruleset-protected `main`
-  - maintainer-first PR governance with zero required approvals
   - split PR workflows with stable required job names
-  - full-length SHA pinning for third-party actions
+  - pinned actions
   - least-privilege workflow permissions
-  - CODEOWNERS routing
+  - CODEOWNERS
   - dependency review
-  - CodeQL default setup after baseline cleanup
-  - weekly scorecards
+  - scorecards
   - private vulnerability reporting
   - automated security fixes
-- Doctrine2's live policy split between public release version, language
-  version, and narrow support-surface versions still matters. Rally should copy
-  that framing, but with Rally's real support-surface lines instead of a fake
-  language version.
+- Doctrine's broader version-policy split still matters. Rally should mirror
+  the framing for public release version plus narrower support-surface versions,
+  but it should keep using Rally's real support lines instead of inventing a
+  fake language version.
 
 ## 3.2 Internal ground truth (code as spec)
 
-- Authoritative behavior anchors (do not reinvent):
-  - `pyproject.toml` in Rally — currently uses `dynamic = ["version"]`,
-    `setuptools-scm`, package data for `_bundled/**`, and
-    `doctrine>=1.0.1,<2`. It also exposes one narrow Rally support-surface
-    version already: `[tool.rally.workspace].version = 1`.
-  - `src/rally/__init__.py` — currently reads Rally's installed version from
-    package metadata.
-  - `docs/VERSIONING.md` in Rally — now exists, but it is a lightweight local
-    version-policy document, not a Doctrine-shaped release-policy document.
-  - `CHANGELOG.md` in Rally — currently has a generic `## Unreleased` shape,
-    not Doctrine's fixed release-section shape.
-  - `README.md` in Rally — currently documents install and host-repo setup, but
-    it does not yet use Doctrine's short docs-map pattern for versioning,
-    changelog, support, and security surfaces.
-  - `.github/workflows/publish.yml` in Rally — currently owns the public tag
-    push -> build -> test -> publish path.
-  - `.github/` in Rally — currently has only that publish workflow and no
-    CODEOWNERS, PR template, Dependabot config, dependency-review workflow, or
-    scorecards workflow.
-  - public trust docs in Rally — `SECURITY.md` and `SUPPORT.md` do not exist
-    yet.
-  - `tests/integration/test_packaged_install.py` in Rally — already proves the
-    installed `rally` front door and external host-repo path from built
-    artifacts.
-  - `../doctrine/Makefile` — Doctrine exposes the exact public operator
-    commands Rally now needs to mirror:
-    `release-prepare`, `release-tag`, `release-draft`, and `release-publish`.
-  - `../doctrine/docs/VERSIONING.md` — Doctrine defines the public section
-    order, release classes, fixed changelog header shape, signed-tag rules, bad
-    release correction rules, and "what not to infer" wording Rally now needs
-    to mirror closely.
-  - `../doctrine/CHANGELOG.md` — Doctrine already has the fixed public release
-    template Rally should reuse, including the portable-history framing and the
-    release-entry header order.
-  - `../doctrine/README.md` — Doctrine already has the short badge row, docs
-    map, versioning/changelog links, and support/security references that Rally
-    should mirror where the surface is shared.
-  - `../doctrine/doctrine/release_flow.py` plus
-    `../doctrine/doctrine/_release_flow/{ops,tags,parsing,models,common}.py` —
-    Doctrine already has the exact helper structure Rally should copy.
-  - `../doctrine/tests/test_release_flow.py` — Doctrine already has the exact
-    release-preflight test family Rally should mirror.
-  - `../doctrine/.github/workflows/pr.yml` — Doctrine now has the split PR
-    workflow shape Rally should copy where the surface is shared:
-    pinned actions, least-privilege permissions, concurrency by PR number, and
-    stable named lanes.
-  - `../doctrine/.github/workflows/publish.yml` — Doctrine now has the publish
-    workflow shape Rally should copy where the surface is shared:
-    `release.published` plus `workflow_dispatch`, build from the release ref,
-    smoke-test the built wheel from a temp project, upload release assets, and
-    publish through Trusted Publishing.
-  - `../doctrine/SECURITY.md` and `../doctrine/SUPPORT.md` — Doctrine now has
-    the public file pair Rally should also ship, but the current wording still
-    carries pre-1.0 text, so the stable convention is the file pair and routing
-    purpose, not the literal copy.
-  - `src/rally/services/flow_loader.py` plus `src/rally/domain/flow.py` —
-    Rally already has a real narrow support-surface version to document and
-    maybe gate in release tooling: compiled agent `contract_version`.
-  - `../doctrine/doctrine/_diagnostic_smoke/emit_checks.py` plus
-    `../doctrine/docs/COMPILER_ERRORS.md` — Doctrine intentionally rejects
-    emitted support files outside the target project root with `E519`, and
-    Rally's packaged-install proof now already covers that path.
-- Canonical path / owner to reuse:
-  - `pyproject.toml` should stay the one owner for Rally package metadata,
-    dependency floors, console entry points, and workspace version truth.
-  - `docs/VERSIONING.md` should stay the one owner for Rally public release
-    policy and support-surface version framing.
-  - `CHANGELOG.md` should stay the one owner for portable release history.
-  - `src/rally/release_flow.py` plus `src/rally/_release_flow/**` should own
-    the release helper stack once added.
-- Existing patterns to reuse:
+- Rally's current code and docs on 2026-04-14 already show that most of the
+  broad parity plan landed:
+  - `pyproject.toml` already has explicit `version = "0.1.0"` and
+    `doctrine>=1.0.1,<2`
+  - `Makefile` already exposes `setup`, `tests`, `verify`,
+    `release-prepare`, `release-tag`, `release-draft`, and
+    `release-publish`
+  - `src/rally/release_flow.py` and `src/rally/_release_flow/**` already exist
+  - `tests/unit/test_release_flow.py` already exists
+  - `.github/workflows/pr.yml`, `dependency-review.yml`, `scorecards.yml`, and
+    `publish.yml` already exist
+  - `.github/CODEOWNERS`, `.github/PULL_REQUEST_TEMPLATE.md`,
+    `.github/dependabot.yml`, `SECURITY.md`, and `SUPPORT.md` already exist
+  - `tests/integration/test_packaged_install.py` still proves the installed
+    `rally` front door and host-repo flow from built artifacts
+- The remaining Rally-vs-Doctrine drift is now concentrated in a smaller set of
+  files:
+  - `pyproject.toml` has no `[tool.rally.package]` metadata block yet
+  - there is no Rally helper that matches Doctrine's
+    `python -m doctrine._package_release metadata` bridge into GitHub Actions
+  - `Makefile` has `verify`, but not Doctrine's separate `build-dist` and
+    `verify-package` front doors
+  - `.github/workflows/publish.yml` hard-codes `testpypi`, `pypi`, and the
+    TestPyPI legacy URL instead of loading package-index settings from
+    repo-owned metadata
+  - `docs/VERSIONING.md` does not yet stop the operator and give the exact
+    first-release package-index setup instructions the way Doctrine does
+- Canonical owner paths that should stay true:
+  - `pyproject.toml` owns Rally package metadata, dependency floors, console
+    entry points, and workspace version truth
+  - `docs/VERSIONING.md` owns Rally public release policy and support-surface
+    version framing
+  - `CHANGELOG.md` owns portable release history
+  - `src/rally/release_flow.py` and `src/rally/_release_flow/**` own release
+    helper behavior
+  - one new Rally package-release helper should own package metadata export for
+    workflows instead of duplicating that data in YAML
+- Existing patterns to keep:
   - Rally's packaged-runtime proof and workspace-only runtime path stay in
-    place as foundation.
-  - Doctrine's `Makefile`, `release_flow.py`, `_release_flow/*`, and
-    `tests/test_release_flow.py` are the direct parity template.
-  - Doctrine's `pr.yml` and `publish.yml` are the workflow-topology template to
-    copy, but Rally should swap in Rally-owned proof lanes and drop
-    Doctrine-specific lanes such as VS Code.
-  - Doctrine's `README.md` plus the `VERSIONING.md` and `CHANGELOG.md` pair are
-    the docs-surface template to copy for stable cross-repo package and release
-    conventions.
-- Prompt surfaces / agent contract to reuse:
-  - Not central. This reopened plan is about release operators, version files,
-    and packaging truth, not prompt behavior.
-- Native model or agent capabilities to lean on:
-  - Not central here. This is repo-owned release tooling and docs work.
-- Existing grounding / tool / file exposure:
-  - `uv build`, `uv run pytest tests/unit -q`, and the clean temp-environment
-    packaged-install proof already give Rally the release artifact checks it
-    needs.
-  - Doctrine's Make targets, helper modules, and release tests already give
-    Rally a concrete parity blueprint instead of an abstract design target.
-- Duplicate or drifting paths relevant to this change:
-  - Rally currently teaches one release path in `docs/VERSIONING.md` and
-    `.github/workflows/publish.yml`, while Doctrine teaches a different one in
-    `docs/VERSIONING.md` and `Makefile`.
-  - Rally currently derives versions dynamically, while Doctrine requires
-    explicit package-version truth in `pyproject.toml`.
-  - Rally currently uses a free-form changelog, while Doctrine uses a fixed
-    release-section schema.
-  - Rally currently lacks Doctrine's short docs-map pattern in `README.md` for
-    release history, version policy, support, and security surfaces.
-  - Rally currently has no repo-owned release-flow tests, while Doctrine does.
-  - Rally currently has no PR CI split, no CODEOWNERS, and no public security
-    docs, while Doctrine's hardening plan now treats those as first-class trust
-    surfaces.
-  - `tool.uv.sources.doctrine = { path = "../doctrine", editable = true }` is
-    still only a contributor convenience and must stay outside Rally's public
-    release contract.
-- Capability-first opportunities before new tooling:
-  - The packaged-runtime and external-user proof work is already done. The next
-    leverage point is not more packaging machinery; it is copying Doctrine's
-    existing release helper shape.
+    place as the foundation
+  - Doctrine's `Makefile`, `release_flow.py`, `_release_flow/*`,
+    `_package_release.py`, `tests/test_release_flow.py`, and
+    `tests/test_package_release.py` are the direct parity template for the
+    remaining work
+  - Doctrine's `publish.yml` metadata job is the direct template for removing
+    duplicate environment and URL truth from Rally's workflow
+- Duplicate or drifting paths that still matter:
+  - Rally package-index settings live only in `publish.yml`, while Doctrine
+    keeps that truth in repo metadata plus a helper bridge
+  - Rally uses one broad `make verify`, while Doctrine also exposes package-only
+    proof through `make verify-package`
+  - Rally's first package-index setup steps are still implicit, while Doctrine
+    documents them in `docs/VERSIONING.md`
+  - at research time, this plan artifact still carried the older Rally state in
+    Section 7 and needed a later phase-plan refresh before deeper planning
+    could be trusted
 - Behavior-preservation signals already available:
-  - `uv run pytest tests/unit -q` already protects core workspace, flow build,
-    flow load, and runner behavior.
-  - `uv build` plus `tests/integration/test_packaged_install.py` already
-    protect the built-artifact path.
-  - Doctrine's `tests/test_release_flow.py` gives a concrete parity target for
-    Rally's future release-flow tests.
+  - `uv run pytest tests/unit -q` protects core Rally behavior
+  - `uv build` plus `tests/integration/test_packaged_install.py` protect the
+    built-artifact path
+  - `tests/unit/test_release_flow.py` already protects the landed release flow
+  - Doctrine's `tests/test_package_release.py` gives a concrete template for
+    the missing package-metadata and package-proof coverage
 
 ## 3.3 Decision gaps that must be resolved before implementation
 
-- The user resolved the key gap by reopening the plan with an explicit new
-  requirement: exact convention parity with Doctrine.
-- That means:
-  - Rally should stop using `setuptools-scm` as the public release-version
-    source.
-  - Rally should adopt explicit `[project].version` truth in `pyproject.toml`.
-  - Rally should add the same public Make targets Doctrine uses.
-  - Rally should add a repo-owned `release_flow` helper stack that mirrors
-    Doctrine's module split.
-  - Rally should move away from tag-push-only GitHub Actions as the canonical
-    public release flow and mirror Doctrine's `release.published` plus
-    `workflow_dispatch` publish workflow shape.
-  - Rally should mirror Doctrine's release doc and changelog shape.
-  - Rally should mirror Doctrine's README docs-map pattern and public
-    support/security file ownership, while keeping Rally-specific wording honest
-    to Rally's own current product state.
-  - Rally should document real Rally narrow support-surface versions instead of
-    inventing a fake language-version line.
+- There is no unresolved direction question left at research level.
+- The user already resolved the key remaining product decision:
+  this plan must include an explicit later pause where Rally tells the operator
+  exactly how to set up TestPyPI and PyPI for this project, the same way
+  Doctrine does.
+- At research time, the remaining planning work was to narrow the doc onto one
+  concrete implementation frontier, not reopen the broad parity direction:
+  - add Rally-owned package-release metadata and a helper bridge for workflows
+  - add a Doctrine-style `build-dist` and `verify-package` package proof path
+  - move `publish.yml` package-index settings to repo-owned metadata
+  - make the first package-index setup step explicit in `docs/VERSIONING.md`
+  - remove any small remaining drift between Rally's live repo surfaces and
+    Doctrine's release conventions
+- That deep-dive and phase-plan refresh is now complete. The remaining work is
+  implementation, not another architecture choice.
 <!-- arch_skill:block:research_grounding:end -->
+
+> 2026-04-14 research refresh note:
+> At research time, Section 7 still reflected older repo truth.
+> The phase-plan refresh on 2026-04-14 replaced it with the smaller remaining
+> package-release frontier.
 
 <!-- arch_skill:block:current_architecture:start -->
 # 4) Current Architecture (as-is)
 
 ## 4.1 On-disk structure
 
-- Rally now has the right packaged-runtime base:
-  - `src/rally/_bundled/**` ships built-ins inside the wheel
+- Rally already has the broad Doctrine-style release surface in repo:
+  - `pyproject.toml` owns `[project].version`, the Doctrine dependency floor,
+    the console entry point, and `[tool.rally.workspace].version`
+  - `Makefile` owns `setup`, `tests`, `verify`, `release-prepare`,
+    `release-tag`, `release-draft`, and `release-publish`
+  - `src/rally/release_flow.py` and `src/rally/_release_flow/**` own the
+    release prepare, tag, draft, and publish flow
+  - `tests/unit/test_release_flow.py` covers the release helper stack
+  - `.github/workflows/pr.yml`, `dependency-review.yml`, `scorecards.yml`, and
+    `publish.yml` already exist
+  - `README.md`, `CONTRIBUTING.md`, `docs/VERSIONING.md`, `CHANGELOG.md`,
+    `SECURITY.md`, and `SUPPORT.md` already expose the public release and trust
+    surfaces
+- Rally already has the packaged-runtime base that makes installed use real:
+  - `src/rally/_bundled/**` ships built-ins inside the package
   - `tools/sync_bundled_assets.py` owns bundle sync and drift checks
   - `tests/integration/test_packaged_install.py` proves the installed artifact
     path from a clean temp environment
-- Rally's public release surfaces still differ from Doctrine's:
-  - `pyproject.toml` uses `dynamic = ["version"]` and `setuptools-scm`
-  - `docs/VERSIONING.md` is a lighter Rally-local version policy
-  - `CHANGELOG.md` is a generic changelog, not a fixed release-entry file
-  - `README.md` does not yet use Doctrine's tighter docs-map and release-doc
-    routing pattern
-  - `.github/workflows/publish.yml` is the current public release owner
-- Rally's GitHub repo surfaces are still sparse:
-  - no `.github/CODEOWNERS`
-  - no `.github/PULL_REQUEST_TEMPLATE.md`
-  - no `.github/dependabot.yml`
-  - no PR CI workflow
-  - no public `SECURITY.md`
-  - no public `SUPPORT.md`
-- Rally has no `Makefile`, no `src/rally/release_flow.py`, and no
-  `src/rally/_release_flow/**` helper stack.
-- Rally already has real narrow support-surface versions that should become
-  first-class release doc truth:
-  - `[tool.rally.workspace].version = 1`
-  - compiled agent `contract_version = 1`
+- The remaining package-publish owner path is still split:
+  - `[project].version` lives in `pyproject.toml`
+  - publish environment names still live only in
+    `.github/workflows/publish.yml`
+  - there is no `[tool.rally.package]` table in `pyproject.toml`
+  - there is no `src/rally/_package_release.py` helper module
+  - there is no `tests/unit/test_package_release.py`
+- Package proof is also split:
+  - `make verify` runs `uv build` and the wheel-only
+    `tests/integration/test_packaged_install.py`
+  - `publish.yml` rebuilds artifacts and reruns that wheel proof
+  - there is no package-only unit suite for package metadata export
+  - there is no Doctrine-style `build-dist` command
+  - there is no Doctrine-style `verify-package` front door
+  - there is no sdist smoke proof outside the repo root
 
-## 4.2 Control paths (release and publish)
+## 4.2 Control paths (runtime)
 
-1. Rally's package version is derived from git state through `setuptools-scm`.
-2. Local release guidance in `docs/VERSIONING.md` says to update docs, build,
-   run the packaged-install proof, and then push a signed annotated tag.
-3. `.github/workflows/publish.yml` owns the public tag push -> build -> verify
-   -> publish path.
-4. There is no Doctrine-style `release.published` build-and-publish transport
-   workflow shape yet, and there is no matching `workflow_dispatch` dry-run
-   path.
-5. There is no Rally-owned `release-prepare` worksheet command.
-6. There is no Rally-owned `release-tag` preflight command.
-7. There is no Rally-owned `release-draft` GitHub draft-release step.
-8. There is no Rally-owned `release-publish` step that reviews draft notes and
-   then publishes.
-9. The packaged-install proof is good, but it lives beside the release flow
-   rather than inside a Doctrine-style release helper system.
-10. Rally has no stable required PR checks or split workflow names to anchor a
-   ruleset on `main`.
-11. Rally has no CODEOWNERS, PR template, or public security/support docs to
-    signal maintained-project posture.
+1. The operator updates `pyproject.toml`, `docs/VERSIONING.md`,
+   `CHANGELOG.md`, and any touched public docs.
+2. `make release-prepare` runs `python -m rally.release_flow prepare`.
+   - `src/rally/_release_flow/parsing.py` reads package version truth from
+     `[project].version`
+   - the same parser reads support-surface truth from
+     `docs/VERSIONING.md`, `pyproject.toml`, and
+     `src/rally/services/flow_loader.py`
+   - `src/rally/_release_flow/ops.py` renders one release worksheet with fixed
+     verify commands
+3. `make release-tag`, `make release-draft`, and `make release-publish` own
+   tag signing, GitHub draft creation, and GitHub release publication.
+4. `make verify` is Rally's current broad proof front door.
+   - it checks bundled assets
+   - it runs `tests/unit/test_release_flow.py`
+   - it runs the full `tests/unit` suite
+   - it builds dist artifacts
+   - it runs the wheel-only packaged-install regression
+   - it does not separate package-only smoke from Rally's richer host-workspace
+     proof
+5. `.github/workflows/publish.yml` runs on `release.published` and on
+   `workflow_dispatch`.
+   - the build job checks out Rally and the Doctrine floor, syncs dev deps,
+     checks bundled assets, runs unit tests, builds the dist artifacts, runs
+     the packaged-install proof, and stores the artifacts
+   - `publish-testpypi` still hard-codes `environment: testpypi`
+   - `publish-pypi` still hard-codes `environment: pypi`
+   - there is no metadata job that exports package publish settings from
+     repo-owned metadata into workflow outputs
+6. `docs/VERSIONING.md` documents the repo-owned release flow, but its final
+   publish step still ends with "when the repo settings are ready" instead of a
+   real first-publish setup pause with exact TestPyPI and PyPI steps.
 
 ## 4.3 Object model + key abstractions
 
-- Rally has one public release line today, but it is derived dynamically rather
-  than declared explicitly.
-- Rally has one explicit Doctrine floor: `doctrine>=1.0.1,<2`.
-- Rally already has real narrow support-surface versions:
-  - workspace manifest version
-  - compiled agent contract version
-- Rally has no repo-owned release models for:
-  - parsed release tags
-  - release plans and worksheets
-  - fixed changelog release entries
-  - support-surface version state
-  - GitHub draft/publish command building
-- Rally has no repo-owned model yet for:
-  - stable required PR checks
-  - label taxonomy
-  - CODEOWNERS routing
-  - security and support ownership
-  - README docs-map ownership for release and trust surfaces
-- Rally's runtime package and external-user proof are good enough to serve as a
-  stable base while the release system is replaced.
+- Rally already has repo-owned release models:
+  - `ReleaseTag`
+  - `ReleasePlan`
+  - `ReleaseEntry`
+- Rally already models its real narrow support-surface versions:
+  - workspace manifest version from `[tool.rally.workspace].version`
+  - compiled contract version from
+    `SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS`
+- Rally does not yet have a first-class package-release abstraction for:
+  - publish import name
+  - TestPyPI environment name
+  - PyPI environment name
+  - derived package project URLs
+  - wheel and sdist artifact resolution
+  - package smoke commands outside the repo root
+- That missing abstraction leaves package publish truth split across:
+  - `pyproject.toml` for distribution name and version
+  - `.github/workflows/publish.yml` for environment names
+  - `tests/integration/test_packaged_install.py` for wheel smoke logic
+  - `docs/VERSIONING.md` for a vague first-publish setup note
 
 ## 4.4 Observability + failure behavior today
 
-- Bundle drift and artifact-install failures now fail loud.
-- Release-flow drift still fails late:
-  - version/doc shape mismatches are found by human review
-  - signing and tag verification are not gated by Rally-owned commands
-  - GitHub draft-release behavior is not exercised locally
-  - changelog format drift is not machine-checked
-  - Rally-vs-Doctrine convention drift is visible only by comparison
-- GitHub-hardening drift also fails late:
-  - there is no ruleset-backed required-check contract on `main`
-  - no machine-owned CODEOWNERS or Dependabot config exists
-  - action pinning and permissions are not reviewed under a stable policy
-  - the README/docs/support/security front door cannot yet drift-check against
-    the same stable cross-repo pattern Doctrine is converging on
+- Release tag, changelog, and package-version drift already fail loud through
+  the current `release_flow` helper stack.
+- Bundled-asset drift and the wheel-host packaged install path already fail
+  loud through `make verify` and `publish.yml`.
+- Package publish metadata drift still fails late:
+  - if workflow environment names ever change, the truth lives in workflow YAML
+    instead of repo metadata
+  - the first missing Trusted Publisher or GitHub environment setup will only
+    show up when a real publish job runs
+  - there is no repo-owned metadata command that can print or validate those
+    package publish settings before GitHub Actions starts
+- Sdist regressions still fail late because Rally does not yet smoke test the
+  sdist outside the repo root.
+- Package smoke and Rally-runtime smoke are not separated yet, so maintainers
+  cannot ask one small question such as "does the sdist install cleanly outside
+  the repo root?" without running the broader Rally regression.
+- The docs still hide part of the real release path behind "repo settings are
+  ready," so operator setup failure is still partially tribal knowledge.
 
 ## 4.5 UI surfaces (ASCII mockups, if UI work)
 
@@ -789,7 +752,7 @@ Behavior-preservation evidence:
   - `src/rally/_bundled/**`
   - `tools/sync_bundled_assets.py`
   - `tests/integration/test_packaged_install.py`
-- Add one Doctrine-style Rally release helper stack:
+- Keep the current Doctrine-style Rally release helper stack:
   - `Makefile`
   - `src/rally/release_flow.py`
   - `src/rally/_release_flow/common.py`
@@ -798,112 +761,117 @@ Behavior-preservation evidence:
   - `src/rally/_release_flow/tags.py`
   - `src/rally/_release_flow/ops.py`
   - `tests/unit/test_release_flow.py`
-- Add one Doctrine-aligned GitHub hardening surface set:
-  - `.github/CODEOWNERS`
-  - `.github/PULL_REQUEST_TEMPLATE.md`
-  - `.github/dependabot.yml`
-  - `.github/workflows/pr.yml`
-  - `.github/workflows/dependency-review.yml`
-  - `.github/workflows/scorecards.yml`
-  - `SECURITY.md`
-  - `SUPPORT.md`
-- Add one Doctrine-shaped Rally publish transport workflow:
-  - `.github/workflows/publish.yml`
-- Rewrite Rally's public release files to Doctrine shape:
-  - `pyproject.toml` with explicit `[project].version`
+- Add one package-release owner path that mirrors Doctrine's remaining pattern:
+  - `pyproject.toml` with new `[tool.rally.package]`
+  - `src/rally/_package_release.py`
+  - `tests/unit/test_package_release.py`
+- Extend the current operator surface instead of inventing a second one:
+  - `Makefile` adds `build-dist`, `verify-package-wheel`,
+    `verify-package-sdist`, and `verify-package`
+  - `.github/workflows/publish.yml` adds a metadata job and reads package
+    publish settings from repo metadata
+- Rewrite the release docs that still carry the last package-publish drift:
   - `docs/VERSIONING.md`
   - `CHANGELOG.md`
   - `README.md`
-  - `CONTRIBUTING.md` if it contains release instructions
-- Rewrite `README.md`, `SECURITY.md`, and `SUPPORT.md` so the public docs map,
-  release links, and help paths follow the same stable cross-repo pattern.
+  - `CONTRIBUTING.md`
+- Keep the already-landed GitHub trust surfaces in place. This deep-dive pass
+  does not reopen CODEOWNERS, PR workflow, dependency review, scorecards,
+  security, or support ownership.
 
 ## 5.2 Control paths (future)
 
-1. Operator updates code and docs, including `pyproject.toml`,
-   `docs/VERSIONING.md`, and `CHANGELOG.md`.
-2. Maintainer keeps GitHub repo settings aligned with the plan:
-   - ruleset-protected `main`
-   - require PR before merge
-   - require conversation resolution
-   - require strict status checks
-   - require linear history
-   - block force pushes and deletions
-   - zero required approvals
-   - squash-only merges
-   - allow auto-merge
-   - auto-delete merged branches
-3. Pull requests land through split stable checks such as:
-   - `.github/workflows/pr.yml` is the one PR workflow file, matching
-     Doctrine's workflow split and concurrency shape.
-   - Rally's PR jobs are Rally-specific, but they stay stable and
-     human-readable, for example:
-     - `bundled-assets`
-     - `unit`
-     - `packaged-install`
-   - `security / dependency-review`
-4. Operator runs `make release-prepare RELEASE=vX.Y.Z CLASS=... CHANNEL=...`.
-   - Rally validates release tag shape, release class, package-version mapping,
-     workspace version state, compiled contract version state, Doctrine floor
-     state, and changelog entry shape.
-   - Rally prints a Doctrine-style worksheet with exact next commands.
-5. Operator runs the required proof commands.
-6. Operator runs `make release-tag RELEASE=vX.Y.Z CHANNEL=...`.
-   - Rally requires a clean worktree.
-   - Rally requires a git signing key.
-   - Rally creates and pushes one signed annotated tag.
-7. Operator runs `make release-draft RELEASE=vX.Y.Z CHANNEL=... PREVIOUS_TAG=auto`.
-   - Rally requires the pushed tag to be annotated and to pass
-     `git verify-tag`.
-   - Rally creates a GitHub draft release through `gh release create`.
-8. Operator reviews the GitHub draft release.
-9. Operator runs `make release-publish RELEASE=vX.Y.Z`.
-   - Rally publishes the reviewed GitHub draft release with
-     `gh release edit --draft=false`.
-10. GitHub `publish.yml` runs on `release.published`.
-   - The workflow checks out the release tag.
-   - The workflow builds wheel and sdist.
-   - The workflow runs the external-user smoke proof from built artifacts.
-   - The workflow uploads those assets to the published GitHub release.
-   - The workflow publishes the same artifacts to PyPI with Trusted Publishing.
-   - The same workflow also supports `workflow_dispatch` with the Doctrine-style
-     dry-run shape:
-     - `ref`
-     - `publish_target = none|testpypi|pypi`
-11. The packaged-runtime and external-user proof path stays unchanged and
-   remains one required verify step inside this operator flow.
-12. The one intentional Rally-vs-Doctrine difference is narrow and explicit:
-   Rally has no `LANGUAGE_VERSION=` input because Rally does not have a
-   Doctrine-style language-version line. The helper reads Rally's real support
-   surfaces instead.
+1. `pyproject.toml` becomes the single repo-owned source for Rally package
+   metadata.
+   - `[project].name` stays the distribution name
+   - `[project].version` stays the package version truth
+   - `[tool.rally.package]` owns `import_name`, `pypi_environment`, and
+     `testpypi_environment`
+2. `src/rally/_package_release.py` becomes the package publish bridge.
+   - `python -m rally._package_release metadata --format github-output` writes
+     the package metadata and derived project URLs for GitHub Actions
+   - `python -m rally._package_release smoke --artifact-type wheel|sdist`
+     installs one built artifact outside the repo root and proves the installed
+     package path
+3. `make release-prepare` keeps the current Rally release flow, but its
+   worksheet now points at the package-release proof front door and the
+   first-publish setup step.
+   - release version, changelog, workspace version, compiled contract version,
+     and Doctrine floor still stay under `release_flow`
+   - package version lookup inside `release_flow` now delegates to the
+     package-release helper instead of re-parsing package truth on its own
+4. `make build-dist` becomes the explicit dist-build command.
+5. `make verify-package` becomes the explicit package proof command.
+   - it builds the wheel and sdist
+   - it smoke tests both artifact types outside the repo root
+   - it is the Doctrine-style package smoke front door, not the whole Rally
+     runtime regression
+6. `make verify` stays Rally's broad umbrella proof.
+   - it keeps bundled-assets drift checks
+   - it adds `tests/unit/test_package_release.py`
+   - it calls `make verify-package`
+   - it keeps the full unit suite
+   - it keeps the richer packaged-install regression that proves the host-repo
+     path from the built artifact
+7. `.github/workflows/publish.yml` keeps the current release-owned topology,
+   but not the current duplicated settings.
+   - a new metadata job checks out the requested ref and runs
+     `python -m rally._package_release metadata --format github-output`
+   - the build job uses the same ref, runs Rally's umbrella proof so bundled
+     assets, unit tests, Doctrine-style package smoke, and the richer
+     packaged-install regression all stay covered, then uploads the built
+     artifacts
+   - the publish jobs read their environment names and project URLs from the
+     metadata job outputs
+   - the TestPyPI upload endpoint may stay literal in YAML, matching Doctrine's
+     current workflow
+8. `docs/VERSIONING.md` becomes explicit about the first real package-index
+   publish.
+   - before the first TestPyPI or PyPI release, the operator stops
+   - the doc gives the exact steps to create GitHub Trusted Publishers on
+     TestPyPI and PyPI for `.github/workflows/publish.yml`
+   - the doc gives the exact steps to create the matching GitHub environments
+   - this is the point where implementation must pause and hand the user the
+     Rally-specific setup steps
+9. The public release command family stays the same as Doctrine's:
+   `release-prepare`, `release-tag`, `release-draft`, `release-publish`
+10. The one intentional Rally-vs-Doctrine difference stays narrow and explicit:
+    Rally has no `LANGUAGE_VERSION=` input because Rally has no Doctrine-style
+    language version line.
 
 ## 5.3 Object model + abstractions (future)
 
-- `ReleaseTag` mirrors Doctrine's public tag parsing:
-  - stable `vX.Y.Z`
-  - beta `vX.Y.Z-beta.N`
-  - rc `vX.Y.Z-rc.N`
-- `ReleasePlan` mirrors Doctrine's worksheet model, but Rally's real
-  support-surface version lines replace Doctrine's language-version state:
-  - current package version
-  - requested package version
-  - workspace version state
-  - compiled contract version state
-  - Doctrine floor state
-  - Doctrine package constraint state
-  - published-release workflow name
-  - required PR check names
-  - README docs-map state
-  - changelog status
-- `ReleaseEntry` mirrors Doctrine's parsed changelog/release-note header shape.
-- `common.py`, `models.py`, `parsing.py`, `tags.py`, and `ops.py` mirror
-  Doctrine's helper split so a Doctrine user can find the same jobs in Rally.
-- The packaged-runtime services stay in place and are not re-abstracted during
-  this release-system cutover.
+- `ReleaseTag`, `ReleasePlan`, and `ReleaseEntry` stay in
+  `src/rally/_release_flow/**` and keep owning tag parsing, worksheet logic,
+  changelog validation, and GitHub release commands.
+- `PackageReleaseMetadata` becomes the new package publish abstraction in
+  `src/rally/_package_release.py`.
+  - distribution name comes from `[project].name`
+  - version comes from `[project].version`
+  - import name comes from `[tool.rally.package].import_name`
+  - package-index environment names come from `[tool.rally.package]`
+  - project URLs are derived from the distribution name
+- `src/rally/_package_release.py` also owns:
+  - dist artifact resolution for wheel and sdist
+  - GitHub output writing for workflow metadata
+  - package smoke commands outside the repo root
+- `Makefile` owns the split between package-only proof and Rally-runtime proof.
+  - `verify-package` asks "do the wheel and sdist install and run outside the
+    repo root?"
+  - `verify` asks the broader Rally question that also covers bundled assets,
+    unit coverage, and the host-workspace runtime path
+- `src/rally/_release_flow/parsing.py` should treat the package helper as the
+  package metadata authority instead of reading `[project].version` directly on
+  its own.
+- `tests/integration/test_packaged_install.py` remains the richer Rally
+  regression anchor for the host-workspace path even after the package helper
+  lands. Rally's package smoke must not water that proof down to a generic
+  import-only check.
 
 ## 5.4 Invariants and boundaries
 
 - Public release version truth lives in explicit `[project].version`.
+- Package publish metadata truth lives in `[tool.rally.package]`.
 - Public release tags are signed annotated tags only.
 - GitHub release publication only happens from a verified pushed public tag.
 - Rally's public release doc and changelog keep the same section shape and
@@ -911,30 +879,41 @@ Behavior-preservation evidence:
 - Rally does not invent a fake language-version line.
 - Rally documents the real support-surface versions it already has:
   workspace manifest version and compiled contract version.
-- Rally's only allowed release-flow extension beyond Doctrine is the
-  release-published build-and-PyPI workflow that exists because Rally ships a
-  PyPI package.
+- `publish.yml` may not hard-code package publish environment names once the
+  helper exists.
+- `make verify-package` must smoke both wheel and sdist artifacts outside the
+  repo root.
+- Rally's richer host-workspace proof from the built artifact stays a release
+  gate even after `verify-package` lands.
+- `publish.yml` must keep both proof layers: Doctrine-style package smoke and
+  Rally's richer host-workspace regression.
+- The first real package-index publish must stop for explicit TestPyPI and PyPI
+  setup. No "repo settings are ready" hand-wave remains in the final docs.
 - Rally copies Doctrine's workflow topology and docs routing pattern, but not
-  doctrine-specific lanes or stale pre-1.0 wording.
-- The built-artifact external-user proof stays a release gate.
+  Doctrine-only language-version or package-name surfaces.
 - The explicit Doctrine floor stays a release gate.
 - The canonical public release path is repo-owned and operator-driven, not tag
   push driven through GitHub Actions.
-- Required PR checks use stable human-readable names so a GitHub ruleset can
-  anchor them without drift.
+- No new anti-drift harness or second config file should exist just to keep the
+  package publish settings in sync.
 
 ## 5.5 UI surfaces (ASCII mockups, if UI work)
 
 - Operator-facing release flow:
 
 ```text
-make release-prepare ...  -> worksheet + required updates + exact proof commands
-run proof                 -> bundle check + unit suite + built-artifact proof
+make release-prepare ...  -> worksheet + package-proof commands + first-publish stop point
+make build-dist           -> wheel + sdist
+make verify-package       -> wheel smoke + sdist smoke outside repo root
+make verify               -> bundled-assets + unit + verify-package + richer wheel-host regression
 make release-tag ...      -> signed annotated tag + push
 make release-draft ...    -> verified GitHub draft release
 review draft release
 make release-publish ...  -> publish GitHub release
-publish.yml              -> build assets + smoke test + attach + publish
+publish.yml metadata      -> load package publish settings from repo metadata
+publish.yml build         -> make verify + attach assets
+first real index publish  -> pause and set up TestPyPI / PyPI publishers
+publish.yml publish       -> approve environment and publish
 ```
 <!-- arch_skill:block:target_architecture:end -->
 
@@ -943,99 +922,68 @@ publish.yml              -> build assets + smoke test + attach + publish
 
 ## 6.1 Change map (table)
 
-| Area | File / Symbol | Current owner | Current problem | Change needed | Why | Future owner / contract | Proof |
-| ---- | ------------- | ------------- | --------------- | ------------- | --- | ----------------------- | ----- |
-| Public version truth | `pyproject.toml` | dynamic version via `setuptools-scm` | Rally package version does not follow Doctrine's explicit package-version rule | Replace `dynamic = ["version"]` with explicit `version = "X.Y.Z"` and remove `setuptools-scm` | Exact operator parity needs the same visible version truth Doctrine uses | `pyproject.toml` owns Rally public package version and Doctrine floor | release-flow unit tests + `uv build` |
-| Release command surface | `Makefile` | missing | Rally has no Doctrine-style public release commands | Add `release-prepare`, `release-tag`, `release-draft`, and `release-publish`, plus adjacent `setup`, `test`, `tests`, `verify`, and `check` targets where they help parity | Doctrine users should see the same command family | `Makefile` is Rally's public repo release front door | local make-target proof |
-| Release CLI | `src/rally/release_flow.py` | missing | Rally has no repo-owned release helper CLI | Add the same `prepare`, `tag`, `draft`, and `publish` subcommands Doctrine uses | Rally needs one repo-owned command family behind the Make targets | `python -m rally.release_flow ...` | unit tests |
-| Release common helpers | `src/rally/_release_flow/common.py` | missing | shared subprocess/error handling would otherwise sprawl | Add common checked-command helpers and release-specific failure formatting | Keep the release helper small and consistent | shared helper module | unit tests |
-| Release models | `src/rally/_release_flow/models.py` | missing | no typed owner for parsed tags, release plans, or support-surface state | Add Rally release models mirroring Doctrine's shape | Keep release parsing and worksheet rendering coherent | `ReleaseTag`, `ReleasePlan`, `ReleaseEntry`, support-surface state models | unit tests |
-| Release parsing | `src/rally/_release_flow/parsing.py` | missing | Rally has no parser for fixed changelog entries, current support-surface versions, or package-version truth | Add parsers for `CHANGELOG.md`, `docs/VERSIONING.md`, `pyproject.toml`, workspace version, and compiled contract version | Doctrine-style release gates need machine-readable file truth | parsing helpers own file-state truth | unit tests |
-| Tag rules | `src/rally/_release_flow/tags.py` | missing | Rally has no repo-owned tag parsing, signing checks, or pushed-tag checks | Mirror Doctrine's tag parsing and `git verify-tag` preflight logic | Signed public release rules must fail loud before GitHub publication | tag helpers own release-tag and signing checks | unit tests |
-| Release operations | `src/rally/_release_flow/ops.py` | missing | Rally has no worksheet, tag, draft, or publish operations | Mirror Doctrine's release ops and extend them with Rally artifact attach + PyPI publish steps | One operator flow should own the whole release | ops own prepare/tag/draft/publish behavior | unit tests + manual rehearsal |
-| Release tests | `tests/unit/test_release_flow.py` | missing | Rally has no release-flow preflight coverage | Add Doctrine-style release tests adapted to Rally's real support surfaces | Release drift should fail in unit tests, not only at ship time | release-flow test suite | `uv run pytest tests/unit/test_release_flow.py -q` |
-| Version policy doc | `docs/VERSIONING.md` | Rally-local simplified doc | section order and payload do not match Doctrine | Rewrite to Doctrine-style structure, with Rally support-surface lines replacing language-version claims | Users should not learn a second release doc shape | canonical version-policy doc | doc parser tests + review |
-| Release history | `CHANGELOG.md` | generic changelog | no fixed public release section schema | Rewrite to Doctrine-style release entries and release-note header lines | Release notes and tags need machine-checked structure | canonical release history | parser tests |
-| Public docs | `README.md`, `CONTRIBUTING.md` | mixed release instructions | docs still teach Rally-specific release steps and do not mirror Doctrine's docs-map pattern | Rewrite release guidance around `make release-*`, the Doctrine-style docs map, and the same short versioning/changelog/support/security routing pattern | One front-door operator story | README + contributing docs | manual doc pass |
-| PR CI workflow | `.github/workflows/pr.yml` | missing | Rally has no stable PR gate or required-check names | Add a PR workflow with stable job names for bundled-asset drift, unit tests, and packaged-install proof | Rulesets need stable required checks and contributors need visible lanes | canonical PR gate | workflow review + CI run |
-| Dependency review workflow | `.github/workflows/dependency-review.yml` | missing | Rally has no repo-owned supply-chain gate on dependency changes | Add `security / dependency-review` using GitHub's dependency review action | Catch vulnerable dependency changes before merge | security workflow | workflow review |
-| Scorecards workflow | `.github/workflows/scorecards.yml` | missing | Rally has no periodic supply-chain hardening signal | Add weekly and manual scorecards workflow | Catch permission and action-pinning drift | non-blocking security workflow | workflow review |
-| Publish workflow | `.github/workflows/publish.yml` | tag-push publish owner | current workflow owns the whole release path and starts from tag push | Replace it with Doctrine's current publish topology: `release.published` plus `workflow_dispatch`, build from the chosen ref, run temp-project external-user smoke, upload release assets, and publish to TestPyPI or PyPI | Canonical public release path should match Doctrine's operator flow while still shipping Rally artifacts | release transport only | workflow review + rehearsal |
-| CODEOWNERS | `.github/CODEOWNERS` | missing | workflow, docs, and release changes have no routing owner | Add maintainer-first CODEOWNERS entries for repo root, docs, workflows, runtime, and authored content roots | GitHub routing and future ruleset growth need explicit owners | code-owner routing file | review |
-| PR template | `.github/PULL_REQUEST_TEMPLATE.md` | missing | Rally PRs have no stable release-facing checklist | Add structured sections for summary, user impact, checks run, docs touched, release-note label, and follow-ups | Keeps PR review and release-note hygiene consistent | PR authoring surface | review |
-| Dependabot | `.github/dependabot.yml` | missing | Rally has no repo-owned update automation for actions or Python deps | Add updates for GitHub Actions and Python package surfaces | Keeps pinned actions and package inputs moving | dependency update config | review |
-| Security docs | `SECURITY.md`, `SUPPORT.md` | missing | Rally has no public security or support contract | Add the same public file pair Doctrine now ships, but write Rally-specific wording that matches Rally's real maturity and support truth | Public trust surface should match a maintained project without copying stale doctrine copy | public trust docs | review |
-| Packaged-install proof | `tests/integration/test_packaged_install.py` | existing artifact proof | already good, but not yet wired into a Doctrine-style worksheet | Keep it and make it one required release verify command | External-user proof must stay a gate under the new flow | built-artifact proof stays canonical | integration test |
-| Support-surface version truth | `pyproject.toml`, `src/rally/services/flow_loader.py`, `src/rally/domain/flow.py` | scattered current truth | Rally's workspace and compiled-contract versions are real but under-documented | Pull them into version docs and release-prepare parsing | Exact parity needs real narrow support-surface lines | version docs + parsing helpers | unit tests |
-| Docs-map parity | `README.md`, `docs/VERSIONING.md`, `CHANGELOG.md`, `SECURITY.md`, `SUPPORT.md` | scattered public docs | Rally lacks Doctrine's stable docs entry pattern for release and trust surfaces | Make the public docs row and support/security references line up across the repo | Stable cross-repo conventions should be visible from the first page | public docs entry surface | manual doc pass |
-| Repo settings | GitHub repo settings and rulesets | manual repo state | Rally currently has no documented hardened repo settings target | Add maintainer-first ruleset, squash-only merge policy, auto-merge, branch deletion cleanup, private vulnerability reporting, automated security fixes, and CodeQL default setup baseline | Public repo trust should not live in tribal knowledge | ops runbook + repo settings | manual settings audit |
+| Area | File | Symbol / Call site | Current behavior | Required change | Why | New API / contract | Tests impacted |
+| ---- | ---- | ------------------ | ---------------- | --------------- | --- | ------------------ | -------------- |
+| Package publish metadata | `pyproject.toml` | `[tool.rally.package]` (new) | `[project].version` exists, but package publish settings live only in workflow YAML | Add `[tool.rally.package]` with `import_name`, `pypi_environment`, and `testpypi_environment` | Make package publish settings repo-owned and helper-readable | `pyproject.toml` becomes the only package publish metadata source outside derived URLs | `tests/unit/test_package_release.py`, `tests/unit/test_release_flow.py` |
+| Package metadata helper | `src/rally/_package_release.py` | new module and CLI | No Rally helper owns package metadata export, artifact resolution, or package smoke | Add `PackageReleaseMetadata`, metadata export, GitHub output writing, and wheel or sdist smoke commands | Mirror Doctrine's remaining package-release pattern without a second config surface | `python -m rally._package_release metadata|smoke` owns package publish bridge behavior | `tests/unit/test_package_release.py` |
+| Release-flow package parsing | `src/rally/_release_flow/parsing.py` | `load_package_metadata_version` | Reads `[project].version` directly and knows nothing about package publish metadata | Delegate package version lookup to the package helper and keep release errors wrapped in Rally's release error surface | Remove duplicate parsing and keep one package metadata owner path | `release_flow` reads package metadata through `rally._package_release` | `tests/unit/test_release_flow.py` |
+| Release worksheet | `src/rally/_release_flow/ops.py` | `render_release_worksheet` | Prints a proof list built around `uv build` and the wheel-only packaged-install test | Update the worksheet to point at `build-dist`, `verify-package`, package-release unit tests, the richer Rally regression, and the first-publish setup stop point | The worksheet should teach the same operator flow the docs teach | Worksheet becomes the fixed release-proof and first-publish reminder surface | `tests/unit/test_release_flow.py` |
+| Operator command surface | `Makefile` | `verify`, `build-dist`, `verify-package-wheel`, `verify-package-sdist`, `verify-package` | `verify` exists, but there is no package-only front door and no clean split between package smoke and Rally-runtime smoke | Add the Doctrine-style package proof commands and redefine `verify` as the broader umbrella that includes them | Give Rally the same package command family Doctrine users expect without dropping the richer runtime proof | `make verify-package` becomes the explicit package proof path and `make verify` stays the broader Rally release proof | local make proof, `tests/unit/test_release_flow.py` |
+| Wheel-host regression | `tests/integration/test_packaged_install.py` | `PackagedInstallTests` | Proves the built wheel and host-repo path, but only through a standalone integration test | Keep this proof as Rally's richer regression anchor and align the package command surface around it or shared helper code | Rally's real runtime path is broader than a generic import smoke | The wheel-host path stays a required built-artifact regression | `tests/integration/test_packaged_install.py` |
+| Package-release unit coverage | `tests/unit/test_package_release.py` | new test module | Rally has no unit contract for package metadata and GitHub output behavior | Add tests for metadata loading, required fields, artifact resolution, and GitHub outputs | Catch package metadata drift before GitHub Actions does | `tests/unit/test_package_release.py` becomes the package metadata contract suite | `tests/unit/test_package_release.py` |
+| Publish transport workflow | `.github/workflows/publish.yml` | `metadata`, `build`, `publish-testpypi`, `publish-pypi` | Workflow topology is broadly right, but environment names are hard-coded and there is no metadata job | Add a metadata job, feed publish environment names and URLs from helper outputs, and run Rally's umbrella proof in the build job so package smoke and the richer runtime regression both stay covered | Remove duplicated publish settings and mirror Doctrine's metadata-driven workflow shape without weakening Rally's release proof | Workflow reads repo-owned metadata instead of hard-coded env-name truth and still proves the full built-artifact path | workflow dry run on `main` |
+| Versioning doc | `docs/VERSIONING.md` | `Release Process`, package proof lines, first-publish step | Explains the release flow, but still ends with "when repo settings are ready" and omits package-release proof commands | Add the package metadata surface, add `build-dist` and `verify-package`, and add the exact first-publish setup steps for TestPyPI, PyPI, and GitHub environments | This is where the operator needs the explicit pause and instructions | `docs/VERSIONING.md` becomes the human source of truth for first package-index publish setup | doc review, `tests/unit/test_release_flow.py` if worksheet text changes |
+| Contributor docs | `README.md`, `CONTRIBUTING.md` | release and package proof instructions | Surface `make release-*`, but not the package proof front door or the first-publish setup pointer | Add `build-dist` and `verify-package` where they belong and route first-publish setup to `docs/VERSIONING.md` | Keep operator docs aligned without duplicating the full setup checklist | README and contributing docs become pointers, not a second package publish checklist | manual doc review |
 
 ## 6.2 Migration notes
 
 - Canonical owner path / shared code path:
-  - packaged-runtime foundation stays under `src/rally/_bundled/**`,
-    `tools/sync_bundled_assets.py`, and `tests/integration/test_packaged_install.py`
-  - public release ownership moves to `Makefile`,
+  - package release metadata should live in `pyproject.toml` plus
+    `src/rally/_package_release.py`
+  - public release orchestration should stay in `Makefile`,
     `src/rally/release_flow.py`, and `src/rally/_release_flow/**`
-  - public release doc ownership stays in `docs/VERSIONING.md` and
-    `CHANGELOG.md`
+  - `publish.yml` should stay the publish transport, not the source of package
+    publish metadata truth
+  - `docs/VERSIONING.md` should stay the one human-owned first-publish setup
+    checklist
 - Deprecated flows:
-  - `dynamic = ["version"]` in Rally `pyproject.toml`
-  - `[tool.setuptools_scm]`
-  - `.github/workflows/publish.yml` as Rally's canonical public release path
-- New repo-owned surfaces to add:
-  - `.github/CODEOWNERS`
-  - `.github/PULL_REQUEST_TEMPLATE.md`
-  - `.github/dependabot.yml`
-  - `.github/workflows/pr.yml`
-  - `.github/workflows/dependency-review.yml`
-  - `.github/workflows/scorecards.yml`
-  - `SECURITY.md`
-  - `SUPPORT.md`
+  - hard-coded package publish environment names in `publish.yml`
+  - release docs that end the publish path with "when repo settings are ready"
+  - package proof instructions that bypass a repo-owned `verify-package`
+    command
 - Delete list:
-  - Rally-only release wording that points users at tag-push GitHub Actions as
-    the main public release path
-  - generic changelog release sections that do not match Doctrine's fixed
-    release-entry shape
-  - any remaining doc wording that treats Rally's release version like a
-    Doctrine language version
-  - mutable action-tag references in required workflows once SHA pinning lands
+  - duplicated package publish environment-name truth in workflow YAML
+  - vague first-publish wording that leaves TestPyPI and PyPI setup outside the
+    repo
+  - any package-proof instructions that tell operators to hand-compose the
+    build and smoke sequence instead of using `build-dist` or `verify-package`
+- Capability-replacing harnesses to delete or justify:
+  - none; this plan is not agent-behavior work
 - Live docs/comments/instructions to update or delete:
-  - `README.md`
-  - `CONTRIBUTING.md`
   - `docs/VERSIONING.md`
   - `CHANGELOG.md`
-  - release helper docstrings and help text
+  - `README.md`
+  - `CONTRIBUTING.md`
+  - `Makefile` help text
+  - `src/rally/release_flow.py` help text if package proof commands are named
   - `.github/workflows/publish.yml`
-  - `.github/workflows/pr.yml`
-  - `.github/workflows/dependency-review.yml`
-  - `.github/workflows/scorecards.yml`
-  - `.github/CODEOWNERS`
-  - `.github/PULL_REQUEST_TEMPLATE.md`
-  - `.github/dependabot.yml`
-  - `SECURITY.md`
-  - `SUPPORT.md`
 - Behavior-preservation signals for refactors:
   - `uv run pytest tests/unit -q`
-  - `uv build`
-  - `uv run pytest tests/integration/test_packaged_install.py -q`
-  - new `tests/unit/test_release_flow.py`
+  - `uv run pytest tests/unit/test_release_flow.py -q`
+  - `uv run pytest tests/unit/test_package_release.py -q`
+  - `make verify-package`
+  - `make verify`
+  - one `workflow_dispatch` publish dry run with `publish_target=none`
 
-## 6.3 Pattern Consolidation Sweep (anti-blinders; scoped by plan)
+## Pattern Consolidation Sweep (anti-blinders; scoped by plan)
 
 | Area | File / Symbol | Pattern to adopt | Why (drift prevented) | Proposed scope (include/defer/exclude/blocker question) |
 | ---- | ------------- | ---------------- | ---------------------- | ------------------------------------- |
-| Version truth | `pyproject.toml`, `docs/VERSIONING.md`, `CHANGELOG.md` | explicit release-version truth with fixed file roles | Prevents package-version, tag, and doc drift | include |
-| Release operator flow | `Makefile`, `src/rally/release_flow.py`, `src/rally/_release_flow/**` | Doctrine-style `prepare/tag/draft/publish` flow | Prevents Rally from teaching a second public release grammar | include |
-| GitHub publication | release helper ops, `.github/workflows/publish.yml`, `gh` commands | Doctrine-style draft-review-publish plus release-published transport workflow | Prevents silent drift between tags, releases, release assets, and published artifacts | include |
-| GitHub governance | ruleset, merge policy, CODEOWNERS, PR template | maintainer-first protected main | Prevents direct drift around review and required checks | include |
-| PR CI | `.github/workflows/pr.yml`, required check names | split stable lanes with strict permissions and pinned actions | Prevents ruleset drift and opaque CI failures | include |
-| Security hardening | dependabot, dependency review, scorecards, CodeQL, vulnerability reporting | repo trust surfaces as first-class release support | Prevents supply-chain and maintenance drift | include |
-| Public docs map | README plus versioning/changelog/support/security docs | short stable docs routing from the repo front door | Prevents release and trust docs from drifting into buried side paths | include |
-| Support-surface versions | workspace version, compiled contract version | explicit narrow version lines in docs and parser checks | Prevents hidden support-surface breaks from shipping as trivia | include |
-| Packaged-runtime proof | bundle sync + built-artifact install proof | keep current artifact gate intact during release-flow rewrite | Prevents the release-system rewrite from regressing the user-facing install path | include |
-| Contributor-only convenience | `pyproject.toml` `[tool.uv.sources]` | keep local Doctrine path as dev-only | Prevents local sibling checkout shortcuts from becoming public release law | exclude |
-| Doctrine-only hardening items | VS Code lane, package rename, merge queue | do not cargo-cult surfaces Rally does not have | Prevents fake parity through irrelevant work | exclude |
+| Package publish metadata | `pyproject.toml`, `src/rally/_package_release.py`, `src/rally/_release_flow/parsing.py`, `.github/workflows/publish.yml` | one helper-backed package metadata source | Prevents workflow, release-flow, and docs drift around package publish settings | include |
+| Package proof commands | `Makefile`, `docs/VERSIONING.md`, `README.md`, `CONTRIBUTING.md`, `.github/workflows/publish.yml` | `build-dist` plus `verify-package` as the package proof front door, with `verify` as the broader Rally proof | Prevents hand-written proof drift and keeps Rally aligned with Doctrine's command surface without losing Rally-specific runtime coverage | include |
+| Rally-specific host-workspace proof | `tests/integration/test_packaged_install.py`, `make verify`, release worksheet, `.github/workflows/publish.yml` | keep the richer built-artifact host-repo proof even after package helper work lands | Prevents Doctrine-style package smoke from under-covering Rally's real runtime path | include |
+| New required PR lane for package proof | `.github/workflows/pr.yml` | separate `verify-package` required check | Current `unit` and `packaged-install` surfaces already cover the code path, and adding a new required lane would widen the operator surface without a repo-grounded need | exclude |
+| First-publish setup outside `docs/VERSIONING.md` | ad hoc notes, scripts, or hidden checklists | out-of-band setup instructions | Would create a second truth surface for a human step that should live in one canonical doc | exclude |
 <!-- arch_skill:block:call_site_audit:end -->
 
 <!-- arch_skill:block:phase_plan:start -->
@@ -2032,3 +1980,289 @@ Follow-ups
 - Add explicit host-emit proof to `tests/integration/test_packaged_install.py`.
 - Remove external-host examples or docs that point support files at
   `../rally/stdlib/...`.
+
+## 2026-04-14 - Make package-index setup an explicit operator pause
+
+Context
+
+Live Doctrine review showed one remaining convention Rally still does not teach
+well: before the first real package-index publish, the maintainer must stop,
+set up GitHub Trusted Publishers on TestPyPI and PyPI, and wire those up to the
+same `publish.yml` workflow and matching GitHub environments. Doctrine already
+makes that setup part of the documented release flow. Rally does not.
+
+Options
+
+- Keep the package-index setup as tribal knowledge outside the repo.
+- Add a Rally-only script or hidden harness to paper over the setup drift.
+- Make the setup an explicit doc and operator step, then keep the workflow
+  settings in repo-owned metadata so the docs, helper code, and workflow read
+  from the same truth.
+
+Decision
+
+Make the first package-index publish an explicit operator pause. Rally will add
+repo-owned package metadata for package-index settings, and `docs/VERSIONING.md`
+will later tell the maintainer exactly when to stop and how to configure
+TestPyPI, PyPI, and the matching GitHub environments before the first real
+publish.
+
+Consequences
+
+- The first real Rally package-index publish will wait on a human setup step.
+- Rally's workflow can stop duplicating package-index settings in YAML.
+- The plan must include a later point where implementation pauses and gives the
+  user the exact setup steps for this repo.
+
+Follow-ups
+
+- Add a Rally package metadata block in `pyproject.toml`.
+- Add a Rally helper that exports that metadata to GitHub Actions.
+- Rewrite the first-publish section of `docs/VERSIONING.md`.
+
+## 2026-04-14 - Narrow the remaining release architecture onto package metadata
+
+Context
+
+Deep Doctrine review and the first deep-dive pass showed that Rally already has
+most of the broad release parity work on `main`: explicit package version
+truth, release helpers, split PR checks, trust docs, and the draft-and-publish
+release flow. The remaining drift is not another full release-system rebuild.
+It is one smaller owner-path problem around package publish metadata, package
+proof, and the first real package-index setup step.
+
+Options
+
+- Keep package publish settings split between `pyproject.toml`,
+  `publish.yml`, and docs.
+- Add a second Rally-only config file or script just for package publish state.
+- Put the remaining package publish truth in `pyproject.toml` plus one
+  `rally._package_release` helper, then make the workflow and docs read from
+  that path.
+
+Decision
+
+Narrow the remaining architecture onto one package-release owner path:
+`pyproject.toml` plus `src/rally/_package_release.py`. `release_flow` keeps
+owning tag, changelog, and GitHub release behavior. The package helper owns the
+publish metadata bridge and package smoke front door. `docs/VERSIONING.md`
+owns the human first-publish setup checklist.
+
+Consequences
+
+- The next deep-dive pass and the fresh phase plan can focus on a much smaller
+  frontier.
+- `publish.yml` should stop carrying package publish environment names as its
+  own truth.
+- Rally can stay aligned with Doctrine without reopening already-landed trust
+  surfaces or release commands.
+
+Follow-ups
+
+- Add `[tool.rally.package]` to `pyproject.toml`.
+- Add `build-dist` and `verify-package` to the `Makefile`.
+- Add a metadata job to `.github/workflows/publish.yml`.
+
+## 2026-04-14 - Keep Doctrine-style package smoke and Rally's richer runtime proof
+
+Context
+
+Deep-dive pass 2 resolved the last architecture-hardening question: whether the
+new Doctrine-style `verify-package` command should replace Rally's current
+built-wheel host-workspace regression, or live beside it.
+
+Options
+
+- Make `verify-package` the only package and release proof.
+- Keep only Rally's existing packaged-install regression and skip the
+  Doctrine-style package proof split.
+- Add `verify-package` for wheel and sdist package smoke outside the repo root,
+  and keep Rally's existing built-artifact host-workspace regression inside the
+  broader `make verify` path.
+
+Decision
+
+Keep both proof layers.
+
+- `make verify-package` becomes the Doctrine-style package proof front door.
+- `make verify` remains Rally's broader release proof and must keep the richer
+  host-workspace regression that proves `rally run demo`, built-in sync, and
+  host `doctrine.emit_docs`.
+- `publish.yml` should run the broader Rally proof so both layers stay covered
+  on release builds.
+
+Consequences
+
+- Rally aligns with Doctrine's package command surface without weakening its
+  real runtime proof.
+- Sdist smoke gets its own explicit home.
+- Release docs and worksheets must teach both layers clearly so operators do
+  not confuse package smoke with full Rally runtime proof.
+
+Follow-ups
+
+- Add `tests/unit/test_package_release.py`.
+- Update the release worksheet in `src/rally/_release_flow/ops.py`.
+- Update `docs/VERSIONING.md`, `README.md`, and `CONTRIBUTING.md` so the proof
+  split is explicit.
+
+## 2026-04-14 - Make Section 7 track only the remaining package-release frontier
+
+Context
+
+The older Section 7 mixed historical broad-parity work with the still-open
+package-release slice. That made the execution checklist partly archival and
+partly actionable, which is the wrong shape for `implement` and
+`consistency-pass`.
+
+Options
+
+- Keep the old broad phase history in Section 7 and rely on readers to infer
+  which parts are already landed.
+- Delete the historical context entirely and keep only a short loose reminder of
+  the remaining work.
+- Rewrite Section 7 so it tracks only the still-open package-release phases,
+  while leaving the already-landed context in Sections 4-6 and the decision
+  log.
+
+Decision
+
+Rewrite Section 7 to track only the remaining package-release frontier.
+
+- Phase 1 owns the package metadata helper and package metadata tests.
+- Phase 2 owns the `build-dist` and `verify-package` split plus worksheet
+  cutover.
+- Phase 3 owns the metadata-driven publish workflow and first-publish doc
+  cutover.
+- Phase 4 starts only after the user completes the TestPyPI and PyPI setup from
+  Phase 3.
+
+Consequences
+
+- Section 7 is now the one actionable checklist again.
+- Already-landed PR gating, trust surfaces, and broad release parity stay as
+  repo context, not live checklist items.
+- The user setup pause is now an explicit blocking phase boundary instead of an
+  implied later reminder.
+
+Follow-ups
+
+- Keep Section 8 and Section 9 aligned with the narrowed four-phase frontier.
+- Stop in Phase 3 and hand the user the exact Rally-specific TestPyPI and PyPI
+  setup steps before any real package-index publish.
+
+## 2026-04-14 - Retire the old tag-derived version branch
+
+Context
+
+The consistency cold read found one remaining live contradiction in the
+decision log. Most of the artifact now says Rally uses explicit
+`[project].version` truth and has dropped `setuptools-scm`, but one older
+decision entry still described the abandoned tag-derived version branch as if it
+were active plan truth.
+
+Options
+
+- Leave the old entry alone and rely on readers to infer that it is stale.
+- Rewrite the old entry in place and lose the append-only record of the branch.
+- Append one explicit superseding decision that retires the old branch while
+  preserving the history.
+
+Decision
+
+Append the superseding decision and keep the log append-only.
+
+- Rally's active plan uses explicit `[project].version` truth.
+- `setuptools-scm` and tag-derived package versions are retired for this plan.
+- The old `2026-04-14 - Use tag-derived Rally versions and one transitive
+  Doctrine floor` entry remains as historical branch context only, not current
+  plan truth.
+
+Consequences
+
+- The artifact now says one consistent thing end to end about version truth.
+- Later implementation work must not reintroduce dynamic package-version logic.
+- The explicit Doctrine floor still stands, but it now travels with explicit
+  package metadata rather than a tag-derived version source.
+
+Follow-ups
+
+- Keep `pyproject.toml`, `release_flow`, tests, and docs aligned on explicit
+  package version truth during implementation.
+
+## 2026-04-14 - Keep the approved six-phase frontier as the audit baseline
+
+Context
+
+Local execution notes later narrowed this doc around a smaller package-release
+follow-up. That rewrite changed Section 7, Section 8, and Section 9 as if the
+approved six-phase parity plan had been replaced.
+
+Options
+
+- Treat the package-release follow-up as the new authoritative frontier for
+  this doc.
+- Audit against the approved six-phase frontier, then move any extra
+  package-release work to a separate or explicitly reopened plan.
+
+Decision
+
+Keep the approved six-phase frontier as the implementation-audit baseline for
+this artifact.
+
+- Fresh GitHub proof closes Phase 4 through Phase 6 on the live repo.
+- Fresh local proof shows the current worktree still preserves that completed
+  implementation.
+- The narrower package-release follow-up does not reopen this completed plan by
+  itself.
+
+Consequences
+
+- The authoritative audit block now stays `COMPLETE`.
+- Any later package-release follow-up must use a new or explicitly reopened
+  plan instead of narrowing this completed artifact in place.
+
+Follow-ups
+
+- Use `arch-docs` for any cleanup or retirement work on this completed plan.
+
+## 2026-04-14 - Keep the package distribution name as `rally-agents`
+
+Context
+
+The first real TestPyPI and PyPI setup found a naming constraint that the
+earlier local implementation had not modeled yet. The published project had to
+be registered as `rally-agents`, not `rally`.
+
+Options
+
+- Keep publishing metadata as `rally` and treat the package-index setup as a
+  one-off exception.
+- Rename the Python import package and CLI to `rally-agents`.
+- Keep the runtime import package and CLI as `rally`, but publish the
+  distribution as `rally-agents`, matching Doctrine's split between
+  distribution name and import name.
+
+Decision
+
+Keep the runtime import package and CLI as `rally`, but publish the
+distribution as `rally-agents`.
+
+- `[project].name` is `rally-agents`.
+- `[tool.rally.package].import_name` stays `rally`.
+- PyPI and TestPyPI project URLs derive from `rally-agents`.
+- Install docs use `rally-agents`, while command examples still use `rally`.
+
+Consequences
+
+- Rally now matches the real package-index registrations instead of a local
+  placeholder name.
+- The package helper and release docs must keep telling readers that the
+  distribution name differs from the import package and CLI.
+- The release workflow can publish to the registered `rally-agents` projects
+  without inventing a second naming convention.
+
+Follow-ups
+
+- Keep `pyproject.toml`, `docs/VERSIONING.md`, `README.md`, `CHANGELOG.md`,
+  and package-release tests aligned on the `rally-agents` distribution name.
