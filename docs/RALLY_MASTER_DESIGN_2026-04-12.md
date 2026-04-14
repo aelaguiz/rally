@@ -119,7 +119,7 @@ Rally is:
 - Doctrine-native
 - repo-root-native
 - general-purpose
-- Codex-first as the initial adapter target
+- shipped today with `codex` and `claude_code` as the supported adapters
 
 Rally is not:
 
@@ -185,7 +185,7 @@ Each run gets one prepared home directory.
 
 The setup script prepares that home before the first agent runs.
 On every `run` or `resume`, Rally refreshes its own copied agents, skills,
-MCPs, config, and auth links before the next turn starts.
+MCPs, and adapter-owned bootstrap files before the next turn starts.
 After that:
 
 - agents assume home is already prepared
@@ -200,7 +200,14 @@ After that:
 A flow may also declare one prompt-input reducer that runs before each turn and
 one guarded-git list that Rally checks before it accepts `handoff` or `done`.
 
-For Codex, Rally should point `CODEX_HOME` at the run home.
+Adapter-specific bootstrap rules still stay narrow:
+
+- for Codex, Rally points `CODEX_HOME` at the run home and keeps Codex root
+  files there
+- for Claude Code, Rally generates `home/claude_code/mcp.json` and links
+  `home/.claude/skills` to `home/skills`
+- Claude v1 still uses the user's existing local Claude login and Claude's
+  native session store outside the run home
 
 Follow-up gap to resolve later:
 
@@ -303,27 +310,42 @@ Rally should explicitly ban:
 
 `flow.yaml`, `run.yaml`, session sidecars, logs, and setup scripts may control orchestration, but they must not author doctrine.
 
-### Codex Launch Contract
+### Adapter Launch Contract
 
-For the Codex adapter, Rally should enforce this launch contract:
+Every adapter launch must follow these shared rules:
 
 - choose `cwd` explicitly
-- set `CODEX_HOME` to the run home
-- launch with `--dangerously-bypass-approvals-and-sandbox`
 - inject compiled doctrine explicitly
-- disable ambient project-doc discovery with `project_doc_max_bytes = 0`
 - inject `RALLY_RUN_ID=<run-id>` and `RALLY_FLOW_CODE=<flow-code>`
 - inject `RALLY_AGENT_SLUG=<agent-slug>`
 - inject `RALLY_TURN_NUMBER=<turn-number>` for runtime-owned note labeling
-- assemble MCP config explicitly from Rally's allowlisted definitions
-- require a strict final-turn JSON schema for end-of-turn completion
+- keep one adapter launch proof record under `logs/adapter_launch/`
+- require one strict final-turn JSON path for end-of-turn completion
 
-Rally should fail closed if it cannot prove what instruction surface Codex is actually seeing.
+Current Codex launch facts:
 
-### Codex-Native MCP Auth And Health
+- set `CODEX_HOME` to the run home
+- launch with `--dangerously-bypass-approvals-and-sandbox`
+- disable ambient project-doc discovery with `project_doc_max_bytes = 0`
+- assemble MCP config through the Codex home files Rally prepares
 
-Rally also needs one clean Codex-native way to make required MCPs usable inside
-the run.
+Current Claude launch facts:
+
+- use `claude -p`
+- pass the Rally prompt on stdin
+- use `--output-format stream-json --verbose`
+- use `--permission-mode dontAsk`
+- use generated `home/claude_code/mcp.json` with `--strict-mcp-config`
+- clamp Claude.ai MCP servers with `ENABLE_CLAUDEAI_MCP_SERVERS=false`
+- clamp built-in tools with explicit `--tools` and `--allowedTools` lists
+
+Rally should fail closed if it cannot prove what instruction surface an
+adapter is actually seeing.
+
+### Adapter MCP And Auth Health
+
+Rally still needs one clean adapter-native way to make required MCPs usable
+inside the run.
 
 This section records the need.
 It does not choose the answer yet.
@@ -331,7 +353,7 @@ It does not choose the answer yet.
 Rally should be able to tell, for each required MCP:
 
 - was it materialized into the run home
-- does Codex see it through the supported config path
+- does the current adapter see it through the supported config path
 - does the run have the auth that MCP needs
 - will a child agent started from that turn keep the same MCP access
 - can Rally detect when that setup is broken on a later turn or on resume
@@ -348,12 +370,11 @@ Rules:
 - That blocker should name the MCP and the failed check.
 - Launch proof and run logs should make it easy to see which MCPs Rally
   expected and why Rally refused to run.
-- This work should stay in the Rally runtime and Codex adapter boundary unless
-  it reveals a true Codex or Doctrine platform gap.
+- This work should stay in the Rally runtime and adapter boundary unless it
+  reveals a true adapter or Doctrine platform gap.
 
 The next design pass should compare the smallest honest options and prove which
-one keeps both parent and child Codex agents ready across fresh runs and
-resumes.
+one keeps both parent and child agents ready across fresh runs and resumes.
 
 ### Canonical Runtime Surfaces
 
@@ -509,19 +530,24 @@ Phase 3 locks the communication pivot:
 
 The exact Phase 3 deliverables, acceptance criteria, and non-goals live in the Phase 3 doc rather than here.
 
-### Phase 4: Build The First Runnable Codex Vertical Slice
+### Phase 4: Build The First Runnable Runtime Slice
 
 Owner doc:
 [RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md](RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md)
 
 Phase 4 is the first runtime phase.
-Its job is to prove that Rally can execute the authored assets from Phase 1 through Phase 3 honestly on Codex.
+It began by proving Rally could execute the authored assets from Phase 1
+through Phase 3 honestly on Codex.
+The shipped runtime now extends that slice through one shared adapter boundary
+with `codex` and `claude_code`.
 
 At a high level, Phase 4 owns:
 
 - the first real `src/rally/` runtime package
 - the first real `rally` CLI entrypoint
+- the shared adapter boundary
 - one real Codex adapter path
+- one real Claude adapter path
 - one real end-to-end execution path for `poem_loop`
 - run storage, home preparation, note and final-response materialization, sessions, and logs
 
@@ -543,7 +569,7 @@ At a high level, Phase 5 should add:
 
 Phase 5 should still remain:
 
-- Codex-first
+- adapter-boundary-first
 - filesystem-first
 - one-active-run-per-flow
 - repo-root-local
@@ -553,7 +579,7 @@ Phase 5 should still remain:
 
 Phase 5 should also close the MCP gap with:
 
-- one Codex-native MCP auth and readiness path
+- one honest adapter-native MCP auth and readiness path
 - clear failure when a required MCP is missing or broken
 - proof that child agents keep the same MCP access on fresh runs and resumes
 

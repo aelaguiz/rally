@@ -4,7 +4,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rally.adapters.codex.result_contract import load_agent_final_response, load_turn_result
 from rally.domain.flow import (
     CompiledAgentContract,
     FinalOutputContract,
@@ -15,9 +14,22 @@ from rally.domain.flow import (
 )
 from rally.domain.turn_result import BlockerTurnResult, DoneTurnResult, HandoffTurnResult
 from rally.errors import RallyStateError
+from rally.services.final_response_loader import load_agent_final_response, load_turn_result
 
 
-class ResultContractTests(unittest.TestCase):
+class FinalResponseLoaderTests(unittest.TestCase):
+    def test_load_turn_result_reads_shared_loader_directly(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            last_message = Path(temp_dir) / "last_message.json"
+            last_message.write_text(
+                '{"kind":"handoff","next_owner":"change_engineer","summary":null,"reason":null,"sleep_duration_seconds":null}\n',
+                encoding="utf-8",
+            )
+
+            result = load_turn_result(last_message_file=last_message)
+
+            self.assertEqual(result, HandoffTurnResult(next_owner="change_engineer"))
+
     def test_load_turn_result_accepts_fenced_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             last_message = Path(temp_dir) / "last_message.json"
