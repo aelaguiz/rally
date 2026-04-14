@@ -47,16 +47,18 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
         if not isinstance(agent_key, str):
             raise RallyConfigError(f"`agents` keys in `{flow_file}` must be strings.")
         agent_mapping = _require_mapping_value(agent_payload, context=f"agent `{agent_key}`")
-        agent_slug = flow_agent_key_to_slug(agent_key)
-        compiled = compiled_agents.get(agent_slug)
+        expected_slug = flow_agent_key_to_slug(agent_key)
+        compiled = compiled_agents.get(expected_slug)
         if compiled is None:
             raise RallyConfigError(
                 f"Compiled agent contract missing for flow agent `{agent_key}`. "
-                f"Expected `{build_agents_dir / agent_slug / 'AGENTS.contract.json'}`."
+                f"Expected `{build_agents_dir / expected_slug / 'AGENTS.contract.json'}`."
             )
         agents[agent_key] = FlowAgent(
             key=agent_key,
-            slug=agent_slug,
+            # The compiled contract slug is the carried source of truth once the
+            # loader has validated it against the flow-owned agent key.
+            slug=compiled.slug,
             timeout_sec=_require_int(agent_mapping, "timeout_sec", context=f"agent `{agent_key}`"),
             allowed_skills=_require_string_list(agent_mapping, "allowed_skills", context=f"agent `{agent_key}`"),
             allowed_mcps=_require_string_list(agent_mapping, "allowed_mcps", context=f"agent `{agent_key}`"),

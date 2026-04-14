@@ -1,4 +1,5 @@
 import rally.base_agent
+import rally.issue_ledger
 import rally.turn_results
 import shared.inputs
 import shared.skills
@@ -17,9 +18,8 @@ inputs SoftwareEngineeringDemoInputs[rally.base_agent.RallyManagedInputs]: "Inpu
 
     inherit rally_run_id
     inherit rally_flow_code
-
-    issue_ledger: "Issue Ledger"
-        shared.inputs.IssueLedger
+    inherit rally_agent_slug
+    inherit issue_ledger
 
     demo_repo_root: "Demo Repo Root"
         shared.inputs.DemoRepoRoot
@@ -30,6 +30,8 @@ inputs SoftwareEngineeringDemoInputs[rally.base_agent.RallyManagedInputs]: "Inpu
 
 abstract agent SoftwareEngineeringRole[rally.base_agent.RallyManagedBaseAgent]:
     inherit rally_contract
+    inherit read_first
+    inherit how_to_take_a_turn
     system_context: shared.contracts.SoftwareEngineeringSystemContext
     issue_truth: shared.contracts.IssueLedgerGroundTruth
     repo_rules: shared.contracts.DemoRepoRules
@@ -108,46 +110,48 @@ review_family EngineeringReviewFamily: "Engineering Review"
     cases:
         architect_path: "Architect Path"
             when shared.review.ReviewMode.architect_review
-            subject: shared.inputs.IssueLedger
+            subject: rally.issue_ledger.RallyIssueLedger
             contract: shared.review.ArchitectReviewContract
             checks:
                 accept "The architect review contract passes." when contract.passes
             on_accept:
-                current artifact shared.inputs.IssueLedger via shared.review.CriticReviewResponse.current_artifact
+                current artifact rally.issue_ledger.RallyIssueLedger via shared.review.CriticReviewResponse.current_artifact
                 route "Accepted architecture goes to Developer." -> Developer
             on_reject:
-                current artifact shared.inputs.IssueLedger via shared.review.CriticReviewResponse.current_artifact
+                current artifact rally.issue_ledger.RallyIssueLedger via shared.review.CriticReviewResponse.current_artifact
                 route "Architect needs another pass." -> Architect
 
         developer_path: "Developer Path"
             when shared.review.ReviewMode.developer_review
-            subject: shared.inputs.IssueLedger
+            subject: rally.issue_ledger.RallyIssueLedger
             contract: shared.review.DeveloperReviewContract
             checks:
                 accept "The developer review contract passes." when contract.passes
             on_accept:
-                current artifact shared.inputs.IssueLedger via shared.review.CriticReviewResponse.current_artifact
+                current artifact rally.issue_ledger.RallyIssueLedger via shared.review.CriticReviewResponse.current_artifact
                 route "Accepted development goes to QA." -> QaDocsTester
             on_reject:
-                current artifact shared.inputs.IssueLedger via shared.review.CriticReviewResponse.current_artifact
+                current artifact rally.issue_ledger.RallyIssueLedger via shared.review.CriticReviewResponse.current_artifact
                 route "Developer needs another pass." -> Developer
 
         qa_path: "QA Path"
             when shared.review.ReviewMode.qa_review
-            subject: shared.inputs.IssueLedger
+            subject: rally.issue_ledger.RallyIssueLedger
             contract: shared.review.QaReviewContract
             checks:
                 accept "The QA review contract passes." when contract.passes
             on_accept:
-                current artifact shared.inputs.IssueLedger via shared.review.CriticReviewResponse.current_artifact
+                current artifact rally.issue_ledger.RallyIssueLedger via shared.review.CriticReviewResponse.current_artifact
             on_reject:
-                current artifact shared.inputs.IssueLedger via shared.review.CriticReviewResponse.current_artifact
+                current artifact rally.issue_ledger.RallyIssueLedger via shared.review.CriticReviewResponse.current_artifact
                 route "QA found work that still belongs in the repo." -> Developer
 
 
 agent Architect[SoftwareEngineeringRole]:
     role: "Core job: turn the issue into one real next build step for the demo repo."
     inherit rally_contract
+    inherit read_first
+    inherit how_to_take_a_turn
     inherit system_context
     inherit issue_truth
     inherit repo_rules
@@ -169,6 +173,8 @@ agent Architect[SoftwareEngineeringRole]:
 agent Critic[SoftwareEngineeringRole]:
     role: "Core job: review every specialist turn honestly and end only when the issue is truly done."
     inherit rally_contract
+    inherit read_first
+    inherit how_to_take_a_turn
     inherit system_context
     inherit issue_truth
     inherit repo_rules
@@ -186,6 +192,8 @@ agent Critic[SoftwareEngineeringRole]:
 agent Developer[SoftwareEngineeringRole]:
     role: "Core job: make the next real repo change for the issue."
     inherit rally_contract
+    inherit read_first
+    inherit how_to_take_a_turn
     inherit system_context
     inherit issue_truth
     inherit repo_rules
@@ -206,6 +214,8 @@ agent Developer[SoftwareEngineeringRole]:
 agent QaDocsTester[SoftwareEngineeringRole]:
     role: "Core job: prove the change, repair small docs or test gaps, and hand the result to Critic."
     inherit rally_contract
+    inherit read_first
+    inherit how_to_take_a_turn
     inherit system_context
     inherit issue_truth
     inherit repo_rules

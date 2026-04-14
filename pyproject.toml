@@ -74,6 +74,11 @@ entrypoint = "skills/rally-kernel/prompts/SKILL.prompt"
 output_dir = "skills/rally-kernel/build"
 
 [[tool.doctrine.emit.targets]]
+name = "rally-memory"
+entrypoint = "skills/rally-memory/prompts/SKILL.prompt"
+output_dir = "skills/rally-memory/build"
+
+[[tool.doctrine.emit.targets]]
 name = "demo-git"
 entrypoint = "skills/demo-git/prompts/SKILL.prompt"
 output_dir = "skills/demo-git/build"

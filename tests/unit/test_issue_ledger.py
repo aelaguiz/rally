@@ -388,6 +388,5 @@ class IssueLedgerTests(unittest.TestCase):
         )
         return issue_path
 
-
 if __name__ == "__main__":
     unittest.main()

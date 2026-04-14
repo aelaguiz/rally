@@ -197,6 +197,55 @@ What it does today:
 - writes a full snapshot into the run's `issue_history/`
 - prints the updated issue path and snapshot path
 
+### `rally memory`
+
+Current shape:
+
+```bash
+rally memory search --run-id <run-id> [--agent-slug <slug>] --query "<text>" [--limit N]
+rally memory use --run-id <run-id> [--agent-slug <slug>] <memory-id>
+rally memory save --run-id <run-id> [--agent-slug <slug>] [--text "<markdown>" | --file <path>]
+rally memory refresh --run-id <run-id> [--agent-slug <slug>]
+```
+
+What it does today:
+
+- resolves memory scope from the run's flow code plus the compiled agent slug carried into runtime state
+- lets `--agent-slug` override the current agent when the operator needs a different scoped memory view
+- keeps durable memory truth in markdown files under `runs/memory/entries/<flow_code>/<agent_slug>/`
+- keeps QMD state repo-local under `runs/memory/qmd/index.sqlite` and `runs/memory/qmd/cache/`
+- calls QMD only through the pinned bridge at `tools/qmd_bridge/`
+- fails loud if the bridge is missing, returns bad JSON, or QMD fails
+
+`rally memory search` today:
+
+- searches only the current flow-agent scope
+- prints a short ranked hit list with the canonical memory id, lesson title, and a short `When This Matters` snippet
+- does not append to `home/issue.md`
+- writes a first-class memory event in the canonical runtime stream
+
+`rally memory use` today:
+
+- reads one scoped markdown memory file
+- prints the memory body
+- writes a first-class memory event in the canonical runtime stream
+- does not append to `home/issue.md`
+
+`rally memory save` today:
+
+- reads memory markdown from stdin, `--text`, or `--file`
+- requires the shared three-section body with `# Lesson`, `# When This Matters`, and `# What To Do`
+- writes or updates one markdown memory file
+- refreshes only the scoped QMD collection
+- writes a first-class memory event in the canonical runtime stream
+- does not append to `home/issue.md`
+
+`rally memory refresh` today:
+
+- rebuilds the scoped QMD collection from the markdown source files
+- is the repair path when QMD state drifts or is cleared
+- writes a first-class memory event in the canonical runtime stream
+
 ### Exit behavior
 
 The CLI error model is already simple:
@@ -339,6 +388,9 @@ What exists today:
 - `state.yaml`
 - `home/issue.md`
 - `issue_history/` full snapshots after Rally-owned issue writes
+- `runs/memory/entries/` durable memory markdown
+- `runs/memory/qmd/index.sqlite`
+- `runs/memory/qmd/cache/`
 - `logs/events.jsonl`
 - `logs/agents/<agent>.jsonl`
 - `logs/rendered.log`
@@ -361,6 +413,7 @@ same event stream.
 That event stream now covers:
 
 - Rally lifecycle events such as run create, resume, home prep, setup, prompt-input load, launch, and final turn status
+- first-class memory rows for `search`, `use`, `save`, and `refresh`
 - adapter session start or resume events
 - assistant output lines when an adapter emits text chunks
 - reasoning summary lines when an adapter exposes them
@@ -399,6 +452,7 @@ The color rules are still simple:
 - agent labels: per-agent background colors in flow order on a TTY
 - reasoning summaries: magenta, with indented detail lines when an adapter
   sends more than one summary line
+- memory rows: teal, with short detail lines for hits, memory ids, paths, or index counts
 - tool traces: bright blue, with indented detail lines for short args, results, exit codes, or changed paths
 - final success state: green
 - warnings: amber

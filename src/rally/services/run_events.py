@@ -132,8 +132,6 @@ class RunEventRecorder:
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(dict(payload), sort_keys=True))
             handle.write("\n")
-
-
 def render_plain_event_line(event: RunEvent) -> str:
     timestamp = _short_time(event.ts)
     agent_label = event.agent_key or event.agent_slug or "rally"

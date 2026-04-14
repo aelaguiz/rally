@@ -13,9 +13,8 @@ inputs PoemLoopInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
 
     inherit rally_run_id
     inherit rally_flow_code
-
-    issue_ledger: "Issue Ledger"
-        shared.inputs.IssueLedger
+    inherit rally_agent_slug
+    inherit issue_ledger
 
     poem_draft_file: "Poem Draft File"
         shared.inputs.PoemDraftFile
@@ -23,6 +22,8 @@ inputs PoemLoopInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
 
 abstract agent PoemLoopRole[rally.base_agent.RallyManagedBaseAgent]:
     inherit rally_contract
+    inherit read_first
+    inherit how_to_take_a_turn
     system_context: shared.contracts.PoemLoopSystemContext
     ground_truth: shared.contracts.IssueLedgerGroundTruth
     primary_path: shared.contracts.PrimaryPathRules
@@ -31,6 +32,8 @@ abstract agent PoemLoopRole[rally.base_agent.RallyManagedBaseAgent]:
 agent PoemWriter[PoemLoopRole]:
     role: "Core job: write the requested poem and hand it to PoemCritic."
     inherit rally_contract
+    inherit read_first
+    inherit how_to_take_a_turn
     inherit system_context
     inherit ground_truth
     inherit primary_path
@@ -86,6 +89,8 @@ review PoemReview: "Poem Review"
 agent PoemCritic[PoemLoopRole]:
     role: "Core job: judge the poem with a real review, hand it back when it needs work, and finish only when it is ready."
     inherit rally_contract
+    inherit read_first
+    inherit how_to_take_a_turn
     inherit system_context
     inherit ground_truth
     inherit primary_path

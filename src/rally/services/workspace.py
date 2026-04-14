@@ -101,7 +101,7 @@ def resolve_framework_root() -> Path:
             return candidate
     raise RallyConfigError(
         "Rally built-in assets are missing from the installed framework. "
-        "Expected `stdlib/rally` and `skills/rally-kernel` under a Rally framework root."
+        "Expected `stdlib/rally`, `skills/rally-kernel`, and `skills/rally-memory` under a Rally framework root."
     )
 
 
@@ -142,4 +142,8 @@ def _load_pyproject(pyproject_path: Path) -> dict[str, object]:
 
 
 def _has_framework_assets(candidate: Path) -> bool:
-    return (candidate / "stdlib" / "rally").is_dir() and (candidate / "skills" / "rally-kernel").is_dir()
+    return (
+        (candidate / "stdlib" / "rally").is_dir()
+        and (candidate / "skills" / "rally-kernel").is_dir()
+        and (candidate / "skills" / "rally-memory").is_dir()
+    )
