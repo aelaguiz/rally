@@ -188,7 +188,7 @@ class RunnerTests(unittest.TestCase):
                         "thread_id": "session-poem-2",
                         "last_message": {
                             "verdict": "accept",
-                            "reviewed_artifact": "artifacts/poem.md",
+                            "reviewed_artifact": "home:artifacts/poem.md",
                             "analysis_performed": "The sonnet keeps its moon focus, the images stay clear, and the draft now feels finished.",
                             "findings_first": "The poem is ready to keep as written."
                         },
@@ -250,7 +250,7 @@ class RunnerTests(unittest.TestCase):
             flow_path.write_text(
                 flow_text.replace(
                     "  adapter_args:\n",
-                    "  prompt_input_command: setup/prompt_inputs.py\n  adapter_args:\n",
+                    "  prompt_input_command: flow:setup/prompt_inputs.py\n  adapter_args:\n",
                 ),
                 encoding="utf-8",
             )
@@ -367,6 +367,14 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(launch_record["env"]["ENABLE_CLAUDEAI_MCP_SERVERS"], "false")
             self.assertIn("claude-session-1", session_text)
             self.assertIn("fixture-repo", mcp_config["mcpServers"])
+            self.assertEqual(
+                mcp_config["mcpServers"]["fixture-repo"]["args"],
+                ["run", "fixture-repo", "--repo", str(run_dir / "home" / "repos" / "demo_repo")],
+            )
+            self.assertEqual(
+                mcp_config["mcpServers"]["fixture-repo"]["cwd"],
+                str(Path("/tmp/fixture-repo").resolve(strict=False)),
+            )
             self.assertTrue((run_dir / "home" / ".claude" / "skills").is_symlink())
 
     def test_poem_loop_claude_review_accepts_embedded_fenced_json_result(self) -> None:
@@ -382,7 +390,7 @@ class RunnerTests(unittest.TestCase):
 
             review_payload = {
                 "verdict": "changes_requested",
-                "reviewed_artifact": "artifacts/poem.md",
+                "reviewed_artifact": "home:artifacts/poem.md",
                 "analysis_performed": (
                     "Checked the haiku against the brief and the writer rationale. "
                     "Line 2 explains the idea instead of making the reader feel it."
@@ -390,7 +398,7 @@ class RunnerTests(unittest.TestCase):
                 "findings_first": (
                     "Line 3 lands. Line 2 still needs a sharper image before this poem is ready."
                 ),
-                "current_artifact": "artifacts/poem.md",
+                "current_artifact": "home:artifacts/poem.md",
                 "next_owner": "poem_writer",
                 "failure_detail": {
                     "blocked_gate": None,
@@ -894,6 +902,14 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("project_doc_max_bytes = 2048", config_text)
             self.assertIn('[mcp_servers."fixture-repo"]', config_text)
             self.assertIn('command = ["uv", "run", "fixture-repo"]', config_text)
+            self.assertIn(
+                f'args = ["--repo", "{run_dir / "home" / "repos" / "demo_repo"}"]',
+                config_text,
+            )
+            self.assertIn(
+                f'cwd = "{Path("/tmp/fixture-repo").resolve(strict=False)}"',
+                config_text,
+            )
 
     def test_resume_run_removes_stale_run_home_capabilities(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2098,7 +2114,7 @@ class RunnerTests(unittest.TestCase):
             self._write_demo_repo(
                 repo_root=repo_root,
                 with_setup_script=True,
-                required_files=[str(missing_file)],
+                required_files=[f"host:{missing_file}"],
             )
             run_dir = self._create_pending_run(repo_root=repo_root)
             self._write_issue(run_dir=run_dir)
@@ -2113,7 +2129,7 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse((run_dir / "home" / "setup-ok.txt").exists())
             self.assertFalse((run_dir / "home" / ".rally_home_ready").exists())
             rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
-            self.assertIn(str(missing_file), rendered_text)
+            self.assertIn(f"host:{missing_file}", rendered_text)
 
     def test_resume_run_blocks_before_setup_when_required_host_directory_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2122,7 +2138,7 @@ class RunnerTests(unittest.TestCase):
             self._write_demo_repo(
                 repo_root=repo_root,
                 with_setup_script=True,
-                required_directories=[str(missing_directory)],
+                required_directories=[f"host:{missing_directory}"],
             )
             run_dir = self._create_pending_run(repo_root=repo_root)
             self._write_issue(run_dir=run_dir)
@@ -2137,7 +2153,7 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse((run_dir / "home" / "setup-ok.txt").exists())
             self.assertFalse((run_dir / "home" / ".rally_home_ready").exists())
             rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
-            self.assertIn(str(missing_directory), rendered_text)
+            self.assertIn(f"host:{missing_directory}", rendered_text)
 
     def test_run_flow_rejects_skill_without_frontmatter(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2317,7 +2333,7 @@ class RunnerTests(unittest.TestCase):
                 )
             (flow_root / "setup" / "prepare_home.sh").write_text("\n".join(script_lines) + "\n", encoding="utf-8")
 
-        setup_home_line = "setup_home_script: setup/prepare_home.sh\n" if (with_setup_script or with_guarded_repo) else ""
+        setup_home_line = "setup_home_script: flow:setup/prepare_home.sh\n" if (with_setup_script or with_guarded_repo) else ""
         host_inputs_lines: list[str] = []
         if required_env or required_files or required_directories:
             host_inputs_lines.append("host_inputs:\n")
@@ -2336,7 +2352,7 @@ class RunnerTests(unittest.TestCase):
                     + "]\n"
                 )
         host_inputs_block = "".join(host_inputs_lines)
-        guarded_git_repos_line = "  guarded_git_repos: [repos/demo_repo]\n" if with_guarded_repo else ""
+        guarded_git_repos_line = "  guarded_git_repos: [home:repos/demo_repo]\n" if with_guarded_repo else ""
         (flow_root / "flow.yaml").write_text(
             (
                 "name: demo\n"
@@ -2378,7 +2394,8 @@ class RunnerTests(unittest.TestCase):
             textwrap.dedent(
                 """\
                 command = ["uv", "run", "fixture-repo"]
-                cwd = "/tmp/fixture-repo"
+                args = ["--repo", "home:repos/demo_repo"]
+                cwd = "host:/tmp/fixture-repo"
                 """
             ),
             encoding="utf-8",

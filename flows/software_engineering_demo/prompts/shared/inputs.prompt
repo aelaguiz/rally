@@ -1,6 +1,12 @@
+input IssueLedger: "Issue Ledger"
+    source: File
+        path: "home:issue.md"
+    shape: MarkdownDocument
+    requirement: Required
+    "Use `home:issue.md` as the one shared human and agent ledger."
 input DemoRepoRoot: "Demo Repo Root"
     source: File
-        path: "repos/demo_repo"
+        path: "home:repos/demo_repo"
     shape: DirectoryPath
     requirement: Required
     "Use this directory as the one demo repo for the flow."

@@ -4,7 +4,7 @@ skill package DemoGitSkill: "Demo Git"
         description: "Use the demo git helper to inspect the demo repo, keep one clean issue branch per run, and commit before handoff when this turn changed the repo."
 
     "Use this skill when the turn needs the current branch, repo status, recent commits, or one clean commit before handoff."
-    "This flow has one guarded repo at `home/repos/demo_repo`."
+    "This flow has one guarded repo at `home:repos/demo_repo`."
     "Inside the prepared run home shell, use the relative path `repos/demo_repo`."
     "Work only in that repo."
 

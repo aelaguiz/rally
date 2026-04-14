@@ -1,7 +1,7 @@
 workflow SoftwareEngineeringSystemContext: "System Context"
     "This flow is a real Rally software engineering demo."
-    "It starts from `home/issue.md`."
-    "It works in one demo repo at `home/repos/demo_repo`."
+    "It starts from `home:issue.md`."
+    "It works in one demo repo at `home:repos/demo_repo`."
     "Later issues build on the last accepted demo history."
 
     why_this_flow_exists: "Why This Flow Exists"
@@ -23,7 +23,7 @@ workflow IssueLedgerGroundTruth: "Issue Ledger Truth"
 
 workflow DemoRepoRules: "Demo Repo Rules"
     repo_path: "Repo Path"
-        "Use only `home/repos/demo_repo`."
+        "Use only `home:repos/demo_repo`."
         "Do not make a second repo or a side repo."
         "When you run shell commands from the prepared run home, use the relative path `repos/demo_repo`."
 

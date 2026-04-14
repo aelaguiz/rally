@@ -9,7 +9,7 @@ output RallyIssueNote: "Issue Note"
 
     purpose: "Purpose"
         "Leave one short note when a later reader needs context."
-        "Use the shared Rally CLI path instead of editing `home/issue.md` yourself."
+        "Use the shared Rally CLI path instead of editing `home:issue.md` yourself."
 
     run_local_boundary: "Run-Local Boundary"
         "Use notes for this run only."

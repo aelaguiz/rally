@@ -16,7 +16,7 @@ output shape CriticReviewJson: "Critic Review JSON"
 
     field_notes: "Field Notes"
         "Use `architect`, `developer`, or `qa_docs_tester` for `next_owner` when the review routes."
-        "Use `home/issue.md` for `reviewed_artifact` and `current_artifact`."
+        "Use `home:issue.md` for `reviewed_artifact` and `current_artifact`."
         "Use `null` for `next_owner` when the review accepts the final QA pass."
         "Use `null` for `failure_detail` when the review accepts."
 
@@ -78,7 +78,7 @@ output CriticReviewResponse: "Critic Review Response"
         "Say whether the reviewed pass is accepted or needs changes."
 
     reviewed_artifact: "Reviewed Artifact"
-        "Use `home/issue.md`."
+        "Use `home:issue.md`."
 
     analysis_performed: "Review Summary"
         "Explain the review in 2-4 plain sentences."
@@ -90,7 +90,7 @@ output CriticReviewResponse: "Critic Review Response"
         "Keep it short and plain."
 
     current_artifact: "Current Artifact" when present(current_artifact):
-        "Use `home/issue.md`."
+        "Use `home:issue.md`."
 
     next_owner: "Next Owner" when present(next_owner):
         "Use {{Architect:key}} when Architect needs another pass."

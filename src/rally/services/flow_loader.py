@@ -22,7 +22,19 @@ from rally.domain.flow import (
     ReviewOutputContract,
     flow_agent_key_to_slug,
 )
+from rally.domain.rooted_path import (
+    FLOW_ROOT,
+    HOME_ROOT,
+    HOST_ROOT,
+    STDLIB_ROOT,
+    WORKSPACE_ROOT,
+    PathRoot,
+    RootedPath,
+    parse_rooted_path,
+    resolve_rooted_path,
+)
 from rally.errors import RallyConfigError
+from rally.services.workspace import resolve_framework_root
 
 SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS = frozenset({1})
 
@@ -33,13 +45,22 @@ def load_flow_code(*, repo_root: Path, flow_name: str) -> str:
     return _require_string(payload, "code", context="flow.yaml")
 
 
-def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
+def load_flow_definition(
+    *,
+    repo_root: Path,
+    flow_name: str,
+    framework_root: Path | None = None,
+) -> FlowDefinition:
     flow_root, flow_file, payload = _load_flow_payload(repo_root=repo_root, flow_name=flow_name)
     _require_matching_flow_name(flow_name=flow_name, flow_file=flow_file, payload=payload)
     flow_code = _require_string(payload, "code", context="flow.yaml")
 
     build_agents_dir = flow_root / "build" / "agents"
-    compiled_agents = _load_compiled_agents(repo_root=repo_root, build_agents_dir=build_agents_dir)
+    compiled_agents = _load_compiled_agents(
+        repo_root=repo_root,
+        build_agents_dir=build_agents_dir,
+        framework_root=framework_root,
+    )
 
     agents_payload = _require_mapping(payload, "agents", context="flow.yaml")
     agents: dict[str, FlowAgent] = {}
@@ -83,15 +104,19 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
     )
     adapter_args = _require_mapping(runtime_payload, "adapter_args", context="runtime")
     get_adapter(adapter_name).validate_args(args=adapter_args)
-    prompt_input_command_rel = runtime_payload.get("prompt_input_command")
+    prompt_input_command_raw = runtime_payload.get("prompt_input_command")
     prompt_input_command = None
-    if prompt_input_command_rel is not None:
-        if not isinstance(prompt_input_command_rel, str) or not prompt_input_command_rel:
+    if prompt_input_command_raw is not None:
+        if not isinstance(prompt_input_command_raw, str) or not prompt_input_command_raw:
             raise RallyConfigError("`runtime.prompt_input_command` must be a non-empty string when present.")
-        prompt_input_command = _resolve_flow_relative_file(
+        prompt_input_command = _resolve_rooted_existing_file(
+            raw_value=prompt_input_command_raw,
+            repo_root=repo_root,
             flow_root=flow_root,
-            relative_path=prompt_input_command_rel,
+            framework_root=framework_root,
             context="runtime.prompt_input_command",
+            allowed_roots={FLOW_ROOT},
+            example="flow:setup/prompt_inputs.py",
         )
     prompt_entrypoint = _resolve_repo_relative_file(
         repo_root=repo_root,
@@ -99,15 +124,19 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
         context="flow prompt entrypoint",
     )
 
-    setup_home_script_rel = payload.get("setup_home_script")
+    setup_home_script_raw = payload.get("setup_home_script")
     setup_home_script = None
-    if setup_home_script_rel is not None:
-        if not isinstance(setup_home_script_rel, str) or not setup_home_script_rel:
+    if setup_home_script_raw is not None:
+        if not isinstance(setup_home_script_raw, str) or not setup_home_script_raw:
             raise RallyConfigError("`setup_home_script` must be a non-empty string when present.")
-        setup_home_script = _resolve_flow_relative_file(
+        setup_home_script = _resolve_rooted_existing_file(
+            raw_value=setup_home_script_raw,
+            repo_root=repo_root,
             flow_root=flow_root,
-            relative_path=setup_home_script_rel,
+            framework_root=framework_root,
             context="setup_home_script",
+            allowed_roots={FLOW_ROOT},
+            example="flow:setup/prepare_home.sh",
         )
     host_inputs = _load_host_inputs(payload=payload)
 
@@ -144,7 +173,12 @@ def _require_matching_flow_name(*, flow_name: str, flow_file: Path, payload: Map
         )
 
 
-def _load_compiled_agents(*, repo_root: Path, build_agents_dir: Path) -> dict[str, CompiledAgentContract]:
+def _load_compiled_agents(
+    *,
+    repo_root: Path,
+    build_agents_dir: Path,
+    framework_root: Path | None,
+) -> dict[str, CompiledAgentContract]:
     if not build_agents_dir.is_dir():
         raise RallyConfigError(f"Compiled agent directory is missing: `{build_agents_dir}`.")
 
@@ -163,6 +197,7 @@ def _load_compiled_agents(*, repo_root: Path, build_agents_dir: Path) -> dict[st
             agent_dir=agent_dir,
             markdown_path=markdown_path,
             contract_path=contract_path,
+            framework_root=framework_root,
         )
         if contract.slug in compiled_agents:
             raise RallyConfigError(
@@ -186,15 +221,19 @@ def _load_host_inputs(*, payload: Mapping[str, Any]) -> FlowHostInputs:
             "required_env",
             context="host_inputs",
         ),
-        required_files=_require_unique_string_list(
+        required_files=_require_unique_rooted_path_list(
             host_inputs_payload,
             "required_files",
             context="host_inputs",
+            allowed_roots={WORKSPACE_ROOT, HOST_ROOT},
+            example="host:~/config/.env",
         ),
-        required_directories=_require_unique_string_list(
+        required_directories=_require_unique_rooted_path_list(
             host_inputs_payload,
             "required_directories",
             context="host_inputs",
+            allowed_roots={WORKSPACE_ROOT, HOST_ROOT},
+            example="workspace:fixtures/data",
         ),
     )
 
@@ -205,6 +244,7 @@ def _load_compiled_agent_contract(
     agent_dir: Path,
     markdown_path: Path,
     contract_path: Path,
+    framework_root: Path | None,
 ) -> CompiledAgentContract:
     payload = _load_json_mapping(contract_path)
     contract_version = _require_int(payload, "contract_version", context=str(contract_path))
@@ -226,15 +266,23 @@ def _load_compiled_agent_contract(
             f"Compiled agent `{slug}` does not declare a final output in `{contract_path}`."
         )
 
-    schema_file = _resolve_repo_relative_file(
+    schema_file = _resolve_rooted_existing_file(
+        raw_value=_require_string(final_output_payload, "schema_file", context=f"{contract_path} final_output"),
         repo_root=repo_root,
-        relative_path=_require_string(final_output_payload, "schema_file", context=f"{contract_path} final_output"),
+        flow_root=agent_dir.parents[2],
+        framework_root=framework_root,
         context=f"{contract_path} final_output.schema_file",
+        allowed_roots={FLOW_ROOT, STDLIB_ROOT},
+        example="flow:schemas/review.schema.json",
     )
-    example_file = _resolve_repo_relative_file(
+    example_file = _resolve_rooted_existing_file(
+        raw_value=_require_string(final_output_payload, "example_file", context=f"{contract_path} final_output"),
         repo_root=repo_root,
-        relative_path=_require_string(final_output_payload, "example_file", context=f"{contract_path} final_output"),
+        flow_root=agent_dir.parents[2],
+        framework_root=framework_root,
         context=f"{contract_path} final_output.example_file",
+        allowed_roots={FLOW_ROOT, STDLIB_ROOT},
+        example="flow:examples/review.example.json",
     )
 
     format_mode = _require_string(final_output_payload, "format_mode", context=f"{contract_path} final_output")
@@ -491,19 +539,6 @@ def _resolve_repo_relative_file(*, repo_root: Path, relative_path: str, context:
     return candidate
 
 
-def _resolve_flow_relative_file(*, flow_root: Path, relative_path: str, context: str) -> Path:
-    candidate = (flow_root / relative_path).resolve()
-    try:
-        candidate.relative_to(flow_root.resolve())
-    except ValueError as exc:
-        raise RallyConfigError(
-            f"{context} escapes the flow root `{flow_root}`: `{relative_path}`."
-        ) from exc
-    if not candidate.is_file():
-        raise RallyConfigError(f"{context} does not exist: `{candidate}`.")
-    return candidate
-
-
 def _require_mapping(payload: Mapping[str, Any], key: str, *, context: str) -> Mapping[str, Any]:
     value = payload.get(key)
     if not isinstance(value, Mapping):
@@ -554,7 +589,12 @@ def _require_string_list(payload: Mapping[str, Any], key: str, *, context: str) 
     return tuple(value)
 
 
-def _require_unique_string_list(payload: Mapping[str, Any], key: str, *, context: str) -> tuple[str, ...]:
+def _require_unique_string_list(
+    payload: Mapping[str, Any],
+    key: str,
+    *,
+    context: str,
+) -> tuple[str, ...]:
     value = payload.get(key)
     if value is None:
         return ()
@@ -574,6 +614,39 @@ def _require_unique_string_list(payload: Mapping[str, Any], key: str, *, context
     return tuple(items)
 
 
+def _require_unique_rooted_path_list(
+    payload: Mapping[str, Any],
+    key: str,
+    *,
+    context: str,
+    allowed_roots: set[PathRoot],
+    example: str,
+) -> tuple[RootedPath, ...]:
+    value = payload.get(key)
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise RallyConfigError(f"`{key}` must be a list of rooted Rally paths in {context}.")
+
+    items: list[RootedPath] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            raise RallyConfigError(f"`{key}[{index}]` must be a non-empty rooted Rally path in {context}.")
+        rooted_path = parse_rooted_path(
+            item,
+            context=f"`{key}[{index}]` in {context}",
+            allowed_roots=allowed_roots,
+            example=example,
+        )
+        normalized = str(rooted_path)
+        if normalized in seen:
+            raise RallyConfigError(f"`{key}` must not repeat `{normalized}` in {context}.")
+        seen.add(normalized)
+        items.append(rooted_path)
+    return tuple(items)
+
+
 def _require_run_home_relative_paths(
     payload: Mapping[str, Any],
     key: str,
@@ -584,25 +657,75 @@ def _require_run_home_relative_paths(
     if value is None:
         return ()
     if not isinstance(value, list):
-        raise RallyConfigError(f"`{key}` must be a list of run-home-relative paths in {context}.")
+        raise RallyConfigError(f"`{key}` must be a list of `home:` paths in {context}.")
 
     paths: list[Path] = []
     seen: set[str] = set()
     for index, item in enumerate(value):
         if not isinstance(item, str) or not item.strip():
-            raise RallyConfigError(
-                f"`{key}[{index}]` must be a non-empty run-home-relative path in {context}."
-            )
-        path = Path(item.strip())
-        normalized = path.as_posix()
-        if path.is_absolute():
-            raise RallyConfigError(f"`{key}[{index}]` must be run-home-relative, not absolute, in {context}.")
-        if normalized in {".", ""}:
-            raise RallyConfigError(f"`{key}[{index}]` must name a child path in {context}.")
-        if ".." in path.parts:
-            raise RallyConfigError(f"`{key}[{index}]` must not escape the run home in {context}.")
+            raise RallyConfigError(f"`{key}[{index}]` must be a non-empty `home:` path in {context}.")
+        rooted_path = parse_rooted_path(
+            item,
+            context=f"`{key}[{index}]` in {context}",
+            allowed_roots={HOME_ROOT},
+            example="home:repos/demo_repo",
+        )
+        normalized = str(rooted_path)
         if normalized in seen:
             raise RallyConfigError(f"`{key}` must not repeat `{normalized}` in {context}.")
         seen.add(normalized)
-        paths.append(path)
+        paths.append(Path(rooted_path.path_text))
     return tuple(paths)
+
+
+def _resolve_rooted_existing_file(
+    *,
+    raw_value: str,
+    repo_root: Path,
+    flow_root: Path,
+    framework_root: Path | None,
+    context: str,
+    allowed_roots: set[PathRoot],
+    example: str,
+) -> Path:
+    if raw_value.startswith("flows/") or raw_value.startswith("stdlib/rally/"):
+        return _resolve_repo_relative_file(
+            repo_root=repo_root,
+            relative_path=raw_value,
+            context=context,
+        )
+    rooted_path = parse_rooted_path(
+        raw_value,
+        context=context,
+        allowed_roots=allowed_roots,
+        example=example,
+    )
+    candidate = resolve_rooted_path(
+        rooted_path,
+        workspace_root=repo_root,
+        flow_root=flow_root,
+        framework_root=_stdlib_framework_root(
+            repo_root=repo_root,
+            rooted_path=rooted_path,
+            framework_root=framework_root,
+        ),
+        context=context,
+    )
+    if not candidate.is_file():
+        raise RallyConfigError(f"{context} does not exist: `{candidate}`.")
+    return candidate
+
+
+def _stdlib_framework_root(
+    *,
+    repo_root: Path,
+    rooted_path: RootedPath,
+    framework_root: Path | None,
+) -> Path | None:
+    if rooted_path.root != STDLIB_ROOT:
+        return None
+    if (repo_root / "stdlib" / "rally").is_dir():
+        return None
+    if framework_root is not None:
+        return framework_root.resolve()
+    return resolve_framework_root()

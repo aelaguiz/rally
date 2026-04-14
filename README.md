@@ -17,6 +17,12 @@ whole run on disk, and routes every turn from strict JSON instead of prose.
 > usable today. First-class Claude Code support and repo-local built-in memory
 > are next, and both already have concrete design docs in this repo.
 
+## Live Demo
+
+Rally running the shipped `poem_loop` flow from the real CLI.
+
+![Rally poem loop live demo](docs/assets/poem-loop-demo-run.png)
+
 ## Rally In One Line
 
 Rally is orchestration, governance, and harnessing for coding agents, but the
@@ -59,7 +65,7 @@ Use Rally if you want:
   inheritance, typed inputs and outputs, review rules, and compile-time
   failures when the flow lies.
 - **Filesystem-first runtime.** Every run gets one home, one live
-  `home/issue.md`, one clear log trail, and one honest resume path.
+  `home:issue.md`, one clear log trail, and one honest resume path.
 - **Built for coding agents.** The runtime is CLI-first, repo-local, and easy
   to test. It fits Codex now and is being opened cleanly for Claude Code next.
 - **Memory belongs in the product.** Rally's memory direction is repo-local
@@ -121,8 +127,8 @@ A tiny example:
 
 ```prompt
 workflow RepairLoop: "Repair Loop"
-    "Read `home/issue.md` first."
-    "Keep the plan in `artifacts/repair_plan.md`."
+    "Read `home:issue.md` first."
+    "Keep the plan in `home:artifacts/repair_plan.md`."
 
 output ArchitectTurnResult: "Architect Turn Result"
     target: TurnResponse
@@ -142,6 +148,14 @@ That split matters:
 - reviewers can inspect source and readback side by side
 - routing and final output stay typed
 - the runtime does not have to scrape prose and guess what the flow meant
+
+In authored source, Rally paths are rooted. Use `home:...`, `flow:...`,
+`workspace:...`, or `host:...`. Rally internals may also use `stdlib:...`.
+Do not use bare relative paths in `flow.yaml`, prompt `path:` fields, or MCP
+path values. Inside shell commands that already run in the prepared home, plain
+paths like `repos/demo_repo` are still fine. Prompt support files still use the
+current compiler-relative form. If rooted support-file paths are missing, Rally
+stops there and names the Doctrine gap instead of editing `../doctrine`.
 
 ## A Rally Repo Stays Small On Purpose
 

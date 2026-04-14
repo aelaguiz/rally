@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
 import textwrap
 import unittest
 from pathlib import Path
 
+from rally.domain.rooted_path import RootedPath
 from rally.errors import RallyConfigError
 from rally.services.flow_loader import load_flow_code, load_flow_definition
 
@@ -96,7 +98,7 @@ class FlowLoaderTests(unittest.TestCase):
             repo_root = Path(temp_dir).resolve()
             self._write_fixture_repo(
                 repo_root=repo_root,
-                guarded_git_repos_yaml='["repos/demo_repo"]',
+                guarded_git_repos_yaml='["home:repos/demo_repo"]',
             )
 
             flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
@@ -113,9 +115,9 @@ class FlowLoaderTests(unittest.TestCase):
                     host_inputs:
                       required_env: [PSMOBILE_ROOT, PSMOBILE_CONFIG_PACK]
                       required_files:
-                        - ~/.config/psmobile-dev-configs/.env
+                        - host:~/.config/psmobile-dev-configs/.env
                       required_directories:
-                        - ../psmobile
+                        - workspace:fixtures/psmobile
                     """
                 ),
             )
@@ -123,8 +125,47 @@ class FlowLoaderTests(unittest.TestCase):
             flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
 
             self.assertEqual(flow.host_inputs.required_env, ("PSMOBILE_ROOT", "PSMOBILE_CONFIG_PACK"))
-            self.assertEqual(flow.host_inputs.required_files, ("~/.config/psmobile-dev-configs/.env",))
-            self.assertEqual(flow.host_inputs.required_directories, ("../psmobile",))
+            self.assertEqual(
+                flow.host_inputs.required_files,
+                (RootedPath(root="host", path_text="~/.config/psmobile-dev-configs/.env"),),
+            )
+            self.assertEqual(
+                flow.host_inputs.required_directories,
+                (RootedPath(root="workspace", path_text="fixtures/psmobile"),),
+            )
+
+    def test_load_flow_definition_uses_framework_stdlib_when_workspace_has_no_local_stdlib(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            repo_root = root / "workspace"
+            framework_root = root / "framework"
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                schema_file="stdlib:schemas/rally_turn_result.schema.json",
+                example_file="stdlib:examples/rally_turn_result.example.json",
+            )
+            shutil.rmtree(repo_root / "stdlib")
+            (framework_root / "stdlib" / "rally" / "schemas").mkdir(parents=True)
+            (framework_root / "stdlib" / "rally" / "examples").mkdir(parents=True)
+            (framework_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").write_text(
+                self._schema_text(include_next_owner=True),
+                encoding="utf-8",
+            )
+            (framework_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json").write_text(
+                '{"kind":"done","summary":"ok"}\n',
+                encoding="utf-8",
+            )
+
+            flow = load_flow_definition(
+                repo_root=repo_root,
+                flow_name="demo",
+                framework_root=framework_root,
+            )
+
+            self.assertEqual(
+                flow.agent("01_scope_lead").compiled.final_output.schema_file,
+                framework_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
+            )
 
     def test_load_flow_definition_rejects_non_list_host_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -151,8 +192,8 @@ class FlowLoaderTests(unittest.TestCase):
                     """\
                     host_inputs:
                       required_files:
-                        - ~/.config/psmobile-dev-configs/.env
-                        - ~/.config/psmobile-dev-configs/.env
+                        - host:~/.config/psmobile-dev-configs/.env
+                        - host:~/.config/psmobile-dev-configs/.env
                     """
                 ),
             )
@@ -248,7 +289,7 @@ class FlowLoaderTests(unittest.TestCase):
                 guarded_git_repos_yaml='["/tmp/demo_repo"]',
             )
 
-            with self.assertRaisesRegex(RallyConfigError, "run-home-relative"):
+            with self.assertRaisesRegex(RallyConfigError, "rooted Rally path"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
     def test_load_flow_definition_rejects_support_files_outside_workspace_root(self) -> None:
@@ -256,16 +297,36 @@ class FlowLoaderTests(unittest.TestCase):
             repo_root = Path(temp_dir).resolve()
             self._write_fixture_repo(
                 repo_root=repo_root,
-                schema_file="../shared/schema.json",
-                example_file="../shared/example.json",
+                schema_file="flow:../shared/schema.json",
+                example_file="flow:../shared/example.json",
             )
             shared = repo_root / "shared"
             shared.mkdir(parents=True)
             (shared / "schema.json").write_text(self._schema_text(include_next_owner=True), encoding="utf-8")
             (shared / "example.json").write_text('{"kind":"done","summary":"ok"}\n', encoding="utf-8")
 
-            with self.assertRaisesRegex(RallyConfigError, "escapes the Rally workspace root"):
+            with self.assertRaisesRegex(RallyConfigError, "must not escape its root"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_accepts_internal_stdlib_rooted_support_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                schema_file="stdlib:schemas/rally_turn_result.schema.json",
+                example_file="stdlib:examples/rally_turn_result.example.json",
+            )
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            self.assertEqual(
+                flow.agent("01_scope_lead").compiled.final_output.schema_file,
+                repo_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
+            )
+            self.assertEqual(
+                flow.agent("01_scope_lead").compiled.final_output.example_file,
+                repo_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json",
+            )
 
     def test_load_flow_definition_accepts_control_ready_review_final_output(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -316,7 +377,7 @@ class FlowLoaderTests(unittest.TestCase):
             "name: demo\n"
             "code: DEMO\n"
             "start_agent: 01_scope_lead\n"
-            "setup_home_script: setup/prepare_home.sh\n"
+            "setup_home_script: flow:setup/prepare_home.sh\n"
             f"{host_inputs_yaml}"
             "agents:\n"
             "  01_scope_lead:\n"
@@ -329,7 +390,7 @@ class FlowLoaderTests(unittest.TestCase):
             "  adapter: codex\n"
             f"{max_command_turns_line}"
             f"{guarded_git_repos_line}"
-            "  prompt_input_command: setup/prompt_inputs.py\n"
+            "  prompt_input_command: flow:setup/prompt_inputs.py\n"
             "  adapter_args:\n"
             "    model: gpt-5.4\n"
         )
@@ -364,12 +425,12 @@ class FlowLoaderTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        if not schema_file.startswith("../"):
+        if schema_file.startswith("stdlib:") or schema_file.startswith("stdlib/rally/"):
             (schema_root / "rally_turn_result.schema.json").write_text(
                 self._schema_text(include_next_owner=include_next_owner),
                 encoding="utf-8",
             )
-        if not example_file.startswith("../"):
+        if example_file.startswith("stdlib:") or example_file.startswith("stdlib/rally/"):
             (example_root / "rally_turn_result.example.json").write_text(
                 '{"kind":"done","summary":"ok"}\n',
                 encoding="utf-8",
@@ -445,8 +506,8 @@ class FlowLoaderTests(unittest.TestCase):
                         "declaration_name": "ReviewResponse",
                         "format_mode": "json_schema",
                         "schema_profile": "OpenAIStructuredOutput",
-                        "schema_file": "flows/demo/schemas/review_response.schema.json",
-                        "example_file": "flows/demo/examples/review_response.example.json",
+                        "schema_file": "flow:schemas/review_response.schema.json",
+                        "example_file": "flow:examples/review_response.example.json",
                     },
                     "review": {
                         "exists": True,
