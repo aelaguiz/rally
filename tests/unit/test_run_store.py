@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import textwrap
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from rally.domain.flow import (
@@ -14,7 +15,7 @@ from rally.domain.flow import (
     FlowHostInputs,
 )
 from rally.errors import RallyStateError
-from rally.services.run_store import archive_run, create_run, load_run_record
+from rally.services.run_store import archive_run, create_run, list_active_run_records, load_run_record
 
 
 class RunStoreTests(unittest.TestCase):
@@ -104,6 +105,19 @@ class RunStoreTests(unittest.TestCase):
             self.assertEqual(first.id, "DMO-1")
             self.assertEqual(second.id, "DMO-2")
 
+    def test_list_active_run_records_returns_sorted_active_runs_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+
+            first = create_run(repo_root=repo_root, flow=flow)
+            second = create_run(repo_root=repo_root, flow=replace(flow, code="POM", name="poem"))
+            archive_run(repo_root=repo_root, run_id=first.id)
+
+            records = list_active_run_records(repo_root=repo_root)
+
+            self.assertEqual([record.id for record in records], [second.id])
+
 
 def _demo_flow(*, repo_root: Path) -> FlowDefinition:
     flow_root = repo_root / "flows" / "demo"
@@ -146,6 +160,7 @@ def _demo_flow(*, repo_root: Path) -> FlowDefinition:
         start_agent_key=agent.key,
         max_command_turns=8,
         guarded_git_repos=(),
+        runtime_env={},
         host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
         agents={agent.key: agent},
         adapter=AdapterConfig(name="codex", prompt_input_command=None, args={}),

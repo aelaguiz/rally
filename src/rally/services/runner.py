@@ -24,6 +24,7 @@ from rally.domain.turn_result import (
 from rally.errors import RallyConfigError, RallyError, RallyStateError, RallyUsageError
 from rally.services.flow_build import ensure_flow_assets_built
 from rally.services.final_response_loader import load_agent_final_response
+from rally.services.flow_env import build_flow_subprocess_env
 from rally.services.flow_loader import load_flow_code, load_flow_definition
 from rally.services.guarded_git_repos import check_guarded_git_repos, render_guarded_git_repo_blocker
 from rally.services.home_materializer import activate_agent_skills, materialize_run_home, prepare_run_home_shell
@@ -88,6 +89,9 @@ def run_flow(
         sync_workspace_builtins(workspace=workspace_context)
         ensure_flow_assets_built(workspace=workspace_context, flow_name=request.flow_name)
         flow = load_flow_definition(repo_root=repo_root, flow_name=request.flow_name)
+        issue_seed = _load_issue_seed(
+            issue_seed_path=request.issue_seed_path,
+        )
         _maybe_archive_replaced_run(
             repo_root=repo_root,
             flow=flow,
@@ -97,13 +101,14 @@ def run_flow(
             repo_root=repo_root,
             flow=flow,
         )
-        return _execute_new_run(
+        result = _execute_new_run(
             workspace=workspace_context,
             repo_root=repo_root,
             flow=flow,
             run_record=run_record,
             display_factory=display_factory,
             subprocess_run=subprocess_run,
+            step=request.step,
             lifecycle_code="RUN",
             lifecycle_message=f"Created run `{run_record.id}` for flow `{flow.name}`.",
             lifecycle_data={
@@ -111,6 +116,16 @@ def run_flow(
                 "flow_code": flow.code,
                 "start_agent_key": flow.start_agent_key,
             },
+            issue_text=issue_seed.issue_text,
+            run_started_detail_lines=issue_seed.run_started_detail_lines,
+        )
+        if issue_seed.seed_path is None:
+            return result
+        return RunCommandResult(
+            run_id=result.run_id,
+            status=result.status,
+            current_agent_key=result.current_agent_key,
+            message=f"Seeded `home/issue.md` from `{issue_seed.seed_path}`.\n{result.message}",
         )
 
 
@@ -129,7 +144,10 @@ def resume_run(
 
     run_dir = find_run_dir(repo_root=repo_root, run_id=request.run_id)
     if run_dir.is_relative_to(archive_runs_dir(repo_root)):
-        raise RallyUsageError(f"Run `{request.run_id}` is archived and cannot be resumed.")
+        raise RallyUsageError(
+            f"Run `{request.run_id}` is archived and cannot be resumed. "
+            f"Use `rally status {request.run_id}` to inspect it."
+        )
     run_record = load_run_record(run_dir=run_dir)
 
     with flow_lock(repo_root=repo_root, flow_code=run_record.flow_code):
@@ -144,6 +162,7 @@ def resume_run(
                 run_record=run_record,
                 subprocess_run=subprocess_run,
                 display_factory=display_factory,
+                step=request.step,
             )
         recorder = _build_recorder(
             run_dir=run_dir,
@@ -175,6 +194,7 @@ def resume_run(
                 recorder=recorder,
                 issue_edit_diff=issue_edit_diff,
                 subprocess_run=subprocess_run,
+                step=request.step,
             )
         finally:
             recorder.close()
@@ -188,6 +208,7 @@ def _execute_new_run(
     run_record: RunRecord,
     display_factory: DisplayFactory | None,
     subprocess_run: SubprocessRunner,
+    step: bool,
     lifecycle_code: str,
     lifecycle_message: str,
     lifecycle_data: dict[str, object] | None,
@@ -224,6 +245,7 @@ def _execute_new_run(
             run_record=run_record,
             recorder=recorder,
             subprocess_run=subprocess_run,
+            step=step,
             run_start_source=run_start_source,
             run_started_detail_lines=run_started_detail_lines,
         )
@@ -239,6 +261,7 @@ def _restart_run(
     run_record: RunRecord,
     subprocess_run: SubprocessRunner,
     display_factory: DisplayFactory | None,
+    step: bool,
 ) -> RunCommandResult:
     run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
     state = load_run_state(run_dir=run_dir)
@@ -273,6 +296,7 @@ def _restart_run(
         run_record=new_run,
         display_factory=display_factory,
         subprocess_run=subprocess_run,
+        step=step,
         lifecycle_code="RESTART",
         lifecycle_message=f"Restarted run `{run_record.id}` as `{new_run.id}` for flow `{flow.name}`.",
         lifecycle_data={
@@ -289,7 +313,7 @@ def _restart_run(
         run_id=restarted_result.run_id,
         status=restarted_result.status,
         current_agent_key=restarted_result.current_agent_key,
-        message=f"Restarted run `{run_record.id}` as `{new_run.id}`. {restarted_result.message}",
+        message=f"Restarted run `{run_record.id}` as `{new_run.id}`.\n{restarted_result.message}",
     )
 
 
@@ -399,6 +423,40 @@ def _record_archived_run(
         )
 
 
+@dataclass(frozen=True)
+class _IssueSeed:
+    seed_path: Path | None
+    issue_text: str | None
+    run_started_detail_lines: Sequence[str] = ()
+
+
+def _load_issue_seed(*, issue_seed_path: Path | None) -> _IssueSeed:
+    if issue_seed_path is None:
+        return _IssueSeed(seed_path=None, issue_text=None)
+
+    seed_path = issue_seed_path.expanduser().resolve()
+    if not seed_path.exists():
+        raise RallyUsageError(f"Issue seed file does not exist: `{seed_path}`.")
+    if not seed_path.is_file():
+        raise RallyUsageError(f"Issue seed path is not a file: `{seed_path}`.")
+    try:
+        issue_text = seed_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise RallyUsageError(f"Issue seed file must be valid UTF-8 text: `{seed_path}`.") from exc
+    except OSError as exc:
+        detail = exc.strerror or str(exc)
+        raise RallyUsageError(f"Could not read issue seed file `{seed_path}`: {detail}.") from exc
+    if not issue_text.strip():
+        raise RallyUsageError(
+            f"Issue seed file is blank: `{seed_path}`. Write non-empty issue text there or omit `--from-file`."
+        )
+    return _IssueSeed(
+        seed_path=seed_path,
+        issue_text=issue_text,
+        run_started_detail_lines=(f"Issue Seed: `{seed_path}`",),
+    )
+
+
 def _build_recorder(
     *,
     run_dir: Path,
@@ -423,7 +481,10 @@ def _edit_issue_before_resume(
     recorder: RunEventRecorder,
 ) -> _IssueEditDiff | None:
     if state.status == RunStatus.DONE:
-        raise RallyUsageError(f"Run `{run_record.id}` is already done.")
+        raise RallyUsageError(
+            f"Run `{run_record.id}` is already done. "
+            f"Use `rally resume {run_record.id} --restart` to start fresh from the original issue."
+        )
 
     editor_command = resolve_interactive_issue_editor()
     if editor_command is None:
@@ -578,6 +639,7 @@ def _execute_until_stop(
     recorder: RunEventRecorder,
     issue_edit_diff: _IssueEditDiff | None = None,
     subprocess_run: SubprocessRunner,
+    step: bool = False,
     run_start_source: str = "rally run",
     run_started_detail_lines: Sequence[str] = (),
 ) -> RunCommandResult:
@@ -640,6 +702,7 @@ def _execute_until_stop(
             run_record=run_record,
             recorder=recorder,
             subprocess_run=subprocess_run,
+            pause_on_handoff=step,
         )
         turns_started += 1
         if outcome.command_result is not None:
@@ -656,6 +719,7 @@ def _execute_single_turn(
     run_record: RunRecord,
     recorder: RunEventRecorder,
     subprocess_run: SubprocessRunner,
+    pause_on_handoff: bool = False,
 ) -> _TurnExecutionOutcome:
     state = load_run_state(run_dir=run_dir)
     _assert_resumable(state=state, run_id=run_record.id)
@@ -792,7 +856,10 @@ def _execute_single_turn(
                 run_id=run_record.id,
                 status=blocked_state.status,
                 current_agent_key=blocked_state.current_agent_key,
-                message=f"Run `{run_record.id}` blocked on `{agent.key}`: {blocked_state.blocker_reason}",
+                message=_render_blocked_message(
+                    run_id=run_record.id,
+                    reason=f"blocked on `{agent.key}`: {blocked_state.blocker_reason}",
+                ),
             ),
         )
 
@@ -865,7 +932,10 @@ def _execute_single_turn(
                 run_id=run_record.id,
                 status=blocked_state.status,
                 current_agent_key=blocked_state.current_agent_key,
-                message=f"Run `{run_record.id}` is blocked: {blocked_state.blocker_reason}",
+                message=_render_blocked_message(
+                    run_id=run_record.id,
+                    reason=blocked_state.blocker_reason or "run is blocked",
+                ),
             ),
         )
 
@@ -893,6 +963,7 @@ def _execute_single_turn(
         agent=agent,
         turn_index=turn_index,
         turn_result=turn_result,
+        pause_on_handoff=pause_on_handoff,
     )
     write_run_state(run_dir=run_dir, state=next_state)
     _emit_turn_result_event(
@@ -913,7 +984,26 @@ def _execute_single_turn(
     )
 
     result = None
-    if not isinstance(turn_result, HandoffTurnResult):
+    if pause_on_handoff and isinstance(turn_result, HandoffTurnResult):
+        _emit_step_pause_event(
+            recorder=recorder,
+            run_record=run_record,
+            state=next_state,
+            turn_index=turn_index,
+        )
+        _append_issue_pause_record(
+            repo_root=repo_root,
+            run_id=run_record.id,
+            state=next_state,
+            turn_index=turn_index,
+        )
+        result = RunCommandResult(
+            run_id=run_record.id,
+            status=next_state.status,
+            current_agent_key=next_state.current_agent_key,
+            message=_render_step_pause_message(run_record=run_record, state=next_state),
+        )
+    elif not isinstance(turn_result, HandoffTurnResult):
         result = RunCommandResult(
             run_id=run_record.id,
             status=next_state.status,
@@ -987,7 +1077,10 @@ def _block_for_adapter_readiness(
             run_id=run_record.id,
             status=blocked_state.status,
             current_agent_key=blocked_state.current_agent_key,
-            message=f"Run `{run_record.id}` blocked on `{agent.key}`: {blocked_state.blocker_reason}",
+            message=_render_blocked_message(
+                run_id=run_record.id,
+                reason=f"blocked on `{agent.key}`: {blocked_state.blocker_reason}",
+            ),
         ),
     )
 
@@ -1039,7 +1132,7 @@ def _block_for_command_turn_cap(
         run_id=run_record.id,
         status=blocked_state.status,
         current_agent_key=blocked_state.current_agent_key,
-        message=f"Run `{run_record.id}` is blocked: {blocker_reason}",
+        message=_render_blocked_message(run_id=run_record.id, reason=blocker_reason),
     )
 
 
@@ -1144,7 +1237,7 @@ def _block_for_guarded_git_repos(
             run_id=run_record.id,
             status=blocked_state.status,
             current_agent_key=blocked_state.current_agent_key,
-            message=f"Run `{run_record.id}` is blocked: {blocker_reason}",
+            message=_render_blocked_message(run_id=run_record.id, reason=blocker_reason),
         ),
     )
 
@@ -1175,17 +1268,21 @@ def _load_prompt_inputs(
     completed = subprocess.run(
         [sys.executable, str(command_path)],
         cwd=flow.root_dir,
-        env={
-            **os.environ,
-            "RALLY_AGENT_KEY": agent.key,
-            "RALLY_AGENT_SLUG": agent.slug,
-            "RALLY_CLI_BIN": str(workspace.cli_bin.resolve()),
-            "RALLY_FLOW_CODE": run_record.flow_code,
-            "RALLY_ISSUE_PATH": str((run_home / "issue.md").resolve()),
-            "RALLY_RUN_HOME": str(run_home.resolve()),
-            "RALLY_RUN_ID": run_record.id,
-            "RALLY_WORKSPACE_DIR": str(workspace.workspace_root.resolve()),
-        },
+        env=build_flow_subprocess_env(
+            flow=flow,
+            workspace=workspace,
+            run_home=run_home,
+            extra_env={
+                "RALLY_AGENT_KEY": agent.key,
+                "RALLY_AGENT_SLUG": agent.slug,
+                "RALLY_CLI_BIN": str(workspace.cli_bin.resolve()),
+                "RALLY_FLOW_CODE": run_record.flow_code,
+                "RALLY_ISSUE_PATH": str((run_home / "issue.md").resolve()),
+                "RALLY_RUN_HOME": str(run_home.resolve()),
+                "RALLY_RUN_ID": run_record.id,
+                "RALLY_WORKSPACE_DIR": str(workspace.workspace_root.resolve()),
+            },
+        ),
         capture_output=True,
         text=True,
         check=False,
@@ -1263,12 +1360,13 @@ def _state_from_turn_result(
     agent: FlowAgent,
     turn_index: int,
     turn_result: TurnResult,
+    pause_on_handoff: bool = False,
 ) -> RunState:
     updated_at = _render_time()
     if isinstance(turn_result, HandoffTurnResult):
         next_agent = _resolve_next_agent(flow=flow, next_owner=turn_result.next_owner)
         return RunState(
-            status=RunStatus.RUNNING,
+            status=RunStatus.PAUSED if pause_on_handoff else RunStatus.RUNNING,
             current_agent_key=next_agent.key,
             current_agent_slug=next_agent.slug,
             turn_index=turn_index,
@@ -1419,6 +1517,48 @@ def _append_review_note(
     )
 
 
+def _emit_step_pause_event(
+    *,
+    recorder: RunEventRecorder,
+    run_record: RunRecord,
+    state: RunState,
+    turn_index: int,
+) -> None:
+    recorder.emit(
+        source="rally",
+        kind="status",
+        code="PAUSED",
+        message=_render_step_pause_message(run_record=run_record, state=state),
+        level="info",
+        turn_index=turn_index,
+        agent_key=state.current_agent_key,
+        agent_slug=state.current_agent_slug,
+        data={"step": True},
+    )
+
+
+def _append_issue_pause_record(
+    *,
+    repo_root: Path,
+    run_id: str,
+    state: RunState,
+    turn_index: int,
+) -> None:
+    append_issue_event(
+        repo_root=repo_root,
+        run_id=run_id,
+        title="Rally Paused",
+        source="rally runtime",
+        detail_lines=(
+            f"Agent: `{state.current_agent_key}`",
+            "Reason: `--step` stopped after one turn.",
+            f"Resume: `rally resume {run_id}`",
+            f"Step Again: `rally resume {run_id} --step`",
+        ),
+        turn_index=turn_index,
+    )
+
+
 def _append_run_started_event_if_needed(
     *,
     repo_root: Path,
@@ -1462,9 +1602,12 @@ def _resolve_current_agent(*, flow: FlowDefinition, state: RunState) -> FlowAgen
 
 def _assert_resumable(*, state: RunState, run_id: str) -> None:
     if state.status == RunStatus.DONE:
-        raise RallyUsageError(f"Run `{run_id}` is already done.")
+        raise RallyUsageError(
+            f"Run `{run_id}` is already done. "
+            f"Use `rally resume {run_id} --restart` to start fresh from the original issue."
+        )
     if state.status == RunStatus.BLOCKED:
-        raise RallyUsageError(f"Run `{run_id}` is blocked: {state.blocker_reason}.")
+        raise RallyUsageError(_render_blocked_message(run_id=run_id, reason=state.blocker_reason or "run is blocked"))
     if state.status != RunStatus.SLEEPING:
         return
     if state.sleep_until is None:
@@ -1472,7 +1615,8 @@ def _assert_resumable(*, state: RunState, run_id: str) -> None:
     wake_time = _parse_time(state.sleep_until)
     if wake_time > datetime.now(UTC):
         raise RallyUsageError(
-            f"Run `{run_id}` is sleeping until `{state.sleep_until}`: {state.sleep_reason}."
+            f"Run `{run_id}` is sleeping until `{state.sleep_until}`: {state.sleep_reason}.\n"
+            f"Next: `rally resume {run_id}` after that time."
         )
 
 
@@ -1490,16 +1634,37 @@ def _resolve_next_agent(*, flow: FlowDefinition, next_owner: str) -> FlowAgent:
 
 def _render_status_message(*, run_record: RunRecord, state: RunState, turn_result: TurnResult) -> str:
     if isinstance(turn_result, HandoffTurnResult):
-        return (
-            f"Run `{run_record.id}` paused after a handoff to `{state.current_agent_key}`."
-        )
+        if state.status == RunStatus.PAUSED:
+            return _render_step_pause_message(run_record=run_record, state=state)
+        return f"Run `{run_record.id}` paused after a handoff to `{state.current_agent_key}`."
     if isinstance(turn_result, DoneTurnResult):
-        return f"Run `{run_record.id}` is done: {turn_result.summary}"
+        return _with_next_action(
+            f"Run `{run_record.id}` is done: {turn_result.summary}",
+            f"`rally resume {run_record.id} --restart`",
+        )
     if isinstance(turn_result, BlockerTurnResult):
-        return f"Run `{run_record.id}` is blocked: {turn_result.reason}"
+        return _render_blocked_message(run_id=run_record.id, reason=turn_result.reason)
     if isinstance(turn_result, SleepTurnResult):
-        return f"Run `{run_record.id}` is blocked: {state.blocker_reason}"
+        return _render_blocked_message(run_id=run_record.id, reason=state.blocker_reason or "run is blocked")
     return f"Run `{run_record.id}` updated."
+
+
+def _render_step_pause_message(*, run_record: RunRecord, state: RunState) -> str:
+    return _with_next_action(
+        f"Run `{run_record.id}` paused after one step on `{state.current_agent_key}`.",
+        f"`rally resume {run_record.id}` or `rally resume {run_record.id} --step`",
+    )
+
+
+def _render_blocked_message(*, run_id: str, reason: str) -> str:
+    return _with_next_action(
+        f"Run `{run_id}` is blocked: {reason}",
+        f"`rally resume {run_id} --edit` or `rally resume {run_id} --restart`",
+    )
+
+
+def _with_next_action(summary: str, next_action: str) -> str:
+    return f"{summary}\nNext: {next_action}"
 
 
 def _format_exec_failure(invocation: AdapterInvocation) -> str:

@@ -41,6 +41,7 @@ Review-native turns may use control-ready Doctrine review JSON instead.
 - Every Rally-managed agent gets the shared `rally-kernel` skill.
 - The shared note path is `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`.
 - Rally injects `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`.
+- A flow may also add extra startup and launch env vars through `runtime.env` in `flow.yaml`.
 - `rally.turn_results` is the shared non-review control JSON with five control keys plus optional passive `agent_issues`.
 - A non-review flow can opt out locally by declaring its own output shape over the shared schema instead of using the shared shape-level wording.
 - Review-native turns may declare a different final JSON when Doctrine emits control-ready review metadata.

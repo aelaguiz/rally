@@ -72,20 +72,26 @@ What ships today:
   `SKILL.md` and Doctrine `prompts/SKILL.prompt` both supported
 - per-agent skill views refreshed under `home/sessions/<agent>/skills/` and
   the live `home/skills/` tree activated per turn from that prebuilt view
-- flow-level `setup_home_script`, `runtime.prompt_input_command`, and
-  `runtime.guarded_git_repos`
+- flow-level `setup_home_script`, `runtime.prompt_input_command`,
+  `runtime.env`, and `runtime.guarded_git_repos`
 - dirty guarded-repo failures that block `handoff` or `done` loud instead of
   letting Rally claim a clean finish
 - `rally workspace sync`
 - `rally run`
+- `rally run --from-file <path>`
 - `rally run --new`
+- `rally run --step`
 - `rally resume`
 - `rally resume --edit`
 - `rally resume --restart`
+- `rally resume --step`
+- `rally status`
 - workspace built-ins can sync before a manual Doctrine emit or before the
   first run without creating run state
 - live operator stream on a TTY with plain fallback off TTY
+- CLI help with short examples and next-step hints
 - chained multi-turn execution across handoffs
+- one-turn manual stepping that stops as `paused` instead of `blocked`
 - per-flow `runtime.max_command_turns`
 - `home/issue.md` plus `issue_history/`
 - the opening brief lives in `home/issue.md`, not a shared sidecar brief file
@@ -148,13 +154,13 @@ The current checked-in runtime surface is:
 - `src/rally/services/flow_loader.py`
   - loads `flow.yaml`
   - validates supported adapter names and adapter args through the registry
-  - validates `runtime.max_command_turns`, prompt-input commands, and guarded
-    repo paths
+  - validates `runtime.max_command_turns`, prompt-input commands, `runtime.env`,
+    and guarded repo paths
   - requires compiled `build/agents/*`
   - requires `AGENTS.contract.json`
   - validates flow codes, `runtime.max_command_turns`,
-    `runtime.prompt_input_command`, `runtime.guarded_git_repos`, and the shared
-    turn-result schema
+    `runtime.prompt_input_command`, `runtime.env`,
+    `runtime.guarded_git_repos`, and the shared turn-result schema
   - carries the compiled slug forward as the source-of-truth agent identity after validation
 - `src/rally/services/skill_bundles.py`
   - resolves markdown skill roots from `SKILL.md`
@@ -194,6 +200,8 @@ The current checked-in runtime surface is:
   - copies compiled agents, refreshes per-agent skill views under
     `home/sessions/<agent>/skills/`, and copies allowlisted MCPs
   - calls `adapter.prepare_home(...)`
+  - checks startup host inputs against the effective env from shell env plus
+    optional `runtime.env`
   - runs flow setup only when the run home first becomes ready
 - `src/rally/services/guarded_git_repos.py`
   - checks guarded run-home repo paths for missing dirs, non-git roots, and
@@ -242,6 +250,11 @@ The current checked-in runtime surface is:
 - `src/rally/adapters/codex/launcher.py`
   - builds `CODEX_HOME`, `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`
   - writes one adapter launch proof file per turn
+- `src/rally/services/flow_env.py`
+  - expands optional `runtime.env` values from `flow.yaml`
+  - applies that flow env to startup host-input checks, setup, prompt-input,
+    and adapter launches
+  - lets flow env override duplicate shell env while still keeping Rally and adapter keys last
 - `src/rally/adapters/codex/session_store.py`
   - saves one session id per agent
   - writes per-turn `exec.jsonl`, `stderr.log`, and `last_message.json`
@@ -251,6 +264,8 @@ The current checked-in runtime surface is:
   - wires run creation, resume, runtime prompt-input injection, adapter
     launch, guarded-repo checks, result handling, state writes, and
     issue/event logging
+  - validates `run --from-file` before archive or run creation, then copies
+    that text into the new run's `home/issue.md`
   - lets a blocked run retry after `resume --edit` saves a non-empty issue
   - lets `resume --restart` archive the old run and start a fresh run from the
     original issue
@@ -258,6 +273,8 @@ The current checked-in runtime surface is:
     `resume --edit` changed the issue text
   - appends Rally-owned ledger blocks with Markdown `---` dividers and turn
     labels on turn-scoped records
+  - lets `run --step` and `resume --step` stop clean after one turn and mark
+    the run as `paused`
   - keeps chaining turns after handoffs until Rally reaches `done`, `blocker`,
     a runtime failure, a sleep request, or the command turn cap
 

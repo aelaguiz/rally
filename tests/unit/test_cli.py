@@ -15,6 +15,45 @@ from rally.services.workspace import workspace_context_from_root
 
 
 class CliTests(unittest.TestCase):
+    def test_top_level_help_includes_quickstart_examples(self) -> None:
+        stdout = io.StringIO()
+
+        with self.assertRaises(SystemExit) as raised, redirect_stdout(stdout):
+            main(["--help"])
+
+        self.assertEqual(raised.exception.code, 0)
+        help_text = stdout.getvalue()
+        self.assertIn("Run filesystem-first Rally workflows from the repo root.", help_text)
+        self.assertIn("rally workspace sync", help_text)
+        self.assertIn("rally run demo --from-file ./issue.md", help_text)
+        self.assertIn("rally status", help_text)
+        self.assertIn("status              Show active runs or inspect one run.", help_text)
+
+    def test_run_help_includes_examples_and_next_step(self) -> None:
+        stdout = io.StringIO()
+
+        with self.assertRaises(SystemExit) as raised, redirect_stdout(stdout):
+            main(["run", "--help"])
+
+        self.assertEqual(raised.exception.code, 0)
+        help_text = stdout.getvalue()
+        self.assertIn("Create a Rally run shell for one flow", help_text)
+        self.assertIn("--from-file", help_text)
+        self.assertIn("rally run demo --from-file ./issue.md", help_text)
+        self.assertIn("rally run demo --step", help_text)
+        self.assertIn("Next: Rally will either start the run", help_text)
+
+    def test_status_help_includes_examples(self) -> None:
+        stdout = io.StringIO()
+
+        with self.assertRaises(SystemExit) as raised, redirect_stdout(stdout):
+            main(["status", "--help"])
+
+        self.assertEqual(raised.exception.code, 0)
+        help_text = stdout.getvalue()
+        self.assertIn("Inspect Rally run state from repo files.", help_text)
+        self.assertIn("rally status DMO-1", help_text)
+
     def test_run_command_calls_runner_without_external_brief_flag(self) -> None:
         stdout = io.StringIO()
         workspace = self._workspace(Path("/tmp/repo"))
@@ -30,6 +69,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("Run `DMO-1` created.", stdout.getvalue())
         self.assertEqual(run_flow_mock.call_args.kwargs["request"].flow_name, "demo")
         self.assertFalse(run_flow_mock.call_args.kwargs["request"].start_new)
+        self.assertFalse(run_flow_mock.call_args.kwargs["request"].step)
 
     def test_run_command_passes_new_flag_to_runner(self) -> None:
         stdout = io.StringIO()
@@ -46,6 +86,48 @@ class CliTests(unittest.TestCase):
         self.assertIn("Run `DMO-2` created.", stdout.getvalue())
         self.assertEqual(run_flow_mock.call_args.kwargs["request"].flow_name, "demo")
         self.assertTrue(run_flow_mock.call_args.kwargs["request"].start_new)
+        self.assertFalse(run_flow_mock.call_args.kwargs["request"].step)
+
+    def test_run_command_passes_step_flag_to_runner(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.run_flow",
+            return_value=SimpleNamespace(message="Run `DMO-3` paused."),
+        ) as run_flow_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["run", "demo", "--step"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Run `DMO-3` paused.", stdout.getvalue())
+        self.assertEqual(run_flow_mock.call_args.kwargs["request"].flow_name, "demo")
+        self.assertFalse(run_flow_mock.call_args.kwargs["request"].start_new)
+        self.assertTrue(run_flow_mock.call_args.kwargs["request"].step)
+
+    def test_run_command_passes_from_file_to_runner_as_absolute_path(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            current_dir = Path.cwd()
+            issue_path = Path(temp_dir).resolve() / "issue.md"
+            issue_path.write_text("Seed issue text.\n", encoding="utf-8")
+            try:
+                os.chdir(temp_dir)
+                with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+                    "rally.cli.run_flow",
+                    return_value=SimpleNamespace(message="Run `DMO-4` created."),
+                ) as run_flow_mock:
+                    with redirect_stdout(stdout):
+                        exit_code = main(["run", "demo", "--from-file", "./issue.md"])
+            finally:
+                os.chdir(current_dir)
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Run `DMO-4` created.", stdout.getvalue())
+        self.assertEqual(run_flow_mock.call_args.kwargs["request"].flow_name, "demo")
+        self.assertEqual(run_flow_mock.call_args.kwargs["request"].issue_seed_path, issue_path)
 
     def test_run_command_rejects_removed_brief_flag(self) -> None:
         stderr = io.StringIO()
@@ -81,6 +163,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(resume_run_mock.call_args.kwargs["request"].run_id, "DMO-1")
         self.assertTrue(resume_run_mock.call_args.kwargs["request"].edit_issue)
         self.assertFalse(resume_run_mock.call_args.kwargs["request"].restart)
+        self.assertFalse(resume_run_mock.call_args.kwargs["request"].step)
 
     def test_resume_command_passes_restart_flag_to_runner(self) -> None:
         stdout = io.StringIO()
@@ -98,6 +181,25 @@ class CliTests(unittest.TestCase):
         self.assertEqual(resume_run_mock.call_args.kwargs["request"].run_id, "DMO-1")
         self.assertFalse(resume_run_mock.call_args.kwargs["request"].edit_issue)
         self.assertTrue(resume_run_mock.call_args.kwargs["request"].restart)
+        self.assertFalse(resume_run_mock.call_args.kwargs["request"].step)
+
+    def test_resume_command_passes_step_flag_to_runner(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.resume_run",
+            return_value=SimpleNamespace(message="Run `DMO-1` paused."),
+        ) as resume_run_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["resume", "DMO-1", "--step"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Run `DMO-1` paused.", stdout.getvalue())
+        self.assertEqual(resume_run_mock.call_args.kwargs["request"].run_id, "DMO-1")
+        self.assertFalse(resume_run_mock.call_args.kwargs["request"].edit_issue)
+        self.assertFalse(resume_run_mock.call_args.kwargs["request"].restart)
+        self.assertTrue(resume_run_mock.call_args.kwargs["request"].step)
 
     def test_resume_command_rejects_edit_and_restart_together(self) -> None:
         stderr = io.StringIO()
@@ -107,6 +209,38 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("--restart", stderr.getvalue())
+
+    def test_status_command_lists_active_runs_without_run_id(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.show_status",
+            return_value=SimpleNamespace(message="Active runs:\n- `DMO-1`"),
+        ) as show_status_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["status"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Active runs:", stdout.getvalue())
+        self.assertEqual(show_status_mock.call_args.kwargs["repo_root"], workspace.workspace_root)
+        self.assertIsNone(show_status_mock.call_args.kwargs["run_id"])
+
+    def test_status_command_reads_one_run(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.show_status",
+            return_value=SimpleNamespace(message="Run `DMO-1`\nStatus: `paused`"),
+        ) as show_status_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["status", "DMO-1"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Status: `paused`", stdout.getvalue())
+        self.assertEqual(show_status_mock.call_args.kwargs["repo_root"], workspace.workspace_root)
+        self.assertEqual(show_status_mock.call_args.kwargs["run_id"], "DMO-1")
 
     def test_workspace_sync_command_prints_synced_paths(self) -> None:
         stdout = io.StringIO()

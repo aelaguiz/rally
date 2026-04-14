@@ -53,6 +53,7 @@ class AdapterMcpProjectionTests(unittest.TestCase):
 
             config_text = (run_home / "config.toml").read_text(encoding="utf-8")
 
+            self.assertIn("project_doc_max_bytes = 0", config_text)
             self.assertIn('command = "uv"', config_text)
             self.assertIn(
                 f'args = ["run", "fixture-repo-mcp", "--repo", "{run_home / "repos" / "demo_repo"}"]',
@@ -76,7 +77,11 @@ class AdapterMcpProjectionTests(unittest.TestCase):
                     'transport = "stdio"\n'
                 ),
             )
-            flow = _demo_flow(workspace_root=workspace_root, allowed_mcps=("fixture-repo",))
+            flow = _demo_flow(
+                workspace_root=workspace_root,
+                allowed_mcps=("fixture-repo",),
+                runtime_env={"PROJECT_ROOT": "workspace:fixtures/project"},
+            )
             _write_codex_config(workspace_root=workspace_root, run_home=run_home, flow=flow)
 
             fake_subprocess = _FakeCodexReadinessSubprocess()
@@ -95,6 +100,7 @@ class AdapterMcpProjectionTests(unittest.TestCase):
 
             self.assertIsNone(failure)
             self.assertEqual(fake_subprocess.codex_home_values, {str(run_home.resolve())})
+            self.assertEqual(fake_subprocess.flow_env_values, {str(workspace_root / "fixtures" / "project")})
             self.assertEqual(fake_subprocess.codex_commands[:2], [["codex", "mcp", "list", "--json"], ["codex", "mcp", "get", "fixture-repo", "--json"]])
 
     def test_codex_readiness_reports_run_home_materialization_when_config_is_missing(self) -> None:
@@ -315,7 +321,12 @@ class AdapterMcpProjectionTests(unittest.TestCase):
                     'transport = "stdio"\n'
                 ),
             )
-            flow = _demo_flow(workspace_root=workspace_root, allowed_mcps=("fixture-repo",), adapter_name="claude_code")
+            flow = _demo_flow(
+                workspace_root=workspace_root,
+                allowed_mcps=("fixture-repo",),
+                adapter_name="claude_code",
+                runtime_env={"PROJECT_ROOT": "workspace:fixtures/project"},
+            )
             _write_claude_mcp_config(workspace_root=workspace_root, run_home=run_home, flow=flow)
             fake_subprocess = _FakeClaudeReadinessSubprocess()
 
@@ -337,6 +348,7 @@ class AdapterMcpProjectionTests(unittest.TestCase):
             self.assertIsNone(failure)
             self.assertEqual(fake_subprocess.commands, [["uv", "run", "fixture-repo-mcp", "--repo", str(run_home / "repos" / "demo_repo")]])
             self.assertEqual(fake_subprocess.cwd_values, {str(Path("/tmp/fixture-repo").resolve(strict=False))})
+            self.assertEqual(fake_subprocess.flow_env_values, {str(workspace_root / "fixtures" / "project")})
 
     def test_claude_readiness_reports_command_startability_when_stdio_command_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -375,7 +387,13 @@ class AdapterMcpProjectionTests(unittest.TestCase):
             self.assertIn("missing-fixture-mcp", failure.reason)
 
 
-def _demo_flow(*, workspace_root: Path, allowed_mcps: tuple[str, ...], adapter_name: str = "codex") -> FlowDefinition:
+def _demo_flow(
+    *,
+    workspace_root: Path,
+    allowed_mcps: tuple[str, ...],
+    adapter_name: str = "codex",
+    runtime_env: dict[str, str] | None = None,
+) -> FlowDefinition:
     flow_root = workspace_root / "flows" / "demo"
     prompt_path = flow_root / "prompts" / "AGENTS.prompt"
     markdown_path = flow_root / "build" / "agents" / "scope_lead" / "AGENTS.md"
@@ -416,6 +434,7 @@ def _demo_flow(*, workspace_root: Path, allowed_mcps: tuple[str, ...], adapter_n
         start_agent_key=agent.key,
         max_command_turns=8,
         guarded_git_repos=(),
+        runtime_env=runtime_env or {},
         host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
         agents={agent.key: agent},
         adapter=AdapterConfig(name=adapter_name, prompt_input_command=None, args={}),
@@ -464,6 +483,7 @@ class _FakeCodexReadinessSubprocess:
         self.calls: list[dict[str, object]] = []
         self.codex_commands: list[list[str]] = []
         self.codex_home_values: set[str] = set()
+        self.flow_env_values: set[str] = set()
 
     def __call__(self, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         self.calls.append({"command": command, "kwargs": kwargs})
@@ -516,6 +536,9 @@ class _FakeCodexReadinessSubprocess:
         env = kwargs["env"]
         assert isinstance(env, dict)
         self.codex_home_values.add(str(env["CODEX_HOME"]))
+        project_root = env.get("PROJECT_ROOT")
+        if isinstance(project_root, str):
+            self.flow_env_values.add(project_root)
         assert Path(str(kwargs["cwd"])).resolve() == Path(str(env["CODEX_HOME"])).resolve()
 
     @staticmethod
@@ -558,11 +581,17 @@ class _FakeClaudeReadinessSubprocess:
         self.calls: list[dict[str, object]] = []
         self.commands: list[list[str]] = []
         self.cwd_values: set[str] = set()
+        self.flow_env_values: set[str] = set()
 
     def __call__(self, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         self.calls.append({"command": command, "kwargs": kwargs})
         self.commands.append(command)
         self.cwd_values.add(str(Path(str(kwargs["cwd"])).resolve(strict=False)))
+        env = kwargs.get("env")
+        assert isinstance(env, dict)
+        project_root = env.get("PROJECT_ROOT")
+        if isinstance(project_root, str):
+            self.flow_env_values.add(project_root)
         executable = command[0]
         if executable.startswith("missing-"):
             raise FileNotFoundError(executable)
