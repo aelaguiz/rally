@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import json
 import os
 import shlex
 import shutil
 import subprocess
-import tomllib
 from pathlib import Path
 from typing import Sequence
 
+from rally.adapters.registry import get_adapter
 from rally.domain.flow import FlowDefinition
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError, RallyStateError, RallyUsageError
@@ -67,8 +66,14 @@ def materialize_run_home(
     )
     _sync_compiled_agents(run_home=run_home, flow=flow)
     _copy_allowed_skills_and_mcps(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
-    _write_codex_config(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
-    _seed_codex_auth(run_home=run_home)
+    get_adapter(flow.adapter.name).prepare_home(
+        repo_root=workspace_context.workspace_root,
+        workspace=workspace_context,
+        run_home=run_home,
+        flow=flow,
+        run_record=run_record,
+        event_recorder=event_recorder,
+    )
     if _home_ready_marker(run_home).is_file():
         return run_home
 
@@ -319,34 +324,6 @@ def _copy_allowed_skills_and_mcps(*, repo_root: Path, run_home: Path, flow: Flow
     _sync_named_directories(target_root=run_home / "mcps", sources_by_name=mcp_sources)
 
 
-def _write_codex_config(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:
-    project_doc_max_bytes = flow.adapter.args.get("project_doc_max_bytes", 0)
-    if not isinstance(project_doc_max_bytes, int) or project_doc_max_bytes < 0:
-        raise RallyConfigError("`runtime.adapter_args.project_doc_max_bytes` must be a non-negative integer.")
-
-    lines = [f"project_doc_max_bytes = {project_doc_max_bytes}", ""]
-    for mcp_name in _allowed_mcp_names(flow):
-        server_file = repo_root / "mcps" / mcp_name / "server.toml"
-        payload = tomllib.loads(server_file.read_text(encoding="utf-8"))
-        lines.append(f'[mcp_servers."{mcp_name}"]')
-        for key, value in payload.items():
-            lines.append(f"{key} = {_render_toml_value(value)}")
-        lines.append("")
-    (run_home / "config.toml").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-
-
-def _seed_codex_auth(*, run_home: Path) -> None:
-    source_home = Path.home() / ".codex"
-    for file_name in ("auth.json", ".credentials.json"):
-        source = source_home / file_name
-        target = run_home / file_name
-        if target.exists() or target.is_symlink():
-            target.unlink()
-        if not source.exists():
-            continue
-        target.symlink_to(source)
-
-
 def _allowed_skill_names(flow: FlowDefinition) -> tuple[str, ...]:
     return tuple(
         sorted(
@@ -420,18 +397,6 @@ def _run_setup_script(
             code="SETUP OK",
             message=f"Setup script `{flow.setup_home_script.name}` finished.",
         )
-
-
-def _render_toml_value(value: object) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, str):
-        return json.dumps(value)
-    if isinstance(value, list):
-        return "[" + ", ".join(_render_toml_value(item) for item in value) + "]"
-    raise RallyConfigError(f"Unsupported TOML value in MCP server definition: `{value!r}`.")
 
 
 def _coerce_workspace(

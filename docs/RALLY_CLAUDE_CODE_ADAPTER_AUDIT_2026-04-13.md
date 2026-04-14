@@ -4,6 +4,7 @@ date: 2026-04-13
 status: audit
 doc_type: technical_audit
 related:
+  - docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md
   - docs/RALLY_HERMES_ADAPTER_RUNTIME_GENERALIZATION_2026-04-13.md
   - docs/RALLY_HERMES_ADAPTER_AUDIT_2026-04-13.md
   - docs/RALLY_MASTER_DESIGN_2026-04-12.md
@@ -12,46 +13,77 @@ related:
   - src/rally/services/runner.py
   - src/rally/services/home_materializer.py
   - src/rally/services/flow_loader.py
+  - src/rally/services/workspace.py
+  - src/rally/services/run_store.py
+  - src/rally/domain/run.py
   - src/rally/adapters/codex/launcher.py
   - src/rally/adapters/codex/event_stream.py
-  - src/rally/adapters/codex/result_contract.py
+  - src/rally/services/final_response_loader.py
   - src/rally/adapters/codex/session_store.py
 ---
 
 # Plain Answer
 
-Yes. Rally can add Claude Code as a real second runner beside Codex.
+Yes. Rally can add Claude Code as a real second adapter beside Codex.
 
-This is much more realistic than the older Hermes notes suggest.
+Claude Code now has a good headless contract for Rally:
 
-Claude Code now has a strong headless contract:
-
-- `claude -p` for non-interactive runs
+- `claude -p`
 - `--output-format json`
 - `--output-format stream-json`
 - `--json-schema`
-- `--resume` and `--continue`
+- `--resume`
 - `--mcp-config` and `--strict-mcp-config`
-- `--allowedTools`, `--tools`, and permission modes
-- `--system-prompt-file` and `--append-system-prompt-file`
-- a Python and TypeScript Agent SDK
+- `--tools` and `--allowedTools`
+- `--permission-mode`
 
-So this is not blocked on missing machine interfaces.
+So the adapter is not blocked on missing machine interfaces.
 
-But Rally still needs a real adapter boundary. We should not swap `codex` for
-`claude` in `runner.py` and call it done.
+At audit time, Rally was not ready to ship it yet. The runtime was still
+Codex-only in practice. `runner.py` launched Codex directly.
+`home_materializer.py` still wrote Codex config and Codex auth links from
+shared code.
 
-The hard part is not prompt format. The hard part is auth plus run-home
-ownership.
+This audit recommended the v1 path that later shipped:
 
-My recommendation is:
+1. add a real `claude_code` adapter beside `codex`
+2. keep Rally's shared prompt assembly and pass that prompt to Claude on stdin
+3. write one valid final JSON object to Rally's shared `last_message.json`
+4. generate Claude MCP config under the run home
+5. use the user's existing Claude login and config in v1
 
-1. Add a first-class `claude_code` adapter beside `codex`.
-2. Start with the Claude Code CLI, not the SDK.
-3. Treat auth as adapter-owned bootstrap.
-4. Use a Rally-owned Claude home only when auth is explicit.
-5. Do not rely on Claude subagents, agent teams, plugins, or ambient project
-   config in v1.
+That last point matters. Full Claude clean-room auth is still a later mode, not
+the current v1 plan.
+
+## Implementation status on 2026-04-13
+
+The main runtime recommendations from this audit are now in tree:
+
+- shared adapter boundary in `src/rally/adapters/base.py`
+- shared registry in `src/rally/adapters/registry.py`
+- shared final JSON loader in `src/rally/services/final_response_loader.py`
+- Codex cut over to the shared adapter boundary
+- Claude shipped as a real `claude_code` adapter with generated
+  `home/claude_code/mcp.json`, `home/.claude/skills`, explicit built-in tool
+  clamps, and the shared `last_message.json` final path
+
+The remaining honest v1 caveat from this audit still stands:
+
+- Claude support still depends on the user's existing local Claude login and
+  Claude's native session store outside the run home
+
+Read the rest of this file as the audit basis, not the shipped contract.
+Where this audit's recommended flags differ from the shipped adapter, the code
+and `docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md` win.
+The main shipped differences are:
+
+- Claude now uses `--permission-mode dontAsk`
+- Claude now uses explicit `--tools` and `--allowedTools`
+- Claude now has `src/rally/adapters/claude_code/session_store.py` as a thin
+  adapter-owned wrapper over the shared session helpers
+- Claude final-output extraction now also accepts JSON from `result.result`
+  and assistant text content, including fenced JSON blocks from live Claude
+  output
 
 # Scope
 
@@ -59,21 +91,20 @@ This audit is about Anthropic Claude Code.
 
 It is not about the local `hermes-agent` repo.
 
-The Hermes runtime-generalization work is still the right direction for Rally.
-The adapter boundary work should stay generic. But the Claude Code facts are
-different enough that we should not reuse Hermes assumptions without checking
-them again.
+The shared adapter-boundary direction from the Hermes docs is still useful. But
+Claude Code facts are strong enough, and different enough, that Rally should
+treat Claude as its own concrete adapter target.
 
 Main question:
 
-Can Rally support Claude Code as a clean second runner beside Codex while
-keeping Rally's current rules:
+Can Rally support `runtime.adapter: claude_code` beside `codex` while keeping
+Rally's current rules:
 
 - one flow-wide adapter
 - one run home
-- one issue log path
+- one issue-ledger path
 - one final JSON result path
-- no hidden machine-global control plane
+- no hidden Rally control plane outside the repo
 
 # What I Checked
 
@@ -82,13 +113,16 @@ keeping Rally's current rules:
 - `src/rally/services/runner.py`
 - `src/rally/services/home_materializer.py`
 - `src/rally/services/flow_loader.py`
+- `src/rally/services/workspace.py`
+- `src/rally/services/run_store.py`
 - `src/rally/domain/flow.py`
+- `src/rally/domain/run.py`
 - `src/rally/adapters/codex/launcher.py`
 - `src/rally/adapters/codex/event_stream.py`
 - `src/rally/adapters/codex/result_contract.py`
 - `src/rally/adapters/codex/session_store.py`
+- `docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md`
 - `docs/RALLY_HERMES_ADAPTER_RUNTIME_GENERALIZATION_2026-04-13.md`
-- `docs/RALLY_HERMES_ADAPTER_AUDIT_2026-04-13.md`
 - `docs/RALLY_MASTER_DESIGN_2026-04-12.md`
 - `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md`
 - `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`
@@ -104,7 +138,7 @@ Local facts from this machine:
 - `claude --help` showed core headless, session, MCP, tool, and permission
   flags
 - `claude mcp --help`, `claude agents --help`, `claude plugin --help`, and
-  `claude auto-mode defaults` confirmed extra control surfaces
+  `claude auto-mode defaults` showed extra control surfaces
 - `claude -p --output-format json --json-schema ...` returned one JSON envelope
   with `session_id`, usage fields, and `structured_output`
 - `claude -p --output-format stream-json --verbose --bare ...` returned
@@ -112,16 +146,13 @@ Local facts from this machine:
 - `CLAUDE_CONFIG_DIR=$(mktemp -d) claude auth status` returned `loggedIn:
   false`
 
-That last point matters a lot. A fresh Claude config dir lost local
-subscription auth.
-
 ## Official Claude Code docs
 
-I checked current official docs from `code.claude.com` and current changelog
-notes. Key pages:
+I checked current official docs from `code.claude.com` and the current
+changelog. Key pages:
 
 - CLI reference
-- headless or programmatic usage
+- headless usage
 - authentication
 - settings
 - permissions
@@ -146,33 +177,36 @@ Yes.
 
 Yes.
 
-Claude Code now has a supported headless path, structured output, session
-resume, and explicit config flags that line up with Rally much better than a
-plain chat CLI.
+Claude Code now has an official non-interactive CLI, strict structured output,
+session resume, and explicit config flags that line up with Rally much better
+than a plain chat CLI.
 
 ## Is Rally ready for it today?
 
-No.
+At audit time: no.
 
-Shared runtime code is still Codex-only.
+Today: yes for the shipped v1 path described in
+`docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md`.
 
-## What is the main blocker?
+## What was the main blocker at audit time?
 
-Auth plus state ownership.
+The main blocker was the shared adapter boundary. Auth and state ownership were
+the hardest Claude-specific design constraint, but the repo also needed to
+stop importing Codex helpers straight into shared runtime code.
 
-If Rally wants a clean Claude adapter home inside `runs/<id>/home/`, it cannot
-just point `CLAUDE_CONFIG_DIR` at a fresh folder and expect the user's local
-Claude login to work.
+The codebase has shifted enough that the path is clearer than before:
 
-That means full support needs one of these:
+- `flow.yaml` already carries `runtime.adapter`, `runtime.adapter_args`, and
+  `runtime.prompt_input_command`
+- `run.yaml` already stores `adapter_name`
+- `WorkspaceContext` already gives shared runtime code one honest workspace,
+  CLI, and framework-root owner
+- Rally already projects `RALLY_WORKSPACE_DIR` and `RALLY_CLI_BIN`
+- home materialization already refreshes shared run-home content on each start
+  or resume
 
-- API key auth
-- `apiKeyHelper`
-- long-lived `CLAUDE_CODE_OAUTH_TOKEN` in non-bare mode
-- some other explicit adapter-owned auth bootstrap
-
-Using the user's default global Claude state is okay for a local spike. It is
-not okay for a clean Rally adapter.
+So Claude support is now more about cutting the current Codex path over to a
+real adapter seam than about inventing a new runtime from scratch.
 
 # Key Findings
 
@@ -184,16 +218,13 @@ It supports:
 - `--output-format json`
 - `--output-format stream-json`
 - `--json-schema`
-- `--resume` and `--continue`
+- `--resume`
+- `--continue`
 - `--mcp-config`
 - `--strict-mcp-config`
 - `--allowedTools`
 - `--tools`
 - `--permission-mode`
-- `--system-prompt-file`
-- `--append-system-prompt-file`
-- `--max-turns`
-- `--session-id`
 
 This is enough for Rally to build:
 
@@ -204,25 +235,29 @@ This is enough for Rally to build:
 - per-turn prompt injection
 - adapter-owned MCP translation
 
-This is the biggest difference from the older Hermes shape.
+## 2. The current Rally runtime already had useful shared seams
 
-## 2. `claude --help` is not the full contract
+At audit time the runtime was still Codex-only, but the code around it was
+more generic than the older Claude notes assumed.
 
-The official CLI reference says `claude --help` does not list every flag.
+Current reusable Rally-owned seams:
 
-That matched local reality. Local `--help` did not show all flags, but these
-flags still parsed on this machine:
+- `flow_loader.py` already owns `runtime.adapter`, `runtime.adapter_args`, and
+  `runtime.prompt_input_command`
+- `run_store.py` already persists `adapter_name` in `run.yaml`
+- `workspace.py` already resolves one shared workspace root, CLI path, and
+  framework root
+- `runner.py` already builds one prompt from compiled `AGENTS.md` plus runtime
+  prompt inputs
+- `home_materializer.py` already owns shared run-home layout, issue gating,
+  agent sync, skill sync, MCP sync, setup script runs, and issue snapshots
 
-- `--system-prompt-file`
-- `--append-system-prompt-file`
-- `--max-turns`
+That means Claude support should reuse these shared Rally seams instead of
+building a second local runtime path.
 
-Rally should treat the docs as the source of truth for Claude flags, not the
-short local help text alone.
+## 3. Claude can return strict structured output today
 
-## 3. Claude Code can return strict structured output today
-
-Official docs say:
+Official docs and simple CLI probes said:
 
 - `--output-format json` returns a JSON envelope with metadata
 - `--json-schema` puts the schema-checked object in `structured_output`
@@ -230,271 +265,132 @@ Official docs say:
 
 Local proof matched that.
 
-This means Rally does not need a file-output flag like Codex has. The adapter
-can:
+This meant Rally did not need a Claude-only best-effort parser. The adapter
+could:
 
-1. capture the raw JSON result
-2. write the raw envelope to adapter logs
-3. write `structured_output` to Rally's `last_message.json`
-4. feed that file into Rally's existing final-result loader
+1. capture the raw Claude result envelope
+2. extract `session_id`
+3. write the final JSON object to Rally's `last_message.json`
+4. reuse Rally's shared final-response loader after that
 
-## 4. Claude Code can stream events, but the event model is different
+## 4. Claude can stream events, but the event model is different
 
 Official docs say `--output-format stream-json --verbose` returns
-newline-delimited event objects. Docs also show:
-
-- `stream_event` items for streaming deltas
-- `system/api_retry` events
-- final result objects with `session_id`
+newline-delimited event objects.
 
 Local proof showed `system`, `assistant`, and `result` event objects.
 
 So Rally can build a `ClaudeCodeEventStreamParser`, but it cannot reuse the
 Codex JSONL parser. This is adapter-owned work.
 
-## 5. `--bare` is a strong fit for Rally, but only with explicit auth
+## 5. The v1 auth call is now clear: ambient existing Claude login
 
-Official docs call `--bare` the recommended scripted mode. It skips:
+The current Rally plan no longer treats isolated Claude auth as a v1
+requirement.
 
-- hooks
-- skills
-- plugins
-- MCP auto-discovery
-- auto memory
-- `CLAUDE.md`
+The supported v1 local path is:
 
-This is very close to what Rally wants for a clean run:
+- use the user's existing Claude login and config
+- do not set `CLAUDE_CONFIG_DIR`
+- do not require `--bare`
+- clamp the Claude surfaces Rally can clamp with runtime flags
 
-- no ambient repo instructions
-- no ambient plugins
-- no ambient MCP servers
-- no surprise memory writes
+This is the current practical choice because a fresh `CLAUDE_CONFIG_DIR` loses
+the user's normal subscription login on this machine.
 
-But official docs also say `--bare` skips OAuth and keychain reads.
+This choice has one honest cost:
 
-So `--bare` only works cleanly when auth comes from:
+- v1 does not give full run-home ownership of Claude auth or all Claude ambient
+  behavior
 
-- `ANTHROPIC_API_KEY`, or
-- `apiKeyHelper`, or
-- third-party cloud provider auth
+The docs must say that plainly.
 
-It does not work with the user's normal Claude subscription login.
+## 6. Strict isolated Claude modes are still real later options
 
-## 6. A fresh `CLAUDE_CONFIG_DIR` breaks subscription login
+Claude still supports cleaner future modes if Rally later wants them:
 
-Local proof on this machine:
+- isolated OAuth token mode
+- strict API-key or `apiKeyHelper` mode with `--bare`
 
-- default config dir: logged in
-- fresh `CLAUDE_CONFIG_DIR`: not logged in
-- copying `~/.claude.json` into a fresh config dir still did not restore login
+Those are future cleanup modes. They are not the current v1 gate.
 
-That means Rally cannot assume Claude auth follows the run home the same way
-Codex auth symlinks do today.
-
-This is the most important new local finding.
-
-If Rally wants adapter-local Claude state under the run home, it must solve
-auth on purpose.
-
-## 7. Non-bare isolated mode is possible, but still needs auth bootstrap
-
-Official docs say `CLAUDE_CODE_OAUTH_TOKEN` works for scripts and CI.
-Official docs also say bare mode does not read that token.
-
-So Claude has two realistic isolated modes for Rally:
-
-### Mode A: strict isolated mode
-
-- `CLAUDE_CONFIG_DIR=<run-home>/claude`
-- `--bare`
-- `ANTHROPIC_API_KEY` or `apiKeyHelper`
-
-This is the cleanest Rally fit.
-
-### Mode B: isolated OAuth mode
-
-- `CLAUDE_CONFIG_DIR=<run-home>/claude`
-- not bare
-- `CLAUDE_CODE_OAUTH_TOKEN`
-- clean working dir and explicit config flags
-
-This can preserve Rally's run-home model while still using subscription-style
-auth, but it needs a one-time token setup step outside the run.
-
-### Mode C: local spike mode only
-
-- default global Claude config
-- normal `/login` auth
-
-This is okay for personal testing. It is not okay for full Rally support,
-because state leaks into `~/.claude` and `~/.claude.json`.
-
-## 8. Rally should not rely on Claude slash commands in `-p` mode
-
-Official docs say user-invoked skills and built-in slash commands are only
-available in interactive mode. In `-p` mode you should describe the task in
-plain text instead.
-
-This matters for Rally because today Rally relies on shared skills such as
-`rally-kernel`.
-
-Claude Code does support skills, including automatic skill loading. But in
-headless runs Rally should not depend on a human-style `/skill-name` path, and
-it should not treat auto-loading as proven until we test the Rally skills
-directly.
-
-That creates one prompt-side question for Rally:
-
-- either prove the needed skills auto-load well enough in headless mode
-- or move must-have rules into prompt source so the runner does not depend on
-  runtime skill discovery for correctness
-
-The main shared Rally rules are too important to leave to a maybe.
-
-## 9. Claude Code reads `CLAUDE.md`, not `AGENTS.md`
+## 7. Rally should keep using stdin prompt delivery
 
 Official docs say Claude reads `CLAUDE.md`, not `AGENTS.md`.
 
-But Claude also supports `--system-prompt-file` and
-`--append-system-prompt-file`.
+That does not force Rally to rename files or add Claude-only prompt files.
 
-That means Rally does not need to rename its compiled prompt artifact just to
-support Claude.
+The cleaner path is:
 
-The clean path is:
+1. Rally builds its normal compiled prompt text
+2. Rally appends runtime prompt inputs
+3. the Claude adapter sends that prompt on stdin to `claude -p`
 
-- keep Rally's compiled `AGENTS.md`
-- build a Claude adapter prompt file from it
-- pass that file with a system-prompt flag
+That keeps one prompt source and avoids Claude-only prompt drift.
 
-That avoids adding Claude-only prompt files to the repo.
+## 8. Claude MCP and tool clamps fit Rally well
 
-## 10. MCP mapping is simpler than Hermes, but still adapter-owned
+Current Rally already owns MCP allowlists and built-in skill and MCP projection
+into the run home.
 
-Current Rally writes Codex MCP config in `config.toml`.
-
-Claude wants MCP config in JSON via:
+Claude gives Rally native ways to clamp its own runtime surfaces:
 
 - `--mcp-config`
 - `--strict-mcp-config`
-- `.mcp.json`
+- `--tools`
+- `--allowedTools`
+- `--permission-mode`
 
-Official docs also say project-scoped `.mcp.json` can trigger approval and
-ambient discovery, while `--strict-mcp-config` ignores other MCP sources.
+So the clean Claude path is:
 
-So the clean Rally path is:
+1. keep `mcps/*/server.toml` as source
+2. generate Claude JSON config under the run home
+3. launch Claude with strict MCP config and explicit tool clamps
 
-1. keep Rally's `mcps/*/server.toml` as source
-2. translate allowlisted MCPs into one generated JSON file inside the run home
-3. launch Claude with `--mcp-config <generated-file> --strict-mcp-config`
+## 9. Rally should not depend on headless Claude skill discovery for correctness
 
-This is a good fit for Rally.
+Claude supports skills, but user-invoked slash commands are interactive-only.
 
-## 11. Claude built-in subagents exist, but Rally should disable them in v1
+That matters because Rally already depends on shared rules such as the
+Rally-managed note and final JSON contract.
 
-Official docs say Claude supports:
+The safe rule is:
 
-- custom subagents
-- CLI-defined subagents with `--agents`
-- built-in agent types
-- experimental agent teams
+- keep must-have Rally behavior in prompt source
+- treat Claude skill loading as optional extra help, not as correctness law
 
-That is useful in general, but Rally already has its own flow agents.
+## 10. Subagents, agent teams, plugins, hooks, and auto memory are not v1 surfaces
 
-If Rally lets Claude spawn subagents freely inside one Rally turn, we get:
+Claude has more ambient features than Rally wants inside one flow turn:
 
-- hidden parallel work
-- extra token burn
-- more session state
-- a second ownership model inside a single Rally agent turn
+- subagents
+- agent teams
+- plugins
+- hooks
+- auto memory
 
-Recommendation for v1:
+For v1:
 
-- do not use `--agent`, `--agents`, or agent teams
-- exclude the `Agent` tool from the allowed tool set
-- keep one Rally flow agent mapped to one Claude session
-
-## 12. Agent teams are not a v1 fit
-
-Official docs say agent teams are:
-
-- experimental
-- off by default
-- token-heavy
-- limited around resume and shutdown
-
-Docs also say team state lives in user-global paths under `~/.claude/teams/`
-and `~/.claude/tasks/`.
-
-That conflicts with Rally's run-home rules.
-
-So agent teams should stay out of scope for the first Claude adapter.
-
-## 13. Claude permissions are strong enough for Rally, but the defaults matter
-
-Official docs define these modes:
-
-- `default`
-- `acceptEdits`
-- `plan`
-- `auto`
-- `dontAsk`
-- `bypassPermissions`
-
-For Rally, the important ones are:
-
-- `dontAsk` for strict non-interactive runs
-- `acceptEdits` if we want file-write auto-approval but still gate other tools
-- `bypassPermissions` only in very isolated environments
-
-The docs are clear that `allowedTools` only auto-approves the listed tools. It
-does not limit the tool set by itself. That means Rally needs both:
-
-- `--tools` to choose which built-in tools exist
-- `--allowedTools` and or `dontAsk` to avoid interactive prompts
-
-This is a better permission story than Rally has today with Codex's full
-bypass launch.
-
-## 14. Claude SDK is powerful, but it changes the auth and product story
-
-Official docs say the Agent SDK gives the same tools, hooks, permissions,
-sessions, and structured outputs as Claude Code.
-
-That is attractive for Rally because it would give:
-
-- native Python message objects
-- easier hook integration
-- easier event parsing
-- direct session APIs
-
-But the docs also say the SDK should use API key or provider auth, not a
-Claude subscription login for third-party products.
-
-That matters.
-
-Rally is a local CLI product. If we want users to bring their own installed
-Claude Code and local login, the CLI is the cleaner v1 surface.
-
-The SDK is still a strong later option if we are ready to require explicit API
-key style auth.
+- do not use Claude subagents
+- do not use agent teams
+- do not rely on plugins or hooks
+- clamp the runtime surfaces Claude exposes
+- document the remaining ambient dependency honestly
 
 # Claude Code vs Rally Concerns
 
 | Concern | Claude Code fact | Rally impact | Recommendation |
 | --- | --- | --- | --- |
-| Final result | `--json-schema` returns schema-checked data in `structured_output` | strong fit for Rally final JSON | parse envelope, save `structured_output` to Rally result file |
-| Session resume | `session_id`, `--resume`, `--continue`, `--fork-session` are supported | good fit for per-agent session save | keep adapter session store and save Claude session id per agent |
-| Event stream | `stream-json` exists, but event types differ from Codex | new parser needed | build Claude-specific event parser |
-| Prompt source | Claude reads `CLAUDE.md`, not `AGENTS.md` | cannot rely on file-name discovery | use system-prompt file flags from Rally |
-| Skills | skills exist, but slash invocation is interactive-only | required Rally skills may be shaky in `-p` | do not rely on manual slash skills for correctness |
-| MCP | `--mcp-config` plus `--strict-mcp-config` is supported | good fit for generated allowlist | translate TOML to generated JSON |
-| Permissions | tool set and allow rules are separate | safer but more setup than Codex | set both `--tools` and `--allowedTools` |
-| Auth | fresh `CLAUDE_CONFIG_DIR` loses local login | hard blocker for clean run-home ownership | require explicit auth bootstrap for full support |
-| Auto memory | on by default outside bare mode | hidden machine-local state | prefer bare mode or clean config plus memory off |
-| Plugins and hooks | auto-discovered outside bare mode | ambient behavior can leak in | do not allow them in v1 |
-| Subagents | built in | can hide extra work inside a turn | disable in v1 |
-| Agent teams | experimental and user-global | bad fit for Rally v1 | out of scope |
+| Final result | `--json-schema` returns schema-checked data in `structured_output` | strong fit for Rally final JSON | parse envelope, save `structured_output` to `last_message.json`, then reuse Rally loader |
+| Session resume | `session_id`, `--resume`, `--continue`, and `--fork-session` are supported | good fit for per-agent session save | keep one Claude session id per Rally agent slug |
+| Event stream | `stream-json` exists, but event types differ from Codex | new parser needed | build Claude-specific event parsing |
+| Prompt source | Claude reads `CLAUDE.md`, not `AGENTS.md` | file-name discovery is a bad fit | keep Rally's shared prompt assembly and pass the prompt on stdin |
+| Skills | skills exist, but slash invocation is interactive-only | required Rally rules may drift in `-p` mode | do not depend on headless skill discovery for correctness |
+| MCP | `--mcp-config` plus `--strict-mcp-config` is supported | good fit for generated allowlist | translate Rally MCP TOML to generated Claude JSON |
+| Permissions | tool set and auto-approval are separate | safer than Codex, but more setup | set both `--tools` and `--allowedTools`, plus `dontAsk` when needed |
+| Auth | fresh `CLAUDE_CONFIG_DIR` loses local login | isolated auth is not the v1 default | support ambient existing Claude login in v1, keep stricter modes later |
+| Auto memory, hooks, and plugins | still ambient outside `--bare` | not full clean-room in v1 | clamp what Claude exposes and call out the remaining ambient risk |
+| Subagents and teams | built in, and teams are user-global | can hide extra work inside one Rally turn | keep them out of v1 |
 
 # Recommended Claude Adapter Shape
 
@@ -506,297 +402,258 @@ Reason:
 
 - it names the real runner surface
 - it avoids confusion with model API naming
-- it matches the docs and local CLI name
+- it matches the current architecture plan
 
 ## Adapter boundary
 
-The same runtime split the Hermes generalization doc already asks for still
-makes sense:
+Claude should sit behind the same shared adapter boundary Codex needs.
 
-- adapter validation in flow loading
-- adapter-owned home materialization
-- adapter-owned launch env
-- adapter-owned invocation
-- adapter-owned event parsing
-- adapter-owned session handling
-- adapter-owned result loading
+Shared Rally code should own:
 
-Codex and Claude Code should both sit behind that boundary.
+- flow loading
+- run creation and resumption
+- shared run-home layout
+- shared prompt assembly
+- final-response loading from `last_message.json`
+- turn-result routing and issue-ledger writes
+
+The Claude adapter should own:
+
+- adapter arg validation details
+- adapter home prep
+- Claude CLI launch shape
+- Claude event parsing
+- Claude session storage
+- Claude result-envelope parsing before Rally sees `last_message.json`
 
 ## Recommended v1 launch shape
 
-For the clean path, a Claude turn should look like this in spirit:
+For the current v1 plan, a Claude turn should look like this in spirit:
 
 ```bash
-CLAUDE_CONFIG_DIR="$RUN_HOME/adapters/claude_code" \
-ANTHROPIC_API_KEY="..." \
-claude --bare -p \
-  --output-format json \
+claude -p \
+  --output-format stream-json \
+  --verbose \
   --json-schema "$SCHEMA_JSON" \
-  --tools "Bash,Read,Edit,Write,Glob,Grep" \
-  --allowedTools "Bash,Read,Edit,Write,Glob,Grep" \
   --permission-mode dontAsk \
   --strict-mcp-config \
-  --mcp-config "$RUN_HOME/adapters/claude_code/mcp.json" \
-  --append-system-prompt-file "$RUN_HOME/adapters/claude_code/system_prompt.md" \
-  --model claude-sonnet-4-6 \
-  "Complete the turn and return schema-valid JSON."
+  --mcp-config "$RUN_HOME/claude_code/mcp.json" \
+  --tools "Bash,Read,Edit,Write,Glob,Grep" \
+  --allowedTools "Bash,Read,Edit,Write,Glob,Grep" \
+  --model "claude-sonnet-4-6"
 ```
 
-The real adapter may choose `stream-json` instead of `json` when we want live
-event rendering.
+Important v1 rules:
+
+- pass the Rally prompt on stdin
+- use `--resume <session-id>` when Rally has a saved Claude session
+- do not set `CLAUDE_CONFIG_DIR`
+- do not require `--bare`
 
 ## Run-home layout
 
-Do not mix Claude internal files into Rally's current generic folders.
-
-Use an adapter-private home, for example:
-
-- `runs/<id>/home/adapters/claude_code/`
-- `runs/<id>/home/adapters/claude_code/.claude.json`
-- `runs/<id>/home/adapters/claude_code/projects/`
-- `runs/<id>/home/adapters/claude_code/sessions/`
-- `runs/<id>/home/adapters/claude_code/mcp.json`
-- `runs/<id>/home/adapters/claude_code/settings.json`
-- `runs/<id>/home/adapters/claude_code/system_prompt.md`
-
-Then keep Rally's public proof paths where operators already expect them:
+Keep the current Rally operator proof paths:
 
 - `logs/adapter_launch/`
 - `home/sessions/<agent>/session.yaml`
-- `home/sessions/<agent>/turn-<n>/...`
+- `home/sessions/<agent>/turn-<n>/exec.jsonl`
+- `home/sessions/<agent>/turn-<n>/stderr.log`
+- `home/sessions/<agent>/turn-<n>/last_message.json`
 
-Rally should mirror or reference Claude state from the adapter-private home
-into those stable operator paths.
+Add only a small Claude-owned area under the run home, for example:
+
+- `runs/<id>/home/claude_code/mcp.json`
+- `runs/<id>/home/claude_code/` for any later generated Claude-owned helper
+  files Rally truly needs
+
+Do not move Claude auth into the run home in v1.
 
 ## Prompt injection plan
 
-Use a system-prompt file flag.
+Use Rally's current shared prompt path.
 
 Do not depend on:
 
 - ambient `CLAUDE.md`
 - renaming compiled `AGENTS.md`
-- extra repo-root Claude files
+- a Claude-only prompt file for v1
 
 Recommended flow:
 
-1. Build Rally's normal compiled `AGENTS.md`
-2. Append runtime prompt input sections
-3. Write one generated Claude system prompt file in the adapter home
-4. Pass it with `--append-system-prompt-file`
-
-Only switch to `--system-prompt-file` if Claude's default system prompt causes
-real problems. Docs recommend append mode for most cases.
+1. build Rally's normal compiled prompt
+2. append runtime prompt inputs
+3. send the result on stdin to `claude -p`
 
 ## Session plan
 
 Keep one Claude session id per Rally agent slug.
-
-That matches current Codex behavior and fits official Claude resume docs.
 
 Store:
 
 - session id
 - cwd
 - updated time
-- maybe transcript path inside adapter home
+- any Claude-specific metadata only if the adapter really needs it
 
-Claude session files are local to the machine and the working directory. That
-means the adapter should treat saved session ids as valid only when:
-
-- the adapter home still exists
-- the working directory still matches
-- the adapter auth mode still works
+This keeps the public operator path the same as the current Codex session
+story.
 
 ## Result loading plan
 
-Claude result loading should be adapter-owned but simple:
+Claude result handling should stay simple:
 
-1. parse the final JSON envelope
+1. parse the final Claude result envelope
 2. extract `session_id`
-3. extract `structured_output` when schema mode is used
-4. write `structured_output` to Rally's final message artifact
-5. reuse Rally's existing turn-result parsing after that
+3. extract `structured_output`
+4. write `structured_output` to Rally's `last_message.json`
+5. let Rally's shared final-response loader parse the result after that
 
 ## Event plan
 
-Use `stream-json --verbose` when we want live output.
+Use `stream-json --verbose` for live output.
 
 Map at least:
 
-- init and session-start events
-- assistant message text
+- init and resume events
+- assistant text and progress
 - retry events
-- final result event
-- auth and other errors
-
-If CLI stream coverage is too thin for good operator output, re-check the SDK
-for event handling only after the auth and product story is settled.
+- final result events
+- auth, permission, and other hard errors
 
 # Auth Modes Rally Could Support
 
-## Mode 1: strict isolated API mode
+## Mode 1: supported v1 local mode
 
-Best fit for Rally invariants.
-
-Use when:
-
-- CI
-- containers
-- enterprise setups
-- users can provide API-key style auth
+Use the user's existing Claude login and config.
 
 Shape:
 
-- `CLAUDE_CONFIG_DIR` under run home
+- default Claude config paths
+- no `CLAUDE_CONFIG_DIR`
+- no `--bare`
+- explicit runtime clamps for tools, MCPs, and permission mode
+
+Pros:
+
+- easiest honest local path
+- matches the current Rally Claude plan
+- avoids per-run auth bootstrap
+
+Cons:
+
+- not full run-home ownership
+- some ambient Claude behavior remains outside Rally control
+
+## Mode 2: future isolated OAuth mode
+
+Use when Rally wants stronger local isolation without forcing API-key auth.
+
+Shape:
+
+- `CLAUDE_CONFIG_DIR` under the run home
+- not bare
+- `CLAUDE_CODE_OAUTH_TOKEN`
+- clean working dir and explicit config flags
+
+Pros:
+
+- tighter run-home ownership
+- still works with subscription-style auth
+
+Cons:
+
+- more setup work
+- still not as clean as strict bare mode
+
+## Mode 3: future strict API mode
+
+Best fit for full clean-room support.
+
+Shape:
+
+- `CLAUDE_CONFIG_DIR` under the run home
 - `--bare`
 - `ANTHROPIC_API_KEY` or `apiKeyHelper`
 
 Pros:
 
-- clean run-home ownership
-- no ambient discovery
-- docs-recommended scripted mode
+- cleanest run-home ownership
+- best scripted and CI story
 
 Cons:
 
-- not backed by local Claude subscription login
-
-## Mode 2: isolated OAuth token mode
-
-Best fit when users want subscription-backed auth but still want Rally-owned
-state.
-
-Shape:
-
-- `CLAUDE_CONFIG_DIR` under run home
-- not bare
-- `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`
-- clean working dir and explicit config flags
-
-Pros:
-
-- keeps run-home control
-- works for CI and scripts
-
-Cons:
-
-- one more user setup step
-- not as clean as bare mode
-
-## Mode 3: default local login mode
-
-This is for spikes only.
-
-Shape:
-
-- default `~/.claude` and `~/.claude.json`
-- regular `/login` state
-
-Pros:
-
-- easiest way to test locally
-
-Cons:
-
-- state escapes Rally run home
-- hard to prove and replay
-- violates Rally's storage rules for full support
+- not backed by the normal local Claude subscription login
 
 # What This Changes In The Hermes Planning Docs
 
-The general direction in `RALLY_HERMES_ADAPTER_RUNTIME_GENERALIZATION` is
-still good:
+The general direction in
+`docs/RALLY_HERMES_ADAPTER_RUNTIME_GENERALIZATION_2026-04-13.md` is still
+good:
 
 - real adapter registry
 - adapter-owned launch rules
 - adapter-owned session handling
 - adapter-owned event parsing
-- adapter-owned result loading
+- adapter-owned result-envelope parsing
 
-But Claude Code changes three key assumptions:
+But Claude changes three practical assumptions:
 
 ## 1. We do not need to start from a weak CLI surface
 
-Claude Code already has official structured output and stream output. So the
-adapter can start from a supported machine path instead of a scrape-heavy chat
-path.
+Claude Code already has official structured output and stream output.
 
-## 2. Auth is the top risk
+## 2. Auth is still the top Claude-specific risk, but the v1 answer is now explicit
 
-For Hermes, skill sync and MCP wiring looked like the bigger problem.
+The current answer is:
 
-For Claude Code, auth plus config-dir behavior is the top risk.
+- ambient existing Claude login in v1
+- isolated auth only later if Rally decides the extra ownership is worth it
 
-## 3. Bare mode gives Rally a better clean-room story than Hermes had
+## 3. Rally should reuse its current prompt and final-result paths
 
-Hermes looked like it would need more startup cleanup.
+Claude support should not add:
 
-Claude bare mode already disables most ambient behavior. That is a major
-advantage, as long as auth is explicit.
+- a second prompt graph
+- a Claude-only prompt file path for correctness
+- a second turn-ending result path
 
-# Main Open Questions
+# Remaining Implementation Questions
 
-## 1. Do we require explicit Claude auth for full support?
+## 1. What is the exact Claude built-in tool allowlist?
 
-I think yes.
+Rally should keep this narrow and make it explicit.
 
-Without that, Rally cannot honestly say Claude state lives in the run home.
+## 2. Do we need any Claude skill support at all in headless v1?
 
-## 2. Do we want CLI-first or SDK-first?
+Probably not for correctness. The current safe answer is to keep Rally's must
+have rules in prompt source.
 
-I recommend CLI-first for v1.
+## 3. Which adapter args should stay shared and which should stay Claude-only?
 
-Reason:
+Shared candidates:
 
-- it matches Rally's current Codex pattern
-- it supports local installed Claude Code
-- official docs support it directly
-- it avoids early SDK auth and product-policy questions
+- `model`
+- `reasoning_effort`
 
-Use SDK later if we need stronger event objects or hook integration and we are
-ready to require API-key style auth.
+Possible Claude-only later args:
 
-## 3. How do we handle Rally mandatory skills?
+- `max_turns`
+- `max_budget_usd`
 
-This still needs a design call.
+## 4. When is isolated Claude auth worth shipping?
 
-Claude supports skills, but headless runs should not depend on user-style slash
-invocation.
-
-The safe choices are:
-
-- prove auto-loaded Claude skills are enough, or
-- move must-have shared rules into prompt source
-
-## 4. Do we expose `model`, `effort`, `max_budget_usd`, and `max_turns` in
-`adapter_args`?
-
-Probably yes.
-
-Claude names the reasoning knob `effort`, not `reasoning_effort`, so the
-adapter either needs a mapping rule or its own adapter-specific arg names.
-
-## 5. Do we support Claude internal subagents later?
-
-Not in v1.
-
-Rally already has multi-agent flow control. We should not add a second hidden
-agent system until the single-session adapter is solid.
+That is now a product choice, not a blocker for the first Claude adapter.
 
 # Recommended Next Step
 
-If we move forward, the clean next step is:
+The clean next step is:
 
-1. Finish the generic adapter boundary work from the runtime generalization
-   doc.
-2. Add `claude_code` as a validated adapter name in flow loading.
-3. Build a docs-only or test-only Claude launch prototype behind a new adapter
-   module.
-4. Start with strict isolated API mode or isolated OAuth token mode.
-5. Do not call local default-login mode "supported" even if it works for a
-   smoke test.
+1. land the shared adapter boundary and shared final-response loader
+2. cut the current Codex path over to that boundary without changing current
+   runtime behavior
+3. add a guarded `claude_code` adapter with stdin prompt delivery, generated
+   run-home MCP config, and ambient-auth v1
+4. only after live proof call `claude_code` a supported adapter name
 
 # Source Links
 

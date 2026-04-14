@@ -10,65 +10,79 @@ related:
   - docs/RALLY_MASTER_DESIGN_2026-04-12.md
   - docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md
   - docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
+  - docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md
   - flows/poem_loop/flow.yaml
-  - flows/poem_loop/prompts/AGENTS.prompt
   - stdlib/rally/prompts/rally/base_agent.prompt
   - stdlib/rally/prompts/rally/turn_results.prompt
+  - src/rally/adapters/base.py
+  - src/rally/adapters/registry.py
+  - src/rally/adapters/codex/adapter.py
+  - src/rally/adapters/claude_code/adapter.py
+  - src/rally/services/final_response_loader.py
   - src/rally/services/flow_loader.py
+  - src/rally/services/home_materializer.py
+  - src/rally/services/runner.py
   - src/rally/cli.py
-  - src/rally/services/issue_ledger.py
-  - src/rally/adapters/codex/launcher.py
 ---
 
 # Summary
 
-Phase 4 now has a proved Codex vertical slice.
-Rally can create a real run, prepare a real run home, launch real Codex turns,
-read strict final JSON results, including control-ready review finals, and drive the authored flow to a real done
-state.
+Phase 4 began as the first real Codex runtime slice.
+The shipped runtime now extends that slice through one shared adapter boundary
+with `codex` and `claude_code`.
+
+Rally can now:
+
+- create a real run
+- prepare a real run home
+- launch real turns through either supported adapter
+- read one strict final JSON result through one shared loader
+- drive authored flows to real handoff, done, blocker, or sleep states through
+  one shared run model
 
 Use `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` for the focused command and
 logging contract.
 
 What is real today:
 
-- per-command Doctrine rebuild for the current flow before Rally loads compiled agents
+- per-command Doctrine rebuild for the current flow before Rally loads compiled
+  agents
 - flow loading plus compiled `AGENTS.contract.json` checks
-- flow codes and run ids shaped like `<FLOW_CODE>-<n>`
+- one shared adapter boundary under `src/rally/adapters/base.py` and
+  `src/rally/adapters/registry.py`
+- supported adapters: `codex` and `claude_code`
 - one active run per flow with a flow lock
-- run directories under `runs/active/<run-id>/`
-- home materialization for agents, repos, config, auth links, and setup
-- Rally-managed agents, skills, MCPs, config, and auth links refreshed on each start or resume
-- flow-validated skills and MCPs copied into the run home, but still as the per-flow union rather than per-agent-isolated subsets
+- shared issue-first home prep plus adapter-owned bootstrap refresh on every
+  start or resume
+- one shared prompt path
+- one shared final JSON path at `last_message.json`
+- shared session-artifact paths under `home/sessions/<agent>/`
+- shared launch proof under `logs/adapter_launch/`
 - `rally run`
 - `rally run --new`
 - `rally resume`
 - `rally resume --edit`
 - `rally resume --restart`
-- one shared interactive issue-ready gate for `run` and `resume`
 - live operator stream on a TTY with plain fallback off TTY
-- strict final-turn JSON parsing
 - chained multi-turn execution across handoffs
-- per-flow `runtime.max_command_turns` caps for one command
-- Codex session save and reuse across chained turns
+- per-flow `runtime.max_command_turns`
 - `home/issue.md` plus `issue_history/`
-- the opening brief lives in `home/issue.md`, not a shared sidecar brief file
-- `rally issue note --field key=value` for flat structured note labels
+- `rally issue note --field key=value`
 - `logs/events.jsonl`
 - `logs/agents/<agent>.jsonl`
 - `logs/rendered.log`
-- `logs/adapter_launch/`
 - run state in `state.yaml`
-- Codex launch with dangerous bypass, explicit `cwd`, explicit `CODEX_HOME`, and explicit Rally env vars
+- Codex root-home bootstrap through `CODEX_HOME=<run-home>`
+- Claude generated bootstrap through `home/claude_code/mcp.json`,
+  `home/.claude/skills`, and `ENABLE_CLAUDEAI_MCP_SERVERS=false`
 
-What is outside Phase 4:
+What is still outside Phase 4:
 
 - `rally archive`
-- stale-run cleanup and diagnosis beyond the current lock and state checks
+- deeper stale-run diagnosis
 - per-agent runtime enforcement for `allowed_skills` and `allowed_mcps`
-- a Codex-native MCP auth and readiness contract that proves required MCPs
-  work for both top-level and child agents and fails loud when auth or launch
-  state is broken
+- a full adapter-native MCP auth and readiness contract
+- run-home-owned Claude auth
 
 # Stable Rules
 
@@ -79,31 +93,29 @@ What is outside Phase 4:
 - Review-native turns may use control-ready Doctrine review JSON instead.
 - `AGENTS.md` is injected instruction readback only.
 - `AGENTS.contract.json` is the compiler-owned metadata file Rally loads.
-- Rally does not ship a shared file-state carrier.
-- If an authored review needs local review-state syntax, that is local Doctrine review syntax only.
 - There is no separate handoff artifact.
-- Rally launches Codex with dangerous bypass for Rally-managed turns.
+- Shared runtime owns prompt assembly, home policy, state routing, and the
+  final JSON read path.
+- Adapters own launch rules, adapter-local bootstrap, event parsing, and
+  session handling.
 
 # Current Code Surface
 
 The current checked-in runtime surface is:
 
 - `src/rally/services/flow_build.py`
-  - rebuilds one flow's compiled agents through Doctrine `emit_docs`
-  - uses one named emit target per flow from Rally's `pyproject.toml`
-  - fails loud if Doctrine is missing, the target is missing, or the compile fails
+  - rebuilds one flow's compiled agents through Doctrine
 - `src/rally/services/flow_loader.py`
   - loads `flow.yaml`
-  - requires compiled `build/agents/*`
-  - requires `AGENTS.contract.json`
-  - validates flow codes, `runtime.max_command_turns`, prompt-input commands, and the shared turn-result schema
+  - validates supported adapter names and adapter args through the registry
+  - validates `runtime.max_command_turns`, prompt-input commands, and guarded
+    repo paths
 - `src/rally/cli.py`
   - ships real `run`
   - ships real `resume`
   - ships `resume --edit`
   - ships `resume --restart`
-  - ships `issue note`, including repeatable `--field key=value`
-  - stamps `- Turn: \`N\`` on in-turn notes automatically when Rally launched that turn
+  - ships `issue note`
 - `src/rally/services/run_store.py`
   - allocates run ids
   - writes `run.yaml` and `state.yaml`
@@ -111,50 +123,54 @@ The current checked-in runtime surface is:
   - enforces one active run per flow
   - owns flow locks
 - `src/rally/services/home_materializer.py`
-  - prepares the run-home layout
-  - refreshes `home/agents/`, `home/skills/`, `home/mcps/`, `config.toml`, and auth links on each start or resume
+  - prepares the shared run-home layout
+  - enforces non-empty `home/issue.md`
+  - syncs built-in framework assets
+  - copies compiled agents plus allowlisted skills and MCPs
+  - calls `adapter.prepare_home(...)`
   - runs flow setup only when the run home first becomes ready
 - `src/rally/services/issue_ledger.py`
   - appends Rally-stamped notes and runtime event blocks
-  - renders flat structured note fields as `- Field <key>: \`<value>\`` header lines
-  - inserts one hidden original-issue marker before the first Rally-owned block
-  - can recover the original issue from the earliest issue snapshot
+  - inserts the original-issue marker
   - snapshots the full issue log after each append
 - `src/rally/services/run_events.py`
   - writes canonical run events
   - fans them out to whole-run logs, agent logs, and the rendered transcript
-- `src/rally/terminal/display.py`
-  - renders the live color stream on a TTY
-  - shows a richer startup summary with run, flow, model, thinking level, adapter, and agent facts
-  - falls back to plain text when needed
-- `src/rally/adapters/codex/launcher.py`
-  - builds `CODEX_HOME`, `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`
-  - writes one adapter launch proof file per turn
-- `src/rally/adapters/codex/event_stream.py`
-  - normalizes Codex JSONL into Rally event records
-- `src/rally/adapters/codex/result_contract.py`
-  - reads the last assistant message
-  - accepts plain JSON or fenced JSON
-  - returns one validated Rally turn result
-- `src/rally/adapters/codex/session_store.py`
-  - saves one session id per agent
-  - writes per-turn `exec.jsonl`, `stderr.log`, and `last_message.json`
+- `src/rally/services/final_response_loader.py`
+  - reads one final JSON object from `last_message.json`
+  - parses either the shared Rally turn result or review-native control-ready
+    finals
+- `src/rally/adapters/base.py`
+  - defines `RallyAdapter`, `AdapterSessionRecord`, `TurnArtifactPaths`, and
+    `AdapterInvocation`
+  - provides shared launch-env, launch-record, session, and turn-artifact
+    helpers
+- `src/rally/adapters/registry.py`
+  - registers `codex` and `claude_code`
+- `src/rally/adapters/codex/adapter.py`
+  - owns the Codex launch shape, root-home bootstrap, event replay, and
+    session reuse
+- `src/rally/adapters/claude_code/adapter.py`
+  - owns the Claude launch shape, generated MCP config, tool clamp, event
+    replay, and session reuse
+- `src/rally/adapters/claude_code/event_stream.py`
+  - parses Claude stream-json events
+  - extracts final JSON from `structured_output`, `result.result`, assistant
+    text JSON, or `StructuredOutput` tool payloads
 - `src/rally/services/runner.py`
-  - rebuilds the current flow under the flow lock before loading compiled agents
-  - wires run creation, resume, prompt injection, Codex launch, result handling, state writes, and issue/event logging
-  - lets a blocked run retry after `resume --edit` saves a non-empty issue
-  - lets `resume --restart` archive the old run and start a fresh run from the original issue
-  - appends a `user edited issue.md` diff block to `home/issue.md` when `resume --edit` changed the issue text
-  - appends Rally-owned ledger blocks with Markdown `---` dividers and turn labels on turn-scoped records
-  - keeps chaining turns after handoffs until Rally reaches `done`, `blocker`, a runtime failure, a sleep request, or the command turn cap
+  - rebuilds the current flow under the flow lock before loading compiled
+    agents
+  - wires run creation, resume, prompt injection, adapter launch, final-result
+    handling, state writes, and issue/event logging
+  - keeps chaining turns after handoffs until Rally reaches a real stop point
 
-The live smoke now proves the full `poem_loop` loop:
+The live smoke still proves the full `poem_loop` loop on Codex:
 `poem_writer -> poem_critic -> poem_writer -> done`.
-That loop now runs in one Rally command unless a real stop point interrupts it.
 
-`poem_loop` keeps the human issue and durable notes on `home/issue.md` and keeps
-the only file artifact at `artifacts/poem.md`.
-It also uses the same chained handoff model and per-command turn cap.
+This implementation pass also added:
+
+- one honest live Claude proof through Rally
+- one fresh post-cutover live Codex proof on a tiny one-agent temp flow
 
 # Proof Path
 
@@ -165,32 +181,36 @@ Use the smallest honest proof for each layer:
   - inspect `flows/*/build/agents/*`
 - runtime change
   - run the owning unit tests
-- run-loop change
-  - prove it through the `rally run` shell-create path and the `rally resume` launch path
+- adapter change
+  - prove the adapter-specific tests plus the shared runner tests
 
 The current core proof set is:
 
-- flow rebuild for `_stdlib_smoke`
-- flow rebuild for `poem_loop`
-- `tests/unit/test_flow_loader.py`
-- `tests/unit/domain/test_turn_result_contracts.py`
-- `tests/unit/test_cli.py`
-- `tests/unit/test_result_contract.py`
-- `tests/unit/test_issue_ledger.py`
-- `tests/unit/test_launcher.py`
-- `tests/unit/test_run_events.py`
-- `tests/unit/test_codex_event_stream.py`
+- `tests/unit/test_adapter_registry.py`
+- `tests/unit/test_final_response_loader.py`
 - `tests/unit/test_runner.py`
-- one live end-to-end `poem_loop` run on Codex that reached `done`
+- `tests/unit/test_launcher.py`
+- `tests/unit/test_codex_event_stream.py`
+- `tests/unit/test_claude_code_event_stream.py`
+- `tests/unit/test_claude_code_launcher.py`
+- `uv run pytest tests/unit -q` with `155 passed`
+- one earlier live end-to-end `poem_loop` run on Codex
+- one fresh live Codex Rally run on the shared adapter boundary with result
+  `done` and summary `live codex proof`
+- one fresh live Claude Rally run using the supported v1 auth path with result
+  `done` and summary `live claude contract proof`
+- the Claude fallback extractor now accepts fenced JSON blocks from live Claude
+  output in `result.result` and assistant text content
 
 # Next Work
 
-The next honest work is Phase 5 work:
+The next honest work after this slice is:
 
 1. add a standalone `rally archive` command
 2. add better stale-run diagnosis
 3. add a replay or viewer command for old runs
-4. prove the new narrow flow on a live Codex run
+4. add one real adapter-native MCP readiness contract
+5. decide later whether isolated Claude auth is worth the extra complexity
 
 # Live Truth
 
@@ -199,5 +219,6 @@ Use this doc with:
 - `docs/RALLY_MASTER_DESIGN_2026-04-12.md`
 - `docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md`
 - `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md`
+- `docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md`
 
 Treat older planning docs as history only.

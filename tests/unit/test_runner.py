@@ -293,6 +293,75 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(captured_env["RALLY_WORKSPACE_DIR"], str(repo_root))
             self.assertIn(str(repo_root), prompt_text)
 
+    def test_resume_run_supports_claude_code_adapter_and_writes_claude_launch_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            self._write_fixture_repo_mcp(repo_root=repo_root)
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_text = flow_text.replace("  adapter: codex\n", "  adapter: claude_code\n")
+            flow_text = flow_text.replace("    allowed_mcps: []\n", "    allowed_mcps: [fixture-repo]\n")
+            flow_text = flow_text.replace("    project_doc_max_bytes: 0\n", "")
+            flow_path.write_text(flow_text, encoding="utf-8")
+
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+            fake_run = _FakeClaudeRun(
+                [
+                    {
+                        "session_id": "claude-session-1",
+                        "assistant_text": "Investigating the bug",
+                        "structured_output": {
+                            "kind": "handoff",
+                            "next_owner": "change_engineer",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    },
+                    {
+                        "session_id": "claude-session-2",
+                        "structured_output": {
+                            "kind": "done",
+                            "next_owner": None,
+                            "summary": "verified",
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    },
+                ]
+            )
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=fake_run,
+            )
+
+            session_text = (run_dir / "home" / "sessions" / "scope_lead" / "session.yaml").read_text(
+                encoding="utf-8"
+            )
+            launch_record = json.loads(
+                (run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").read_text(encoding="utf-8")
+            )
+            mcp_config = json.loads((run_dir / "home" / "claude_code" / "mcp.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertEqual(fake_run.calls[0]["command"][0], "claude")
+            self.assertIn("-p", fake_run.calls[0]["command"])
+            self.assertIn("--verbose", fake_run.calls[0]["command"])
+            self.assertIn("--permission-mode", fake_run.calls[0]["command"])
+            self.assertIn("dontAsk", fake_run.calls[0]["command"])
+            self.assertIn("--tools", fake_run.calls[0]["command"])
+            self.assertIn("--allowedTools", fake_run.calls[0]["command"])
+            self.assertIn("--strict-mcp-config", fake_run.calls[0]["command"])
+            self.assertEqual(fake_run.calls[1]["command"][0], "claude")
+            self.assertEqual(launch_record["env"]["ENABLE_CLAUDEAI_MCP_SERVERS"], "false")
+            self.assertIn("claude-session-1", session_text)
+            self.assertIn("fixture-repo", mcp_config["mcpServers"])
+            self.assertTrue((run_dir / "home" / ".claude" / "skills").is_symlink())
+
     def test_run_flow_rebuild_failure_stops_before_creating_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -2134,6 +2203,58 @@ class _DirtyGuardedRepoCodexRun(_FakeCodexRun):
         repo_dir = run_home / "repos" / "demo_repo"
         (repo_dir / "dirty.txt").write_text("dirty\n", encoding="utf-8")
         return super().__call__(command, **kwargs)
+
+
+class _FakeClaudeRun:
+    def __init__(self, responses: list[dict[str, object]]) -> None:
+        self._responses = responses
+        self.calls: list[dict[str, object]] = []
+
+    def __call__(self, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        response = self._responses[len(self.calls)]
+        self.calls.append({"command": command, "kwargs": kwargs})
+        session_id = str(response["session_id"])
+        stdout_lines = response.get("stdout_lines")
+        if isinstance(stdout_lines, list):
+            stdout = "".join(json.dumps(line) + "\n" for line in stdout_lines)
+        else:
+            event_lines: list[dict[str, object]] = [
+                {
+                    "type": "system",
+                    "subtype": "init",
+                    "session_id": session_id,
+                }
+            ]
+            assistant_text = response.get("assistant_text")
+            if isinstance(assistant_text, str) and assistant_text:
+                event_lines.append(
+                    {
+                        "type": "assistant",
+                        "session_id": session_id,
+                        "message": {
+                            "content": [{"type": "text", "text": assistant_text}],
+                        },
+                    }
+                )
+            event_lines.append(
+                {
+                    "type": "result",
+                    "session_id": session_id,
+                    "usage": {
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "cache_read_input_tokens": 0,
+                    },
+                    "structured_output": response["structured_output"],
+                }
+            )
+            stdout = "".join(json.dumps(line) + "\n" for line in event_lines)
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=int(response.get("returncode", 0)),
+            stdout=stdout,
+            stderr=str(response.get("stderr", "")),
+        )
 
 
 class _FakeTtyStream(io.StringIO):

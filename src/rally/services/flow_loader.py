@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from rally.adapters.registry import get_adapter
 from rally.domain.flow import (
     AdapterConfig,
     CompiledAgentContract,
@@ -78,6 +79,7 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
         context="runtime",
     )
     adapter_args = _require_mapping(runtime_payload, "adapter_args", context="runtime")
+    get_adapter(adapter_name).validate_args(args=adapter_args)
     prompt_input_command_rel = runtime_payload.get("prompt_input_command")
     prompt_input_command = None
     if prompt_input_command_rel is not None:
