@@ -51,7 +51,7 @@ skill package RallyKernel: "Rally Kernel"
             write_note: "Write the note through Rally CLI when needed."
             keep_note_short: "Keep the note short. Save context, decisions, exact commands, or constraints that later turns should read. Do not restate the whole file or copy the final JSON."
             keep_fields_simple: "Keep structured fields simple. Use short flat labels such as `kind`, `lane`, `artifact`, or `review_mode`. Put the human explanation in the note body, not in the field names."
-            end_with_json: "End the turn with strict final JSON. Many turns use the shared five-key Rally turn result. Review-native turns may use declared Doctrine review JSON instead. The skill helps you shape that result, but it does not replace the adapter return path."
+            end_with_json: "End the turn with strict final JSON. Many turns use the shared Rally turn result. On that shared shape, send `agent_issues` with one short issue or `none`. Review-native turns may use declared Doctrine review JSON instead. The skill helps you shape that result, but it does not replace the adapter return path."
             keep_route_truth_out: "Keep route truth out of notes. If the turn routes, let final JSON carry `next_owner`."
 
         code stdin_note: "Preferred stdin form" advisory

@@ -72,7 +72,7 @@ _ordered list_
 2. Write the note through Rally CLI when needed.
 3. Keep the note short. Save context, decisions, exact commands, or constraints that later turns should read. Do not restate the whole file or copy the final JSON.
 4. Keep structured fields simple. Use short flat labels such as `kind`, `lane`, `artifact`, or `review_mode`. Put the human explanation in the note body, not in the field names.
-5. End the turn with strict final JSON. Many turns use the shared five-key Rally turn result. Review-native turns may use declared Doctrine review JSON instead. The skill helps you shape that result, but it does not replace the adapter return path.
+5. End the turn with strict final JSON. Many turns use the shared Rally turn result. On that shared shape, send `agent_issues` with one short issue or `none`. Review-native turns may use declared Doctrine review JSON instead. The skill helps you shape that result, but it does not replace the adapter return path.
 6. Keep route truth out of notes. If the turn routes, let final JSON carry `next_owner`.
 
 ### Preferred stdin form

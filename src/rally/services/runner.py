@@ -822,6 +822,7 @@ def _execute_single_turn(
             run_id=run_record.id,
             agent=agent,
             turn_result=turn_result,
+            agent_issues=loaded_final_response.agent_issues,
             turn_index=turn_index,
             append_sleep_record=False,
         )
@@ -897,6 +898,7 @@ def _execute_single_turn(
         run_id=run_record.id,
         agent=agent,
         turn_result=turn_result,
+        agent_issues=loaded_final_response.agent_issues,
         turn_index=turn_index,
     )
 
@@ -1330,10 +1332,13 @@ def _append_issue_records_for_turn_result(
     run_id: str,
     agent: FlowAgent,
     turn_result: TurnResult,
+    agent_issues: str | None,
     turn_index: int,
     append_sleep_record: bool = True,
 ) -> None:
     detail_lines = [f"Agent: `{agent.key}`", f"Result: `{turn_result.kind.value}`"]
+    if agent_issues is not None:
+        detail_lines.append(f"Agent Issues: {agent_issues}")
     if isinstance(turn_result, HandoffTurnResult):
         detail_lines.append(f"Next Owner: `{turn_result.next_owner}`")
     if isinstance(turn_result, DoneTurnResult):
