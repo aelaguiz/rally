@@ -107,9 +107,12 @@ The list is even shorter now that per-agent skill isolation shipped on
   still call out per-agent `allowed_mcps` enforcement and per-agent MCP
   isolation as follow-up work
   (`docs/RALLY_MASTER_DESIGN_2026-04-12.md:219`,
-  `docs/RALLY_MASTER_DESIGN_2026-04-12.md:613`). The separate Codex MCP note
-  still treats required-MCP readiness and child-run parity as open
-  (`docs/RALLY_CODEX_RUNNER_MCP_SUPPORT_AND_AUTH_2026-04-13.md`).
+  `docs/RALLY_MASTER_DESIGN_2026-04-12.md:613`). The narrower Codex readiness
+  gap is now closed: Rally marks the shared Codex-visible MCP set as
+  `required = true`, checks it before the turn starts, and keeps the same
+  access story for child agents from that prepared run home
+  (`docs/RALLY_MASTER_DESIGN_2026-04-12.md:366`,
+  `docs/RALLY_MASTER_DESIGN_2026-04-12.md:384`).
 - First-class structured note metadata would be useful, but it is not
   required. We can store fenced JSON or YAML inside note bodies today. A typed
   `rally issue note` mode would reduce brittle parsing, but I would treat it
@@ -139,8 +142,8 @@ The list is even shorter now that per-agent skill isolation shipped on
 
 The corrected exhaustive read is: most of the Lessons support work belongs in
 a Rally-native Lessons flow, its shared prompt library, and its issue-state
-reducer. The strongest remaining runtime feature gap is per-agent MCP
-handling, including required-MCP readiness. Per-agent skill isolation is
-already shipped. Everything else from Paperclip that looked scary in the first
-pass mostly disappears once you take Rally's linear, synchronous,
-`issue.md`-first design seriously.
+reducer. The strongest remaining runtime feature gap is broader per-agent MCP
+handling, not the now-shipped Codex required-MCP readiness slice. Per-agent
+skill isolation is already shipped. Everything else from Paperclip that looked
+scary in the first pass mostly disappears once you take Rally's linear,
+synchronous, `issue.md`-first design seriously.

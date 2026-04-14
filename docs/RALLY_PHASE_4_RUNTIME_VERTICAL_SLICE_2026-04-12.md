@@ -106,6 +106,8 @@ What is real today:
 - Claude generated bootstrap through `home/claude_code/mcp.json`,
   `home/.claude/skills`, and `ENABLE_CLAUDEAI_MCP_SERVERS=false`
 - Codex launch with dangerous bypass, explicit `cwd`, explicit `CODEX_HOME`, and explicit Rally env vars
+- Codex pre-turn MCP readiness through `codex mcp get/list` plus a bounded
+  stdio start check on the projected shared MCP set
 - one live `software_engineering_demo` proof from a blank seeded repo
 - one second `software_engineering_demo` proof that stacked `issue/sed-4` on
   top of accepted `issue/sed-3` history
@@ -115,7 +117,6 @@ What is still outside Phase 4:
 - `rally archive`
 - deeper stale-run diagnosis
 - per-agent runtime enforcement for `allowed_mcps`
-- a full adapter-native MCP auth and readiness contract
 - run-home-owned Claude auth
 
 # Stable Rules
@@ -349,8 +350,7 @@ The next honest work after this slice is:
 2. add better stale-run diagnosis
 3. add a replay or viewer command for old runs
 4. enforce per-agent runtime MCP access instead of today's shared MCP config
-5. add one real adapter-native MCP readiness contract
-6. decide later whether isolated Claude auth is worth the extra complexity
+5. decide later whether isolated Claude auth is worth the extra complexity
 
 # Live Truth
 
