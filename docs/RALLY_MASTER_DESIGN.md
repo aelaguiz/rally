@@ -256,7 +256,7 @@ They may carry flat string note fields when later turns need stable labels.
 
 The structured final turn result is the only turn-ending control surface.
 It tells Rally whether to route, stop, block, or ask for sleep.
-The shared JSON always carries the same five keys:
+The shared non-review JSON always carries the same five control keys:
 
 - `kind`
 - `next_owner`
@@ -265,7 +265,13 @@ The shared JSON always carries the same five keys:
 - `sleep_duration_seconds`
 
 Fields that do not apply are `null` on the classic shared shape.
-Review-native turns may use control-ready Doctrine review JSON instead of the five-key object.
+That shared shape may also carry optional passive diagnostics in `agent_issues`.
+Agents should send one short issue summary there, or the literal `none` when no issue applies.
+`agent_issues` never changes route, done, blocker, or sleep behavior.
+A non-review flow can opt out of that default by declaring its own output shape
+over the shared schema. That stays a prompt-contract choice, not a runtime
+flag.
+Review-native turns may use control-ready Doctrine review JSON instead of the shared non-review object.
 If the result uses `kind: handoff`, that is only the label of the route-to-next-owner branch in the classic shared result.
 Rally now keeps running across handoffs inside one `run` or `resume`
 command until it reaches a real stop point.
@@ -552,7 +558,7 @@ Status: the authored standard-library baseline is done in this repo.
 What this gives Rally:
 
 - the shared `rally.turn_results` contract
-- schema and example assets for that contract
+- schema and example assets for that contract, including optional passive `agent_issues`
 - the import/composition pattern Rally flows use to adopt those conventions
 
 What remains true:

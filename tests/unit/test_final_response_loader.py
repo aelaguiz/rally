@@ -73,6 +73,7 @@ class FinalResponseLoaderTests(unittest.TestCase):
             )
 
             self.assertEqual(loaded.turn_result, DoneTurnResult(summary="The poem is ready to keep."))
+            self.assertIsNone(loaded.agent_issues)
             self.assertIn("### Findings First", loaded.review_note_markdown or "")
             self.assertIn("- Verdict: `accept`", loaded.review_note_markdown or "")
 
@@ -119,7 +120,55 @@ class FinalResponseLoaderTests(unittest.TestCase):
             )
 
             self.assertEqual(loaded.turn_result, HandoffTurnResult(next_owner="poem_writer"))
+            self.assertIsNone(loaded.agent_issues)
             self.assertIn("- Next Owner: `poem_writer`", loaded.review_note_markdown or "")
+
+    def test_load_agent_final_response_keeps_agent_issues_for_shared_turn_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            last_message = Path(temp_dir) / "last_message.json"
+            last_message.write_text(
+                """{
+  "kind": "done",
+  "next_owner": null,
+  "summary": "wrapped up",
+  "reason": null,
+  "sleep_duration_seconds": null,
+  "agent_issues": "none"
+}
+""",
+                encoding="utf-8",
+            )
+
+            loaded = load_agent_final_response(
+                compiled_agent=_shared_turn_result_agent_contract(),
+                last_message_file=last_message,
+            )
+
+            self.assertEqual(loaded.turn_result, DoneTurnResult(summary="wrapped up"))
+            self.assertEqual(loaded.agent_issues, "none")
+            self.assertIsNone(loaded.review_note_markdown)
+
+    def test_load_agent_final_response_rejects_blank_agent_issues(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            last_message = Path(temp_dir) / "last_message.json"
+            last_message.write_text(
+                """{
+  "kind": "done",
+  "next_owner": null,
+  "summary": "wrapped up",
+  "reason": null,
+  "sleep_duration_seconds": null,
+  "agent_issues": "   "
+}
+""",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RallyStateError, "agent_issues"):
+                load_agent_final_response(
+                    compiled_agent=_shared_turn_result_agent_contract(),
+                    last_message_file=last_message,
+                )
 
 
 if __name__ == "__main__":
@@ -201,4 +250,25 @@ def _review_agent_contract(*, mode: str) -> CompiledAgentContract:
                 ),
             },
         ),
+    )
+
+
+def _shared_turn_result_agent_contract() -> CompiledAgentContract:
+    return CompiledAgentContract(
+        name="ScopeLead",
+        slug="scope_lead",
+        entrypoint=Path("/tmp/prompts/AGENTS.prompt"),
+        markdown_path=Path("/tmp/build/scope_lead/AGENTS.md"),
+        contract_path=Path("/tmp/build/scope_lead/AGENTS.contract.json"),
+        contract_version=1,
+        final_output=FinalOutputContract(
+            exists=True,
+            declaration_key="rally.turn_results.RallyTurnResult",
+            declaration_name="RallyTurnResult",
+            format_mode="json_schema",
+            schema_profile="OpenAIStructuredOutput",
+            schema_file=Path("/tmp/schema.json"),
+            example_file=Path("/tmp/example.json"),
+        ),
+        review=None,
     )

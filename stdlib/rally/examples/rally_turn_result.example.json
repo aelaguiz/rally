@@ -3,5 +3,6 @@
   "next_owner": "change_engineer",
   "summary": null,
   "reason": null,
-  "sleep_duration_seconds": null
+  "sleep_duration_seconds": null,
+  "agent_issues": "none"
 }

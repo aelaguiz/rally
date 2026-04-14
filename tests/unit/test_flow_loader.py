@@ -338,6 +338,12 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertIn("## Read First", writer_readback)
         self.assertIn("Artistic Rationale", writer_readback)
         self.assertIn("### Rally Turn Result", writer_readback)
+        agent_issues_line = (
+            "`agent_issues` is optional diagnostics only. When you send it, use one short issue summary or the literal `none`. "
+            "It never changes route, done, blocker, or sleep behavior."
+        )
+        self.assertIn(agent_issues_line, writer_readback)
+        self.assertEqual(writer_readback.count(agent_issues_line), 1)
         self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', writer_readback)
         self.assertIn("For this turn, read skills from `home:skills/`.", writer_readback)
         self.assertIn("On Codex turns, that same folder is `$CODEX_HOME/skills/`.", writer_readback)
@@ -378,6 +384,18 @@ class FlowLoaderTests(unittest.TestCase):
 
             with self.assertRaisesRegex(RallyConfigError, "must require .*next_owner"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_accepts_turn_result_schema_with_optional_agent_issues(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(repo_root=repo_root, include_agent_issues=True)
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            self.assertEqual(
+                flow.agent("01_scope_lead").compiled.final_output.schema_file,
+                repo_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
+            )
 
     def test_load_flow_definition_rejects_missing_max_command_turns(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -476,6 +494,7 @@ class FlowLoaderTests(unittest.TestCase):
         flow_code: str = "DMO",
         contract_version: int = 1,
         include_next_owner: bool = True,
+        include_agent_issues: bool = False,
         include_max_command_turns: bool = True,
         max_command_turns_yaml: str = "8",
         schema_file: str = "stdlib/rally/schemas/rally_turn_result.schema.json",
@@ -553,7 +572,10 @@ class FlowLoaderTests(unittest.TestCase):
 
         if schema_file.startswith("stdlib:") or schema_file.startswith("stdlib/rally/"):
             (schema_root / "rally_turn_result.schema.json").write_text(
-                self._schema_text(include_next_owner=include_next_owner),
+                self._schema_text(
+                    include_next_owner=include_next_owner,
+                    include_agent_issues=include_agent_issues,
+                ),
                 encoding="utf-8",
             )
         if example_file.startswith("stdlib:") or example_file.startswith("stdlib/rally/"):
@@ -679,8 +701,13 @@ class FlowLoaderTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def _schema_text(self, *, include_next_owner: bool) -> str:
+    def _schema_text(self, *, include_next_owner: bool, include_agent_issues: bool = False) -> str:
         next_owner_required = '"next_owner",' if include_next_owner else ""
+        agent_issues_property = (
+            ',\n    "agent_issues": {\n      "type": "string"\n    }'
+            if include_agent_issues
+            else ""
+        )
         return textwrap.dedent(
             f"""\
             {{
@@ -708,7 +735,7 @@ class FlowLoaderTests(unittest.TestCase):
                 }},
                 "sleep_duration_seconds": {{
                   "type": ["integer", "null"]
-                }}
+                }}{agent_issues_property}
               }}
             }}
             """

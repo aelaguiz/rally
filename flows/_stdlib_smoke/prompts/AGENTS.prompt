@@ -29,9 +29,26 @@ output RepairPlan: "Repair Plan"
     "Write the repair plan to `home:artifacts/repair_plan.md`."
 
 
+output shape SmokeTurnResultJson: "Smoke Turn Result JSON"
+    kind: JsonObject
+    schema: rally.turn_results.RallyTurnResultSchema
+
+    explanation: "What `kind` Means"
+        "This smoke-test shape reuses Rally's shared control schema."
+        "`kind` tells Rally what to do next."
+        "Always send the five control keys."
+        "Use `null` for control fields that do not apply."
+        "If the final JSON includes `next_owner`, use the owner key, not the display name."
+        "Use keys like `route_repair`."
+        "Use `handoff` with `next_owner`."
+        "Use `done` with `summary` to finish the smoke test."
+        "Use `blocker` with `reason` to stop the smoke test cleanly."
+        "Use `sleep` with `reason` and `sleep_duration_seconds` to pause the smoke test and wake the same owner later."
+
+
 output PlanAuthorTurnResult: "Plan Author Turn Result"
     target: TurnResponse
-    shape: rally.turn_results.RallyTurnResultJson
+    shape: SmokeTurnResultJson
     requirement: Required
 
     kind: "handoff" when route.exists
@@ -52,7 +69,7 @@ output RouteRepairDecision: "Route Repair Decision"
 
 output RouteRepairTurnResult: "Route Repair Turn Result"
     target: TurnResponse
-    shape: rally.turn_results.RallyTurnResultJson
+    shape: SmokeTurnResultJson
     requirement: Required
 
     kind: "handoff"
@@ -61,7 +78,7 @@ output RouteRepairTurnResult: "Route Repair Turn Result"
 
 output CloseoutTurnResult: "Closeout Turn Result"
     target: TurnResponse
-    shape: rally.turn_results.RallyTurnResultJson
+    shape: SmokeTurnResultJson
     requirement: Required
 
     kind: "done"

@@ -30,6 +30,9 @@ This file keeps the concrete CLI and logging rules in one place.
 Use it with the master design and the runtime doc.
 If this file and the code disagree, the code wins.
 Use the debugging guide for the operator how-to for `rally interview`.
+Non-review flows can still opt out of the shared `agent_issues` default by
+declaring their own output shape over the shared schema in prompt source. CLI
+and runtime still read one final JSON path either way.
 
 # What Rally Ships Today
 
@@ -409,7 +412,7 @@ After that, Rally appends:
 - review-note blocks from `rally runtime review` when Rally consumes a review-native final response
 - `resume --edit` diff blocks when the operator changed `home/issue.md`
 - run-start records
-- turn-result records
+- turn-result records, including `Agent Issues: ...` when a shared final response sends that passive field
 - paused, blocked, or done status records when they apply
 
 Rally writes one Markdown thematic break, `---`, between Rally-owned blocks.
