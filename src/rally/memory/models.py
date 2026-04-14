@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from rally.domain.flow import normalize_flow_code
+
 
 MemorySaveKind = Literal["created", "updated"]
 
@@ -14,10 +16,11 @@ class MemoryScope:
     agent_slug: str
 
     def __post_init__(self) -> None:
-        if not self.flow_code.strip():
-            raise ValueError("Memory scope flow_code must not be empty.")
-        if not self.agent_slug.strip():
+        object.__setattr__(self, "flow_code", normalize_flow_code(self.flow_code))
+        normalized_agent_slug = self.agent_slug.strip()
+        if not normalized_agent_slug:
             raise ValueError("Memory scope agent_slug must not be empty.")
+        object.__setattr__(self, "agent_slug", normalized_agent_slug)
 
     @property
     def collection_name(self) -> str:

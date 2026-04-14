@@ -11,6 +11,7 @@ import yaml
 
 from rally.domain.rooted_path import HOME_ROOT, PathRoot, parse_rooted_path
 from rally.errors import RallyConfigError
+from rally.services.bundled_assets import workspace_owns_rally_builtins
 from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
 from rally.services.workspace import WorkspaceContext, workspace_context_from_root
 from rally.services.workspace_sync import sync_workspace_builtins
@@ -125,14 +126,14 @@ def _should_emit_skill_build(
     repo_root: Path,
     skill_name: str,
 ) -> bool:
-    if skill_name in MANDATORY_SKILL_NAMES:
-        return False
     bundle = resolve_skill_bundle_source(
         repo_root=repo_root,
         skill_name=skill_name,
     )
     if bundle.kind != "doctrine":
         return False
+    if skill_name in MANDATORY_SKILL_NAMES:
+        return workspace_owns_rally_builtins(pyproject_path=workspace.pyproject_path)
     return True
 
 

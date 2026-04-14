@@ -1,15 +1,14 @@
 ---
 title: "Rally - Software Engineering Flow Showcase"
-date: 2026-04-13
 status: shipped
 fallback_policy: forbidden
 owners: [aelaguiz]
 reviewers: []
 doc_type: architecture_detail
 related:
-  - docs/RALLY_MASTER_DESIGN_2026-04-12.md
-  - docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
-  - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
+  - docs/RALLY_MASTER_DESIGN.md
+  - docs/RALLY_CLI_AND_LOGGING.md
+  - docs/RALLY_RUNTIME.md
   - stdlib/rally/prompts/rally/base_agent.prompt
   - stdlib/rally/prompts/rally/turn_results.prompt
   - src/rally/services/flow_build.py

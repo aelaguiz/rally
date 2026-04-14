@@ -108,9 +108,9 @@
 ## Docs Map
 
 - `docs/`: use the current Rally master design doc as the main design source. Ignore stale plans and worklogs. Find it with `rg --files docs | rg 'RALLY_MASTER_DESIGN'`
-- `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md`: focused command, issue-ledger, snapshot, and logging detail; use it when CLI shape, run logs, renderer rules, or recovery paths change
-- `docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md`: communication-model pivot; keep it aligned with the master doc when notes, end-turn control, or harness env rules change
-- `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`: runtime plan; keep it aligned with the master doc when runtime scope, proof paths, or launch rules change
+- `docs/RALLY_CLI_AND_LOGGING.md`: focused command, issue-ledger, snapshot, and logging detail; use it when CLI shape, run logs, renderer rules, or recovery paths change
+- `docs/RALLY_COMMUNICATION_MODEL.md`: communication model; keep it aligned with the master doc when notes, end-turn control, or harness env rules change
+- `docs/RALLY_RUNTIME.md`: runtime detail; keep it aligned with the master doc when runtime scope, proof paths, or launch rules change
 - `flows/*/flow.yaml`: runtime config, adapter settings, and allowlisted skills and MCPs
 - `flows/*/prompts/**`: prompt source
 - `stdlib/rally/prompts/**`: Rally-owned shared prompt source; use `turn_results.prompt` as the shared final-result rule

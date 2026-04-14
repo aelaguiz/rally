@@ -7,7 +7,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/aelaguiz/rally/badge)](https://scorecard.dev/viewer/?uri=github.com/aelaguiz/rally)
 
 [Doctrine](https://github.com/aelaguiz/doctrine) · [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
-[Design](docs/RALLY_MASTER_DESIGN_2026-04-12.md) · [Versioning](docs/VERSIONING.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
+[Design](docs/RALLY_MASTER_DESIGN.md) · [Versioning](docs/VERSIONING.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
 
 Build strong, stable coding-agent workflows from plain repo files.
 
@@ -172,7 +172,7 @@ uv sync --dev
 Source contributors still work in repo `rally`. Only the published package
 uses the name `rally-agents`.
 
-Run the smallest shipped demo:
+To run the smallest shipped demo locally:
 
 Build the checked-in flow and skill readback that Rally loads at runtime:
 
@@ -181,13 +181,13 @@ uv run python -m doctrine.emit_docs --pyproject pyproject.toml --target _stdlib_
 uv run python -m doctrine.emit_skill --pyproject pyproject.toml --target rally-kernel --target rally-memory --target demo-git
 ```
 
-Run the smallest shipped demo:
+Then run the smallest shipped demo:
 
 ```bash
 uv run rally run poem_loop
 ```
 
-Run the unit tests:
+If Rally stops for issue text:
 
 If you do not have an interactive editor configured, Rally will stop and tell you where the issue file lives. On a fresh repo, that path will be:
 
@@ -285,30 +285,23 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). The short version:
   questions and design talk.
 - Use [Issues](https://github.com/aelaguiz/rally/issues) for clear bugs or
   scoped proposals.
+- Use [SUPPORT.md](SUPPORT.md) when you are not sure which path fits.
+- Use [SECURITY.md](SECURITY.md) for security reports.
+- Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) in project spaces.
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and proof commands.
-- See [SUPPORT.md](SUPPORT.md) for help paths and [SECURITY.md](SECURITY.md)
-  for private vulnerability reports.
 
 ## Read Next
 
 - [docs/VERSIONING.md](docs/VERSIONING.md)
 - [CHANGELOG.md](CHANGELOG.md)
-- [docs/RALLY_MASTER_DESIGN_2026-04-12.md](docs/RALLY_MASTER_DESIGN_2026-04-12.md)
-- [docs/RALLY_CLI_AND_LOGGING_2026-04-13.md](docs/RALLY_CLI_AND_LOGGING_2026-04-13.md)
-- [docs/RALLY_QMD_AGENT_MEMORY_MODEL_2026-04-13.md](docs/RALLY_QMD_AGENT_MEMORY_MODEL_2026-04-13.md)
+- [docs/RALLY_MASTER_DESIGN.md](docs/RALLY_MASTER_DESIGN.md)
+- [docs/RALLY_RUNTIME.md](docs/RALLY_RUNTIME.md)
+- [docs/RALLY_CLI_AND_LOGGING.md](docs/RALLY_CLI_AND_LOGGING.md)
+- [docs/RALLY_COMMUNICATION_MODEL.md](docs/RALLY_COMMUNICATION_MODEL.md)
+- [docs/RALLY_MEMORY.md](docs/RALLY_MEMORY.md)
 - [SUPPORT.md](SUPPORT.md)
 - [SECURITY.md](SECURITY.md)
-- [docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md](docs/RALLY_CLAUDE_CODE_FIRST_CLASS_ADAPTER_SUPPORT_2026-04-13.md)
 - [Doctrine](https://github.com/aelaguiz/doctrine)
 - [CONTRIBUTING.md](CONTRIBUTING.md)
-
-## Questions and contributions
-
-- Use [Discussions](https://github.com/aelaguiz/rally/discussions) for questions and design talk.
-- Use [Issues](https://github.com/aelaguiz/rally/issues) for clear bugs or scoped proposals.
-- Use [SUPPORT.md](SUPPORT.md) when you are not sure which path fits.
-- Use [SECURITY.md](SECURITY.md) for security reports.
-- Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) in project spaces.
-- See [CONTRIBUTING.md](CONTRIBUTING.md) for the bootstrap and proof commands.
 
 If this direction is useful, star the repo and watch releases.

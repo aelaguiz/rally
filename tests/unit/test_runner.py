@@ -278,6 +278,139 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("### Findings First", issue_text)
             self.assertIn("The poem is ready to keep as written.", issue_text)
 
+    def test_resume_run_rebuilds_flow_and_stdlib_prompt_sources_before_next_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_poem_repo(repo_root=repo_root)
+            self.ensure_flow_assets_built.side_effect = build_flow_assets
+            pyproject_path = repo_root / "pyproject.toml"
+            pyproject_path.write_text(
+                pyproject_path.read_text(encoding="utf-8").replace("name = 'poem-fixture'", "name = 'rally'")
+                + "\n[[tool.doctrine.emit.targets]]\n"
+                'name = "rally-kernel"\n'
+                'entrypoint = "skills/rally-kernel/prompts/SKILL.prompt"\n'
+                'output_dir = "skills/rally-kernel/build"\n'
+                "\n[[tool.doctrine.emit.targets]]\n"
+                'name = "rally-memory"\n'
+                'entrypoint = "skills/rally-memory/prompts/SKILL.prompt"\n'
+                'output_dir = "skills/rally-memory/build"\n',
+                encoding="utf-8",
+            )
+            shutil.rmtree(repo_root / "skills" / "rally-kernel")
+            shutil.rmtree(repo_root / "skills" / "rally-memory")
+            self._write_framework_builtin_skills(framework_root=repo_root)
+
+            flow_path = repo_root / "flows" / "poem_loop" / "flow.yaml"
+            flow_path.write_text(
+                flow_path.read_text(encoding="utf-8").replace("  max_command_turns: 20\n", "  max_command_turns: 1\n"),
+                encoding="utf-8",
+            )
+
+            first_turn = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-poem-1",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_owner": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Write a sonnet about the moon.\n", encoding="utf-8")
+                return IssueEditorResult(
+                    status="saved",
+                    cleaned_text="Write a sonnet about the moon.\n",
+                )
+
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                first_result = run_flow(
+                    repo_root=repo_root,
+                    request=RunRequest(flow_name="poem_loop"),
+                    subprocess_run=first_turn,
+                )
+
+            run_dir = find_run_dir(repo_root=repo_root, run_id="POM-1")
+            self.assertEqual(first_result.status, RunStatus.BLOCKED)
+            self.assertEqual(first_result.current_agent_key, "02_poem_critic")
+
+            flow_prompt_path = repo_root / "flows" / "poem_loop" / "prompts" / "roles" / "poem_critic.prompt"
+            flow_prompt_marker = "Call out the anchor image before the verdict."
+            flow_prompt_path.write_text(
+                flow_prompt_path.read_text(encoding="utf-8").replace(
+                    '    "Accept only when you would be glad to hand the poem back as finished."\n',
+                    '    "Accept only when you would be glad to hand the poem back as finished."\n'
+                    f'    "{flow_prompt_marker}"\n',
+                ),
+                encoding="utf-8",
+            )
+
+            stdlib_prompt_path = repo_root / "stdlib" / "rally" / "prompts" / "rally" / "base_agent.prompt"
+            stdlib_prompt_marker = "Keep the newest proof in view when Rally rules mention the CLI."
+            stdlib_prompt_path.write_text(
+                stdlib_prompt_path.read_text(encoding="utf-8").replace(
+                    '        "Use `RALLY_CLI_BIN` when a flow tells you to call the Rally CLI."\n',
+                    '        "Use `RALLY_CLI_BIN` when a flow tells you to call the Rally CLI."\n'
+                    f'        "{stdlib_prompt_marker}"\n',
+                ),
+                encoding="utf-8",
+            )
+
+            second_turn = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-poem-2",
+                        "last_message": {
+                            "verdict": "accept",
+                            "reviewed_artifact": "home:artifacts/poem.md",
+                            "analysis_performed": "The sonnet keeps its moon focus, the images stay clear, and the draft now feels finished.",
+                            "findings_first": "The poem is ready to keep as written.",
+                        },
+                    }
+                ]
+            )
+
+            with patch(
+                "rally.services.runner.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.runner.edit_existing_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                second_result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="POM-1", edit_issue=True),
+                    subprocess_run=second_turn,
+                )
+
+            prompt_text = second_turn.calls[0]["kwargs"]["input"]
+            repo_readback = (
+                repo_root / "flows" / "poem_loop" / "build" / "agents" / "poem_critic" / "AGENTS.md"
+            ).read_text(encoding="utf-8")
+            run_home_readback = (run_dir / "home" / "agents" / "poem_critic" / "AGENTS.md").read_text(encoding="utf-8")
+
+            # Prompt source is the shipped truth. A resume must rebuild prompt
+            # source edits and send that updated text on the very next turn.
+            self.assertEqual(second_result.status, RunStatus.DONE)
+            self.assertIn(flow_prompt_marker, prompt_text)
+            self.assertIn(stdlib_prompt_marker, prompt_text)
+            self.assertIn(flow_prompt_marker, repo_readback)
+            self.assertIn(stdlib_prompt_marker, repo_readback)
+            self.assertIn(flow_prompt_marker, run_home_readback)
+            self.assertIn(stdlib_prompt_marker, run_home_readback)
+
     def test_run_flow_syncs_builtin_skills_into_workspace_when_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -458,6 +591,59 @@ class RunnerTests(unittest.TestCase):
                 str(Path("/tmp/fixture-repo").resolve(strict=False)),
             )
             self.assertTrue((run_dir / "home" / ".claude" / "skills").is_symlink())
+
+    def test_resume_run_blocks_before_turn_when_required_claude_mcp_cannot_start(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            self._write_fixture_repo_mcp(repo_root=repo_root)
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_text = flow_text.replace("  adapter: codex\n", "  adapter: claude_code\n")
+            flow_text = flow_text.replace("    allowed_mcps: []\n", "    allowed_mcps: [fixture-repo]\n")
+            flow_text = flow_text.replace("    project_doc_max_bytes: 0\n", "")
+            flow_path.write_text(flow_text, encoding="utf-8")
+
+            (repo_root / "mcps" / "fixture-repo" / "server.toml").write_text(
+                textwrap.dedent(
+                    """\
+                    command = "missing-fixture-mcp"
+                    args = ["--repo", "home:repos/demo_repo"]
+                    cwd = "host:/tmp/fixture-repo"
+                    transport = "stdio"
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+            fake_run = _FakeClaudeRun([])
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=fake_run,
+            )
+
+            state = load_run_state(run_dir=run_dir)
+            issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+
+            # Claude should stop before turn 1 and record a user-visible MCP
+            # blocker when a required launcher cannot start.
+            self.assertEqual(result.status, RunStatus.BLOCKED)
+            self.assertEqual(state.status, RunStatus.BLOCKED)
+            self.assertEqual(state.turn_index, 0)
+            self.assertIn("fixture-repo", state.blocker_reason or "")
+            self.assertIn("command_startability", state.blocker_reason or "")
+            self.assertIn("missing-fixture-mcp", state.blocker_reason or "")
+            self.assertFalse((run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").exists())
+            self.assertIn("Rally Blocked", issue_text)
+            self.assertIn("MCP: `fixture-repo`", issue_text)
+            self.assertIn("Check: `command_startability`", issue_text)
+            self.assertNotIn("Starting turn 1", rendered_text)
+            self.assertFalse(any(call["command"][0] == "claude" for call in fake_run.calls))
 
     def test_run_flow_activates_current_agent_skill_view_for_codex_turns(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1413,6 +1599,45 @@ class RunnerTests(unittest.TestCase):
                         request=RunRequest(flow_name="demo"),
                         subprocess_run=_FakeCodexRun([]),
                     )
+
+    def test_run_flow_rejects_allowed_mcp_without_server_toml(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_path.write_text(
+                flow_path.read_text(encoding="utf-8").replace(
+                    "    allowed_mcps: []\n",
+                    "    allowed_mcps: [fixture-repo]\n",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            (repo_root / "mcps" / "fixture-repo").mkdir(parents=True, exist_ok=True)
+            fake_run = _FakeCodexRun([])
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Fix the pagination bug.\n", encoding="utf-8")
+                return IssueEditorResult(status="saved", cleaned_text="Fix the pagination bug.\n")
+
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                with self.assertRaisesRegex(RallyConfigError, "missing `server.toml`"):
+                    run_flow(
+                        repo_root=repo_root,
+                        request=RunRequest(flow_name="demo"),
+                        subprocess_run=fake_run,
+                    )
+
+            # An incomplete shipped MCP bundle should fail with a clear Rally
+            # config error before any adapter turn starts.
+            self.assertFalse(fake_run.calls)
 
     def test_resume_run_does_not_rerun_setup_after_home_is_ready(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2481,6 +2706,48 @@ class RunnerTests(unittest.TestCase):
             rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
             self.assertIn("requires env var `PSMOBILE_ROOT`", rendered_text)
 
+    def test_resume_run_edit_keeps_issue_diff_when_startup_fails_before_first_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(
+                repo_root=repo_root,
+                with_setup_script=True,
+                required_env=["PSMOBILE_ROOT"],
+            )
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir, body="Original issue text.\n")
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Edited issue text.\n", encoding="utf-8")
+                return IssueEditorResult(status="saved", cleaned_text="Edited issue text.\n")
+
+            with patch(
+                "rally.services.runner.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.runner.edit_existing_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                with self.assertRaisesRegex(RallyUsageError, "requires env var `PSMOBILE_ROOT`"):
+                    resume_run(
+                        repo_root=repo_root,
+                        request=ResumeRequest(run_id="DMO-1", edit_issue=True),
+                        subprocess_run=_FakeCodexRun([]),
+                    )
+
+            issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+            snapshots = sorted((run_dir / "issue_history").glob("*-issue.md"))
+
+            # The operator edit is user-visible context. Rally must keep the
+            # diff block and snapshot even if startup stops before turn 1.
+            self.assertTrue(issue_text.startswith("Edited issue text.\n"))
+            self.assertIn("## user edited issue.md", issue_text)
+            self.assertIn("- Source: `rally resume --edit`", issue_text)
+            self.assertTrue(snapshots)
+            self.assertEqual(snapshots[-1].read_text(encoding="utf-8"), issue_text)
+            self.assertFalse((run_dir / "home" / ".rally_home_ready").exists())
+
     def test_resume_run_blocks_before_setup_when_required_host_file_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -3113,6 +3380,11 @@ class _FakeClaudeRun:
         self.calls: list[dict[str, object]] = []
 
     def __call__(self, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[0] != "claude":
+            executable = command[0]
+            if executable.startswith("missing-"):
+                raise FileNotFoundError(executable)
+            raise subprocess.TimeoutExpired(cmd=command, timeout=float(kwargs["timeout"]))
         response = self._responses[len(self.calls)]
         self.calls.append({"command": command, "kwargs": kwargs})
         session_id = str(response["session_id"])

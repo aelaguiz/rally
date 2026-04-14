@@ -1,16 +1,14 @@
 ---
 title: "Rally - External Project Integration Model"
-date: 2026-04-13
 status: shipped
 fallback_policy: forbidden
 owners: [aelaguiz]
 reviewers: []
 doc_type: architecture_detail
 related:
-  - docs/RALLY_MASTER_DESIGN_2026-04-12.md
-  - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
-  - docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
-  - docs/LESSONS_RALLY_PORT_GAP_READ_2026-04-13.md
+  - docs/RALLY_MASTER_DESIGN.md
+  - docs/RALLY_RUNTIME.md
+  - docs/RALLY_CLI_AND_LOGGING.md
   - src/rally/cli.py
   - src/rally/services/flow_build.py
   - src/rally/services/flow_loader.py
@@ -97,4 +95,3 @@ should be ignored in git unless the repo chooses to vendor them on purpose.
 - If Doctrine cannot consume Rally's built-in shared assets cleanly through the
   chosen boundary, we stop and name that Doctrine gap instead of patching
   around it in Rally.
-

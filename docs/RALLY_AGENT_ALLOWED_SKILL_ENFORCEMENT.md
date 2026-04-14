@@ -1,16 +1,15 @@
 ---
 title: "Rally - Per-Agent Allowed Skill Enforcement"
-date: 2026-04-13
 status: shipped
 fallback_policy: forbidden
 owners: [aelaguiz]
 reviewers: []
 doc_type: architecture_detail
 related:
-  - docs/RALLY_MASTER_DESIGN_2026-04-12.md
-  - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
-  - docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
-  - docs/RALLY_SOFTWARE_ENGINEERING_FLOW_SHOWCASE_2026-04-13.md
+  - docs/RALLY_MASTER_DESIGN.md
+  - docs/RALLY_RUNTIME.md
+  - docs/RALLY_CLI_AND_LOGGING.md
+  - docs/RALLY_SOFTWARE_ENGINEERING_FLOW_SHOWCASE.md
   - src/rally/domain/flow.py
   - src/rally/services/flow_loader.py
   - src/rally/services/home_materializer.py
@@ -40,6 +39,4 @@ No approved code gap remains for this change.
 Current proof on this head:
 
 - `uv sync --dev`
-- `uv run pytest tests/unit -q` -> `204 passed`
-
-
+- `uv run pytest tests/unit -q` -> `245 passed`

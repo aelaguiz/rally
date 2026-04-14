@@ -21,7 +21,7 @@ from rally.domain.turn_result import (
     SleepTurnResult,
     TurnResult,
 )
-from rally.errors import RallyConfigError, RallyStateError, RallyUsageError
+from rally.errors import RallyConfigError, RallyError, RallyStateError, RallyUsageError
 from rally.services.flow_build import ensure_flow_assets_built
 from rally.services.final_response_loader import load_agent_final_response
 from rally.services.flow_loader import load_flow_code, load_flow_definition
@@ -584,12 +584,22 @@ def _execute_until_stop(
     run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
     initial_state = load_run_state(run_dir=run_dir)
     _assert_resumable(state=initial_state, run_id=run_record.id)
-    run_home = materialize_run_home(
-        workspace=workspace,
-        flow=flow,
-        run_record=run_record,
-        event_recorder=recorder,
-    )
+    try:
+        run_home = materialize_run_home(
+            workspace=workspace,
+            flow=flow,
+            run_record=run_record,
+            event_recorder=recorder,
+        )
+    except RallyError:
+        if issue_edit_diff is not None:
+            append_issue_edit_diff(
+                repo_root=repo_root,
+                run_id=run_record.id,
+                before_text=issue_edit_diff.before_text,
+                after_text=issue_edit_diff.after_text,
+            )
+        raise
     _append_run_started_event_if_needed(
         repo_root=repo_root,
         run_dir=run_dir,

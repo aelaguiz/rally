@@ -1,18 +1,15 @@
 ---
 title: "Rally - Claude Code First-Class Adapter Support"
-date: 2026-04-13
 status: shipped
 fallback_policy: forbidden
 owners: [aelaguiz]
 reviewers: []
 doc_type: architecture_detail
 related:
-  - docs/RALLY_CLAUDE_CODE_ADAPTER_AUDIT_2026-04-13.md
-  - docs/RALLY_HERMES_ADAPTER_AUDIT_2026-04-13.md
-  - docs/RALLY_MASTER_DESIGN_2026-04-12.md
-  - docs/RALLY_CLI_AND_LOGGING_2026-04-13.md
-  - docs/RALLY_PHASE_3_ISSUE_COMMUNICATION_PIVOT_2026-04-13.md
-  - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
+  - docs/RALLY_MASTER_DESIGN.md
+  - docs/RALLY_CLI_AND_LOGGING.md
+  - docs/RALLY_COMMUNICATION_MODEL.md
+  - docs/RALLY_RUNTIME.md
   - src/rally/adapters/base.py
   - src/rally/adapters/registry.py
   - src/rally/adapters/codex/adapter.py
@@ -120,4 +117,3 @@ Remaining honest v1 caveats:
   not expose a clamp, the doc must name the remaining ambient dependency
   honestly.
 - Adapter choice stays flow-wide in v1.
-
