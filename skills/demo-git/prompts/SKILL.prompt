@@ -5,21 +5,22 @@ skill package DemoGitSkill: "Demo Git"
 
     "Use this skill when the turn needs the current branch, repo status, recent commits, or one clean commit before handoff."
     "This flow has one guarded repo at `home/repos/demo_repo`."
+    "Inside the prepared run home shell, use the relative path `repos/demo_repo`."
     "Work only in that repo."
 
     bullets when_to_use: "When to use"
         inspect_repo: "You need the current branch, head commit, or dirty status."
-        commit_work: "You changed files in `home/repos/demo_repo` and need to commit before handoff."
+        commit_work: "You changed files in `repos/demo_repo` and need to commit before handoff."
         review_history: "You need to see the last few commits on the current issue branch."
         fail_loud: "You need to prove the repo is clean before you end the turn."
 
     bullets when_not_to_use: "When not to use"
         rally_runtime: "Do not use this skill to change Rally runtime code or the Rally repo."
-        other_repos: "Do not use this skill against a repo outside `home/repos/demo_repo`."
+        other_repos: "Do not use this skill against a repo outside `repos/demo_repo`."
         fake_commit: "Do not claim a commit happened when `git status --short` still shows changes."
 
     bullets non_negotiables: "Non-negotiables"
-        one_repo: "Stay inside `home/repos/demo_repo`."
+        one_repo: "Stay inside `repos/demo_repo`."
         check_first: "Check branch and status before you change files."
         commit_before_handoff: "If this turn changed the demo repo, commit before `handoff` or `done`."
         no_dirty_finish: "Do not hand off or finish with a dirty demo repo."
@@ -27,39 +28,39 @@ skill package DemoGitSkill: "Demo Git"
         clear_message: "Use short commit messages that say what changed."
 
     sequence first_move: "First move"
-        repo_path: "Set `repo=home/repos/demo_repo`."
+        repo_path: "Set `repo=repos/demo_repo`."
         read_status: "Run the bundled script first so branch, head, and dirty state are clear."
         inspect_history: "If the turn depends on earlier work, check the recent commit history next."
         change_and_commit: "After code or docs changes, use normal git add and git commit in the same repo."
 
     workflow: "Workflow"
         sequence steps: "Steps"
-            status: "Run `python skills/demo-git/scripts/demo_git.py status home/repos/demo_repo`."
+            status: "Run `python skills/demo-git/scripts/demo_git.py status repos/demo_repo`."
             read_json: "Read the JSON. It tells you the branch, head commit, clean flag, and status lines."
-            inspect_log: "If you need history, run `python skills/demo-git/scripts/demo_git.py log home/repos/demo_repo --count 5`."
+            inspect_log: "If you need history, run `python skills/demo-git/scripts/demo_git.py log repos/demo_repo --count 5`."
             make_changes: "Change only the files this turn owns."
-            proof_clean: "When you run Python proof in this demo repo, prefer `python -B -m pytest ...` so the repo stays clean."
-            commit: "If the repo changed, run `git -C home/repos/demo_repo add ...` and `git -C home/repos/demo_repo commit -m \"...\"`."
+            proof_clean: "When you run Python proof in this demo repo, prefer `uv run python -B -m pytest ...` so the repo stays clean."
+            commit: "If the repo changed, run `git -C repos/demo_repo add ...` and `git -C repos/demo_repo commit -m \"...\"`."
             verify_clean: "Run the status command again before you end the turn."
 
         code status_example: "Status Example" advisory
             language: bash
             text: """
-python skills/demo-git/scripts/demo_git.py status home/repos/demo_repo
+python skills/demo-git/scripts/demo_git.py status repos/demo_repo
 """
 
         code log_example: "History Example" advisory
             language: bash
             text: """
-python skills/demo-git/scripts/demo_git.py log home/repos/demo_repo --count 5
+python skills/demo-git/scripts/demo_git.py log repos/demo_repo --count 5
 """
 
         code commit_example: "Commit Example" advisory
             language: bash
             text: """
-git -C home/repos/demo_repo add app.py tests/test_app.py
-git -C home/repos/demo_repo commit -m "feat: add demo app entrypoint"
-python skills/demo-git/scripts/demo_git.py status home/repos/demo_repo
+git -C repos/demo_repo add app.py tests/test_app.py
+git -C repos/demo_repo commit -m "feat: add demo app entrypoint"
+python skills/demo-git/scripts/demo_git.py status repos/demo_repo
 """
 
     bullets reference_map: "Reference map"

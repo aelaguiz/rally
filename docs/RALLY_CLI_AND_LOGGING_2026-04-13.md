@@ -59,6 +59,9 @@ What it does today:
 - refreshes `home/agents/`, `home/skills/`, `home/mcps/`, and adapter-owned
   bootstrap files from current repo state before the next turn starts
 - runs flow setup only the first time the run home becomes ready
+- loads any flow-declared runtime prompt-input sections before each turn
+- blocks `handoff` or `done` when a flow-declared guarded git repo is missing,
+  not a git work tree, or dirty
 - opens a live color stream on a TTY
 - falls back to plain text when stdout is not a TTY
 - keeps running turns through the selected adapter across handoffs
@@ -107,6 +110,9 @@ What it does today:
 - refreshes `home/agents/`, `home/skills/`, `home/mcps/`, and adapter-owned
   bootstrap files before the next turn starts
 - does not rerun flow setup after the run home is already ready
+- reloads any flow-declared runtime prompt-input sections before each turn
+- blocks `handoff` or `done` when a flow-declared guarded git repo is missing,
+  not a git work tree, or dirty
 
 If `--edit` is passed, Rally edits the real `home/issue.md` file.
 It does not seed or strip the starter prompt for that path.
@@ -130,6 +136,45 @@ command can start before Rally stops and blocks the run.
 The cap is checked before the next turn starts.
 If Rally hits it, Rally keeps the next agent as current, writes a clear
 `Rally Blocked` record, and tells the operator why it stopped.
+
+### `runtime.prompt_input_command`
+
+A flow may declare one `runtime.prompt_input_command` in `flow.yaml`.
+
+What Rally does today:
+
+- runs that command before each turn
+- runs it from the flow root, not from the run home
+- expects one JSON object whose top-level keys become appended prompt-input
+  section titles
+- passes current run facts through env vars:
+  - `RALLY_AGENT_KEY`
+  - `RALLY_AGENT_SLUG`
+  - `RALLY_CLI_BIN`
+  - `RALLY_FLOW_CODE`
+  - `RALLY_ISSUE_PATH`
+  - `RALLY_RUN_HOME`
+  - `RALLY_RUN_ID`
+  - `RALLY_WORKSPACE_DIR`
+- writes one `INPUTS` lifecycle event before the command and one `INPUTS OK`
+  or failure event after it
+
+Today Rally uses that path in `software_engineering_demo` to feed grounding
+with current branch facts, carry-forward source, and review-basis facts.
+
+### `runtime.guarded_git_repos`
+
+A flow may declare one or more run-home-relative repo paths in
+`runtime.guarded_git_repos`.
+
+What Rally does today:
+
+- checks those paths before it accepts `handoff` or `done`
+- treats a missing dir, a non-git dir, or a dirty worktree as a blocker
+- writes the failure into `home/issue.md` as `Rally Blocked`
+- leaves the current agent as current so the operator can inspect the same turn
+
+Today `software_engineering_demo` uses this to guard `repos/demo_repo`.
 
 ### `rally issue note`
 

@@ -58,6 +58,16 @@ What is real today:
 - one shared final JSON path at `last_message.json`
 - shared session-artifact paths under `home/sessions/<agent>/`
 - shared launch proof under `logs/adapter_launch/`
+- run directories under `runs/active/<run-id>/`
+- home materialization for agents, repos, config, auth links, and setup
+- Rally-managed agents, skills, MCPs, config, and auth links refreshed on each start or resume
+- flow-validated skills and MCPs copied into the run home, with markdown
+  `SKILL.md` and Doctrine `prompts/SKILL.prompt` both supported, but still as
+  the per-flow union rather than per-agent-isolated subsets
+- flow-level `setup_home_script`, `runtime.prompt_input_command`, and
+  `runtime.guarded_git_repos`
+- dirty guarded-repo failures that block `handoff` or `done` loud instead of
+  letting Rally claim a clean finish
 - `rally run`
 - `rally run --new`
 - `rally resume`
@@ -75,6 +85,10 @@ What is real today:
 - Codex root-home bootstrap through `CODEX_HOME=<run-home>`
 - Claude generated bootstrap through `home/claude_code/mcp.json`,
   `home/.claude/skills`, and `ENABLE_CLAUDEAI_MCP_SERVERS=false`
+- Codex launch with dangerous bypass, explicit `cwd`, explicit `CODEX_HOME`, and explicit Rally env vars
+- one live `software_engineering_demo` proof from a blank seeded repo
+- one second `software_engineering_demo` proof that stacked `issue/sed-4` on
+  top of accepted `issue/sed-3` history
 
 What is still outside Phase 4:
 
@@ -110,6 +124,15 @@ The current checked-in runtime surface is:
   - validates supported adapter names and adapter args through the registry
   - validates `runtime.max_command_turns`, prompt-input commands, and guarded
     repo paths
+  - requires compiled `build/agents/*`
+  - requires `AGENTS.contract.json`
+  - validates flow codes, `runtime.max_command_turns`,
+    `runtime.prompt_input_command`, `runtime.guarded_git_repos`, and the shared
+    turn-result schema
+- `src/rally/services/skill_bundles.py`
+  - resolves markdown skill roots from `SKILL.md`
+  - resolves Doctrine skill roots from `prompts/SKILL.prompt`
+  - requires emitted Doctrine `build/SKILL.md` before materialization
 - `src/rally/cli.py`
   - ships real `run`
   - ships real `resume`
@@ -129,6 +152,10 @@ The current checked-in runtime surface is:
   - copies compiled agents plus allowlisted skills and MCPs
   - calls `adapter.prepare_home(...)`
   - runs flow setup only when the run home first becomes ready
+- `src/rally/services/guarded_git_repos.py`
+  - checks guarded run-home repo paths for missing dirs, non-git roots, and
+    dirty worktrees
+  - renders the blocker text Rally writes when those checks fail
 - `src/rally/services/issue_ledger.py`
   - appends Rally-stamped notes and runtime event blocks
   - inserts the original-issue marker
@@ -160,17 +187,51 @@ The current checked-in runtime surface is:
 - `src/rally/services/runner.py`
   - rebuilds the current flow under the flow lock before loading compiled
     agents
-  - wires run creation, resume, prompt injection, adapter launch, final-result
-    handling, state writes, and issue/event logging
-  - keeps chaining turns after handoffs until Rally reaches a real stop point
+  - wires run creation, resume, runtime prompt-input injection, adapter
+    launch, guarded-repo checks, result handling, state writes, and
+    issue/event logging
+  - lets a blocked run retry after `resume --edit` saves a non-empty issue
+  - lets `resume --restart` archive the old run and start a fresh run from the
+    original issue
+  - appends a `user edited issue.md` diff block to `home/issue.md` when
+    `resume --edit` changed the issue text
+  - appends Rally-owned ledger blocks with Markdown `---` dividers and turn
+    labels on turn-scoped records
+  - keeps chaining turns after handoffs until Rally reaches `done`, `blocker`,
+    a runtime failure, a sleep request, or the command turn cap
 
-The live smoke still proves the full `poem_loop` loop on Codex:
-`poem_writer -> poem_critic -> poem_writer -> done`.
+- `flows/software_engineering_demo/setup/prepare_home.sh`
+  - bootstraps a blank demo repo with a seed commit on first run
+  - copies the newest archived done demo repo, including `.git`, on later runs
+  - creates a new `issue/<run-id>` branch for each issue
+- `flows/software_engineering_demo/setup/prompt_inputs.py`
+  - emits current branch, clean or dirty status, recent commits,
+    carry-forward source, and review-basis facts for grounding
+- `skills/demo-git/prompts/**`
+  - provides one Doctrine-authored git helper skill plus a small helper script
+    and runnable reference examples for the demo repo
+
+The live smoke now proves two real paths:
+
+- the full `poem_loop` loop:
+  `poem_writer -> poem_critic -> poem_writer -> done`
+- the full `software_engineering_demo` loop:
+  `architect -> critic -> developer -> critic -> qa_docs_tester -> critic`
+
+Both loops now run in one Rally command unless a real stop point interrupts
+them.
 
 This implementation pass also added:
 
 - one honest live Claude proof through Rally
 - one fresh post-cutover live Codex proof on a tiny one-agent temp flow
+
+`software_engineering_demo` now proves a real repo story too:
+
+- `SED-3` started from a blank seeded repo and ended done with commit
+  `0cd50ba`
+- `SED-4` started from archived `SED-3` history on `issue/sed-4` and ended done
+  with commit `53991c4` stacked on top of `0cd50ba`
 
 # Proof Path
 
@@ -186,15 +247,30 @@ Use the smallest honest proof for each layer:
 
 The current core proof set is:
 
+- flow rebuild for `_stdlib_smoke`
+- flow rebuild for `poem_loop`
+- flow rebuild for `software_engineering_demo`
+- Doctrine skill emit for `demo-git`
 - `tests/unit/test_adapter_registry.py`
+- `tests/unit/test_flow_build.py`
+- `tests/unit/test_flow_loader.py`
+- `tests/unit/domain/test_turn_result_contracts.py`
+- `tests/unit/test_cli.py`
 - `tests/unit/test_final_response_loader.py`
+- `tests/unit/test_issue_ledger.py`
 - `tests/unit/test_runner.py`
 - `tests/unit/test_launcher.py`
+- `tests/unit/test_run_events.py`
 - `tests/unit/test_codex_event_stream.py`
 - `tests/unit/test_claude_code_event_stream.py`
 - `tests/unit/test_claude_code_launcher.py`
+- `tests/unit/test_software_engineering_demo_prompt_inputs.py`
 - `uv run pytest tests/unit -q` with `155 passed`
 - one earlier live end-to-end `poem_loop` run on Codex
+- one live blank-repo `software_engineering_demo` run on Codex that reached
+  `done`
+- one live carry-forward `software_engineering_demo` run on Codex that reached
+  `done`
 - one fresh live Codex Rally run on the shared adapter boundary with result
   `done` and summary `live codex proof`
 - one fresh live Claude Rally run using the supported v1 auth path with result
@@ -209,8 +285,9 @@ The next honest work after this slice is:
 1. add a standalone `rally archive` command
 2. add better stale-run diagnosis
 3. add a replay or viewer command for old runs
-4. add one real adapter-native MCP readiness contract
-5. decide later whether isolated Claude auth is worth the extra complexity
+4. enforce per-agent runtime capability access instead of today's per-flow union
+5. add one real adapter-native MCP readiness contract
+6. decide later whether isolated Claude auth is worth the extra complexity
 
 # Live Truth
 

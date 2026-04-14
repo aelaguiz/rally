@@ -25,6 +25,7 @@ workflow DemoRepoRules: "Demo Repo Rules"
     repo_path: "Repo Path"
         "Use only `home/repos/demo_repo`."
         "Do not make a second repo or a side repo."
+        "When you run shell commands from the prepared run home, use the relative path `repos/demo_repo`."
 
     branch_rules: "Branch Rules"
         "Stay on the current issue branch."
@@ -35,7 +36,7 @@ workflow DemoRepoRules: "Demo Repo Rules"
         "If this turn changed the repo, commit before `handoff` or `done`."
         "Do not end the turn with a dirty repo."
         "Proof commands must leave the repo clean too."
-        "For Python proof in this demo repo, prefer `python -B -m pytest ...` so the run does not leave `__pycache__/` dirt."
+        "For Python proof in this demo repo, prefer `uv run python -B -m pytest ...` so the run uses Rally's env and does not leave `__pycache__/` dirt."
 
 
 workflow SpecialistTurnRules: "How To Take A Turn"
