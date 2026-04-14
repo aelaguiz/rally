@@ -11,6 +11,7 @@ from rally.domain.flow import (
     FinalOutputContract,
     FlowAgent,
     FlowDefinition,
+    FlowHostInputs,
 )
 from rally.services.run_store import archive_run, create_run, load_run_record
 
@@ -120,6 +121,7 @@ def _demo_flow(*, repo_root: Path) -> FlowDefinition:
         start_agent_key=agent.key,
         max_command_turns=8,
         guarded_git_repos=(),
+        host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
         agents={agent.key: agent},
         adapter=AdapterConfig(name="codex", prompt_input_command=None, args={}),
     )
