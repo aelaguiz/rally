@@ -9,10 +9,17 @@ from pathlib import Path
 
 from rally.domain.rooted_path import RootedPath
 from rally.errors import RallyConfigError
+from rally.services.flow_build import ensure_flow_assets_built
 from rally.services.flow_loader import load_flow_code, load_flow_definition
 
 
 class FlowLoaderTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        cls.repo_root = Path(__file__).resolve().parents[2]
+        ensure_flow_assets_built(repo_root=cls.repo_root, flow_name="poem_loop")
+
     def test_load_flow_code_reads_flow_yaml_without_compiled_agents(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -37,7 +44,7 @@ class FlowLoaderTests(unittest.TestCase):
             self.assertEqual(load_flow_code(repo_root=repo_root, flow_name="demo"), "DMO")
 
     def test_load_flow_definition_uses_compiled_slug_mapping(self) -> None:
-        repo_root = Path(__file__).resolve().parents[2]
+        repo_root = self.repo_root
 
         flow = load_flow_definition(repo_root=repo_root, flow_name="poem_loop")
 
@@ -66,7 +73,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertTrue(flow.agent("02_poem_critic").compiled.review.final_response.control_ready)
 
     def test_load_flow_definition_supports_issue_ledger_first_flow_without_setup_or_prompt_inputs(self) -> None:
-        repo_root = Path(__file__).resolve().parents[2]
+        repo_root = self.repo_root
 
         flow = load_flow_definition(repo_root=repo_root, flow_name="poem_loop")
 
@@ -208,7 +215,7 @@ class FlowLoaderTests(unittest.TestCase):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
     def test_poem_loop_compiled_readback_includes_kernel_skill_and_rationale_contract(self) -> None:
-        repo_root = Path(__file__).resolve().parents[2]
+        repo_root = self.repo_root
 
         flow = load_flow_definition(repo_root=repo_root, flow_name="poem_loop")
         writer_readback = flow.agent("01_poem_writer").compiled.markdown_path.read_text(encoding="utf-8")
@@ -233,7 +240,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertNotIn("### Rally Turn Result", critic_readback)
 
     def test_framework_owned_memory_guidance_stays_out_of_example_flow_skills(self) -> None:
-        repo_root = Path(__file__).resolve().parents[2]
+        repo_root = self.repo_root
 
         flow_skills_source = (
             repo_root / "flows/software_engineering_demo/prompts/shared/skills.prompt"

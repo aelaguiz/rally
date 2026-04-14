@@ -52,6 +52,7 @@ class BundledAssetsTests(unittest.TestCase):
     def test_sync_bundled_assets_check_ignores_python_cache_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve() / "repo"
+            self._write_fixture_pyproject(repo_root=repo_root)
             shutil.copytree(Path(__file__).resolve().parents[2] / "stdlib", repo_root / "stdlib")
             shutil.copytree(Path(__file__).resolve().parents[2] / "skills", repo_root / "skills")
             shutil.copytree(Path(__file__).resolve().parents[2] / "src" / "rally" / "_bundled", repo_root / "src" / "rally" / "_bundled")
@@ -63,6 +64,38 @@ class BundledAssetsTests(unittest.TestCase):
             differences = sync_bundled_assets(repo_root=repo_root, check=True)
 
             self.assertEqual(differences, [])
+
+    def _write_fixture_pyproject(self, *, repo_root: Path) -> None:
+        repo_root.mkdir(parents=True, exist_ok=True)
+        (repo_root / "pyproject.toml").write_text(
+            "\n".join(
+                (
+                    "[project]",
+                    "name = 'bundle-fixture'",
+                    "version = '0.0.0'",
+                    "",
+                    "[tool.rally.workspace]",
+                    "version = 1",
+                    "",
+                    "[tool.doctrine.compile]",
+                    'additional_prompt_roots = ["stdlib/rally/prompts"]',
+                    "",
+                    "[tool.doctrine.emit]",
+                    "",
+                    "[[tool.doctrine.emit.targets]]",
+                    'name = "rally-kernel"',
+                    'entrypoint = "skills/rally-kernel/prompts/SKILL.prompt"',
+                    'output_dir = "skills/rally-kernel/build"',
+                    "",
+                    "[[tool.doctrine.emit.targets]]",
+                    'name = "rally-memory"',
+                    'entrypoint = "skills/rally-memory/prompts/SKILL.prompt"',
+                    'output_dir = "skills/rally-memory/build"',
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
 
 
 if __name__ == "__main__":

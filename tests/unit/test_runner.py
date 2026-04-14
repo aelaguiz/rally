@@ -15,6 +15,8 @@ from unittest.mock import patch
 
 from rally.domain.run import ResumeRequest, RunRequest, RunStatus
 from rally.errors import RallyConfigError, RallyUsageError
+from rally.services.flow_build import ensure_flow_assets_built as build_flow_assets
+from rally.services.bundled_assets import ensure_workspace_builtins_synced
 from rally.services.issue_editor import IssueEditorResult
 from rally.services.issue_ledger import ORIGINAL_ISSUE_END_MARKER
 from rally.services.run_store import archive_run, find_run_dir, load_run_state, write_run_state
@@ -2650,9 +2652,40 @@ class RunnerTests(unittest.TestCase):
     def _write_poem_repo(self, *, repo_root: Path, copy_framework_builtins: bool = True) -> None:
         source_root = Path(__file__).resolve().parents[2]
         shutil.copytree(source_root / "flows" / "poem_loop", repo_root / "flows" / "poem_loop")
-        if copy_framework_builtins:
-            self._write_framework_builtin_skills(framework_root=repo_root)
         shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
+        self._write_poem_fixture_pyproject(repo_root=repo_root)
+        if copy_framework_builtins:
+            ensure_workspace_builtins_synced(
+                workspace_root=repo_root,
+                pyproject_path=repo_root / "pyproject.toml",
+            )
+        build_flow_assets(repo_root=repo_root, flow_name="poem_loop")
+
+    def _write_poem_fixture_pyproject(self, *, repo_root: Path) -> None:
+        (repo_root / "pyproject.toml").write_text(
+            "\n".join(
+                (
+                    "[project]",
+                    "name = 'poem-fixture'",
+                    "version = '0.0.0'",
+                    "",
+                    "[tool.rally.workspace]",
+                    "version = 1",
+                    "",
+                    "[tool.doctrine.compile]",
+                    'additional_prompt_roots = ["stdlib/rally/prompts"]',
+                    "",
+                    "[tool.doctrine.emit]",
+                    "",
+                    "[[tool.doctrine.emit.targets]]",
+                    'name = "poem_loop"',
+                    'entrypoint = "flows/poem_loop/prompts/AGENTS.prompt"',
+                    'output_dir = "flows/poem_loop/build/agents"',
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
 
     def _write_framework_builtin_skills(self, *, framework_root: Path) -> None:
         source_root = Path(__file__).resolve().parents[2]

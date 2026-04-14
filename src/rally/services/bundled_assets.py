@@ -19,26 +19,27 @@ _IGNORED_BUNDLE_SUFFIXES = {".pyc", ".pyo"}
 
 @dataclass(frozen=True)
 class _BundleSpec:
-    authored_relative: Path
     bundled_relative: Path
     workspace_relative: Path
+    authored_relative: Path | None = None
+    emit_target_name: str | None = None
 
 
 _BUNDLE_SPECS = (
     _BundleSpec(
-        authored_relative=Path("stdlib") / "rally",
         bundled_relative=Path("stdlib") / "rally",
         workspace_relative=Path("stdlib") / "rally",
+        authored_relative=Path("stdlib") / "rally",
     ),
     _BundleSpec(
-        authored_relative=Path("skills") / "rally-kernel" / "build",
         bundled_relative=Path("skills") / "rally-kernel",
         workspace_relative=Path("skills") / "rally-kernel",
+        emit_target_name="rally-kernel",
     ),
     _BundleSpec(
-        authored_relative=Path("skills") / "rally-memory" / "build",
         bundled_relative=Path("skills") / "rally-memory",
         workspace_relative=Path("skills") / "rally-memory",
+        emit_target_name="rally-memory",
     ),
 )
 
@@ -86,13 +87,54 @@ def _build_expected_bundle(*, repo_root: Path, expected_root: Path) -> None:
         '"""Bundled Rally-owned built-ins shipped inside the installable package."""\n',
         encoding="utf-8",
     )
+    emit_targets = _load_emit_targets(repo_root=repo_root)
     for spec in _BUNDLE_SPECS:
-        source = repo_root / spec.authored_relative
-        if not source.is_dir():
-            raise RallyConfigError(f"Bundled asset source is missing: `{source}`.")
         target = expected_root / spec.bundled_relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source, target)
+        if spec.authored_relative is not None:
+            source = repo_root / spec.authored_relative
+            if not source.is_dir():
+                raise RallyConfigError(f"Bundled asset source is missing: `{source}`.")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source, target)
+            continue
+        if spec.emit_target_name is not None:
+            emit_target = emit_targets.get(spec.emit_target_name)
+            if emit_target is None:
+                raise RallyConfigError(
+                    f"Doctrine emit target `{spec.emit_target_name}` is missing from `{repo_root / 'pyproject.toml'}`."
+                )
+            _emit_skill_bundle(emit_target=emit_target, output_dir=target)
+            continue
+        raise RallyConfigError(f"Bundled asset spec for `{spec.bundled_relative}` is incomplete.")
+
+
+def _load_emit_targets(*, repo_root: Path) -> dict[str, object]:
+    pyproject_path = repo_root / "pyproject.toml"
+    if not pyproject_path.is_file():
+        raise RallyConfigError(f"Rally workspace pyproject is missing: `{pyproject_path}`.")
+    try:
+        from doctrine.diagnostics import DoctrineError
+        from doctrine.emit_common import load_emit_targets
+    except ImportError as exc:
+        raise RallyConfigError(f"Failed to import Doctrine while building bundled assets: {exc}.") from exc
+
+    try:
+        return load_emit_targets(pyproject_path)
+    except DoctrineError as exc:
+        raise RallyConfigError(f"Failed to load Doctrine emit targets from `{pyproject_path}`: {exc}") from exc
+
+
+def _emit_skill_bundle(*, emit_target: object, output_dir: Path) -> None:
+    try:
+        from doctrine.diagnostics import DoctrineError
+        from doctrine.emit_skill import emit_target_skill
+    except ImportError as exc:
+        raise RallyConfigError(f"Failed to import Doctrine skill emitter while building bundled assets: {exc}.") from exc
+
+    try:
+        emit_target_skill(emit_target, output_dir_override=output_dir)
+    except DoctrineError as exc:
+        raise RallyConfigError(f"Failed to emit bundled skill package `{emit_target.name}`: {exc}") from exc
 
 
 def _compare_trees(*, expected_root: Path, actual_root: Path) -> list[str]:
