@@ -46,6 +46,9 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(flow.agent("01_poem_writer").slug, "poem_writer")
         self.assertEqual(flow.agent("02_poem_critic").compiled.slug, "poem_critic")
         self.assertIsNone(flow.setup_home_script)
+        self.assertEqual(flow.host_inputs.required_env, ())
+        self.assertEqual(flow.host_inputs.required_files, ())
+        self.assertEqual(flow.host_inputs.required_directories, ())
         self.assertIsNone(flow.adapter.prompt_input_command)
         self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
@@ -74,6 +77,9 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(flow.agent("01_poem_writer").allowed_skills, ())
         self.assertEqual(flow.agent("02_poem_critic").allowed_mcps, ())
         self.assertIsNone(flow.setup_home_script)
+        self.assertEqual(flow.host_inputs.required_env, ())
+        self.assertEqual(flow.host_inputs.required_files, ())
+        self.assertEqual(flow.host_inputs.required_directories, ())
         self.assertIsNone(flow.adapter.prompt_input_command)
         self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
@@ -96,6 +102,63 @@ class FlowLoaderTests(unittest.TestCase):
             flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
 
             self.assertEqual(flow.guarded_git_repos, (Path("repos/demo_repo"),))
+
+    def test_load_flow_definition_loads_host_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                host_inputs_yaml=textwrap.dedent(
+                    """\
+                    host_inputs:
+                      required_env: [PSMOBILE_ROOT, PSMOBILE_CONFIG_PACK]
+                      required_files:
+                        - ~/.config/psmobile-dev-configs/.env
+                      required_directories:
+                        - ../psmobile
+                    """
+                ),
+            )
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            self.assertEqual(flow.host_inputs.required_env, ("PSMOBILE_ROOT", "PSMOBILE_CONFIG_PACK"))
+            self.assertEqual(flow.host_inputs.required_files, ("~/.config/psmobile-dev-configs/.env",))
+            self.assertEqual(flow.host_inputs.required_directories, ("../psmobile",))
+
+    def test_load_flow_definition_rejects_non_list_host_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                host_inputs_yaml=textwrap.dedent(
+                    """\
+                    host_inputs:
+                      required_env: PSMOBILE_ROOT
+                    """
+                ),
+            )
+
+            with self.assertRaisesRegex(RallyConfigError, "required_env"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_rejects_duplicate_host_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                host_inputs_yaml=textwrap.dedent(
+                    """\
+                    host_inputs:
+                      required_files:
+                        - ~/.config/psmobile-dev-configs/.env
+                        - ~/.config/psmobile-dev-configs/.env
+                    """
+                ),
+            )
+
+            with self.assertRaisesRegex(RallyConfigError, "must not repeat"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
 
     def test_poem_loop_compiled_readback_includes_kernel_skill_and_rationale_contract(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
@@ -215,6 +278,7 @@ class FlowLoaderTests(unittest.TestCase):
         schema_file: str = "stdlib/rally/schemas/rally_turn_result.schema.json",
         example_file: str = "stdlib/rally/examples/rally_turn_result.example.json",
         guarded_git_repos_yaml: str = "[]",
+        host_inputs_yaml: str = "",
     ) -> None:
         flow_root = repo_root / "flows" / "demo"
         build_root = flow_root / "build" / "agents" / "scope_lead"
@@ -234,6 +298,7 @@ class FlowLoaderTests(unittest.TestCase):
             "code: DEMO\n"
             "start_agent: 01_scope_lead\n"
             "setup_home_script: setup/prepare_home.sh\n"
+            f"{host_inputs_yaml}"
             "agents:\n"
             "  01_scope_lead:\n"
             "    timeout_sec: 60\n"

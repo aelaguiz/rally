@@ -1756,6 +1756,77 @@ class RunnerTests(unittest.TestCase):
 
             self.assertTrue((run_dir / "home" / "setup-ok.txt").is_file())
 
+    def test_resume_run_blocks_before_setup_when_required_env_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(
+                repo_root=repo_root,
+                with_setup_script=True,
+                required_env=["PSMOBILE_ROOT"],
+            )
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            with self.assertRaisesRegex(RallyUsageError, "requires env var `PSMOBILE_ROOT`"):
+                resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1"),
+                    subprocess_run=_FakeCodexRun([]),
+                )
+
+            self.assertFalse((run_dir / "home" / "setup-ok.txt").exists())
+            self.assertFalse((run_dir / "home" / ".rally_home_ready").exists())
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+            self.assertIn("requires env var `PSMOBILE_ROOT`", rendered_text)
+
+    def test_resume_run_blocks_before_setup_when_required_host_file_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            missing_file = (repo_root / "missing.env").resolve()
+            self._write_demo_repo(
+                repo_root=repo_root,
+                with_setup_script=True,
+                required_files=[str(missing_file)],
+            )
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            with self.assertRaisesRegex(RallyUsageError, "requires host file"):
+                resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1"),
+                    subprocess_run=_FakeCodexRun([]),
+                )
+
+            self.assertFalse((run_dir / "home" / "setup-ok.txt").exists())
+            self.assertFalse((run_dir / "home" / ".rally_home_ready").exists())
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+            self.assertIn(str(missing_file), rendered_text)
+
+    def test_resume_run_blocks_before_setup_when_required_host_directory_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            missing_directory = (repo_root / "missing-dir").resolve()
+            self._write_demo_repo(
+                repo_root=repo_root,
+                with_setup_script=True,
+                required_directories=[str(missing_directory)],
+            )
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            with self.assertRaisesRegex(RallyUsageError, "requires host directory"):
+                resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1"),
+                    subprocess_run=_FakeCodexRun([]),
+                )
+
+            self.assertFalse((run_dir / "home" / "setup-ok.txt").exists())
+            self.assertFalse((run_dir / "home" / ".rally_home_ready").exists())
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
+            self.assertIn(str(missing_directory), rendered_text)
+
     def test_run_flow_rejects_skill_without_frontmatter(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -1888,6 +1959,9 @@ class RunnerTests(unittest.TestCase):
         with_setup_script: bool = False,
         with_guarded_repo: bool = False,
         max_command_turns: int = 8,
+        required_env: list[str] | None = None,
+        required_files: list[str] | None = None,
+        required_directories: list[str] | None = None,
     ) -> None:
         source_root = Path(__file__).resolve().parents[2]
         (repo_root / "skills" / "repo-search").mkdir(parents=True)
@@ -1931,6 +2005,24 @@ class RunnerTests(unittest.TestCase):
             (flow_root / "setup" / "prepare_home.sh").write_text("\n".join(script_lines) + "\n", encoding="utf-8")
 
         setup_home_line = "setup_home_script: setup/prepare_home.sh\n" if (with_setup_script or with_guarded_repo) else ""
+        host_inputs_lines: list[str] = []
+        if required_env or required_files or required_directories:
+            host_inputs_lines.append("host_inputs:\n")
+            if required_env:
+                host_inputs_lines.append(
+                    "  required_env: [" + ", ".join(required_env) + "]\n"
+                )
+            if required_files:
+                host_inputs_lines.append(
+                    "  required_files: [" + ", ".join(json.dumps(item) for item in required_files) + "]\n"
+                )
+            if required_directories:
+                host_inputs_lines.append(
+                    "  required_directories: ["
+                    + ", ".join(json.dumps(item) for item in required_directories)
+                    + "]\n"
+                )
+        host_inputs_block = "".join(host_inputs_lines)
         guarded_git_repos_line = "  guarded_git_repos: [repos/demo_repo]\n" if with_guarded_repo else ""
         (flow_root / "flow.yaml").write_text(
             (
@@ -1938,6 +2030,7 @@ class RunnerTests(unittest.TestCase):
                 "code: DMO\n"
                 "start_agent: 01_scope_lead\n"
                 f"{setup_home_line}"
+                f"{host_inputs_block}"
                 "agents:\n"
                 "  01_scope_lead:\n"
                 "    timeout_sec: 60\n"

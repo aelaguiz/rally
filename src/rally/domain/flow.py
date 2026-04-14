@@ -99,6 +99,13 @@ class FlowAgent:
 
 
 @dataclass(frozen=True)
+class FlowHostInputs:
+    required_env: tuple[str, ...]
+    required_files: tuple[str, ...]
+    required_directories: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class FlowDefinition:
     name: str
     code: str
@@ -110,6 +117,7 @@ class FlowDefinition:
     start_agent_key: str
     max_command_turns: int
     guarded_git_repos: tuple[Path, ...]
+    host_inputs: FlowHostInputs
     agents: Mapping[str, FlowAgent]
     adapter: AdapterConfig
 
