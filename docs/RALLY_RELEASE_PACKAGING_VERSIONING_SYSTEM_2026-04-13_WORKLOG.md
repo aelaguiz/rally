@@ -4,8 +4,73 @@ Plan doc: /Users/aelaguiz/workspace/rally/docs/RALLY_RELEASE_PACKAGING_VERSIONIN
 
 ## Initial entry
 - Run started.
-- Current phase: Phase 1 - Make the shipped artifact honest.
+- Current phase: Phase 1 - Add one package metadata owner path.
 - Loop state armed: `.codex/implement-loop-state.019d89d8-293c-7c73-9895-6764d88aa619.json`
+
+## 2026-04-14 - Package metadata path landed and Phase 3 is at the real stop point
+- Added the remaining repo-owned package metadata and smoke-proof files:
+  - `pyproject.toml`
+  - `src/rally/_package_release.py`
+  - `tests/unit/test_package_release.py`
+  - `src/rally/_release_flow/parsing.py`
+  - `src/rally/_release_flow/ops.py`
+  - `Makefile`
+- Reworked `.github/workflows/publish.yml` to follow the Doctrine metadata-job
+  pattern.
+  - added a `metadata` job
+  - made the publish jobs read environment names and project URLs from
+    package metadata
+  - made the build job run `make verify` so the release workflow uses the same
+    front-door proof as maintainers
+- Applied the GitHub environment setup in `aelaguiz/rally` to match Doctrine's
+  live repo convention:
+  - `testpypi`: no protection rules
+  - `pypi`: required reviewer `aelaguiz`, `prevent_self_review = false`,
+    `can_admins_bypass = false`
+- Updated the package distribution name to `rally-agents` while keeping the
+  import path and CLI name `rally`.
+- Rewrote the human release docs so they now teach one front door and one
+  explicit first-publish pause:
+  - `docs/VERSIONING.md`
+  - `README.md`
+  - `CONTRIBUTING.md`
+  - `CHANGELOG.md`
+- Re-ran the required local proof:
+  - `uv sync --dev`
+  - `uv run pytest tests/unit/test_package_release.py -q`
+  - `uv run pytest tests/unit/test_release_flow.py -q`
+  - `make verify-package`
+  - `make verify`
+  - `make release-prepare RELEASE=v0.1.0 CLASS=additive CHANNEL=stable`
+- Result: all local proof passed.
+- Tried the required remote dry run:
+  - `gh workflow run publish.yml --ref feat/rally-package-release-parity -f ref=feat/rally-package-release-parity -f publish_target=none`
+- Result: blocked by GitHub because the branch is still local only.
+  - error: `HTTP 422: No ref found for: feat/rally-package-release-parity`
+- Current phase: Phase 3 - local code and docs are done; waiting for the user
+  PyPI publisher setup and a pushed ref for the workflow dry run.
+
+## 2026-04-14 - Publish name corrected to `rally-agents`
+- Updated the package distribution name to `rally-agents` after the real PyPI
+  and TestPyPI setup confirmed that `rally` was not the publishable project
+  name.
+- Kept the import package and CLI name as `rally`, which matches the Doctrine
+  pattern where distribution name and import name can differ.
+- Updated the package metadata, install docs, release worksheet text, release
+  tests, and publish-setup checklist to use `rally-agents` where the package
+  distribution name matters.
+- Fixed the runtime version lookup in `src/rally/__init__.py` so installed
+  wheels report the real package version from distribution `rally-agents`.
+- Fixed the packaged-install regression to derive the wheel filename from the
+  repo-owned package metadata instead of hard-coding `dist/rally-*.whl`.
+- Re-ran the renamed package proof:
+  - `uv sync --dev`
+  - `uv run pytest tests/unit/test_package_release.py -q`
+  - `uv run pytest tests/unit/test_release_flow.py -q`
+  - `make verify-package`
+  - `make verify`
+  - `make release-prepare RELEASE=v0.1.0 CLASS=additive CHANNEL=stable`
+- Result: all passed with artifacts named `rally_agents-0.1.0*`.
 
 ## 2026-04-14 - Doctrine packaging fix confirmed
 - Doctrine now publishes package metadata as `1.0.1`, which matches the live
@@ -193,6 +258,7 @@ Plan doc: /Users/aelaguiz/workspace/rally/docs/RALLY_RELEASE_PACKAGING_VERSIONIN
 - Applied the matching live GitHub repo settings with `gh api`:
   - squash-only merges
   - auto-merge enabled
+
   - auto-delete merged branches enabled
   - branch update support enabled
   - GitHub Actions switched from `all` to `selected`
@@ -332,3 +398,56 @@ Plan doc: /Users/aelaguiz/workspace/rally/docs/RALLY_RELEASE_PACKAGING_VERSIONIN
   - Phase 4 and Phase 5 are still blocked on landing the branch changes on the
     default branch, because their proof requires live workflows on `main`.
 - Current phase: Phase 4 - Harden GitHub governance and PR CI.
+
+## 2026-04-14 - Live TestPyPI and PyPI publish proof landed
+- Re-armed the current loop controller for session
+  `019d8c66-ac8d-71c3-9cac-16c1f5c4b9b4` in
+  `.codex/implement-loop-state.019d8c66-ac8d-71c3-9cac-16c1f5c4b9b4.json`.
+- Restored the plan doc to active execution truth and updated
+  `docs/VERSIONING.md` so the current public Rally release version is
+  `v0.1.0`.
+- Committed the pre-release doc truth on this branch:
+  - commit `32a628e`
+  - message: `docs: reopen release parity plan for live publish proof`
+- Re-ran the live local proof from the tagged branch state:
+  - `uv sync --dev`
+  - `make verify`
+  - `make release-prepare RELEASE=v0.1.0 CLASS=additive CHANNEL=stable`
+- Configured repo-local SSH signing so Rally's release-tag path could stay
+  strict without changing code:
+  - `git config gpg.format ssh`
+  - `git config user.signingkey ~/.ssh/id_ed25519.pub`
+  - `git config gpg.ssh.allowedSignersFile ~/.config/git/allowed_signers`
+- Pushed `feat/rally-package-release-parity` with the pre-release doc commit.
+- Ran the first live TestPyPI rehearsal:
+  - command:
+    `gh workflow run publish.yml --ref feat/rally-package-release-parity -f ref=feat/rally-package-release-parity -f publish_target=testpypi`
+  - workflow run: `24412949483`
+  - result:
+    - `metadata` passed
+    - `build` passed
+    - `publish-testpypi` passed
+  - verified TestPyPI JSON now reports `rally-agents 0.1.0`
+- Cut the first signed public Rally release:
+  - `make release-tag RELEASE=v0.1.0 CHANNEL=stable`
+  - `make release-draft RELEASE=v0.1.0 CHANNEL=stable PREVIOUS_TAG=auto`
+  - `make release-publish RELEASE=v0.1.0`
+- The public release flow completed cleanly:
+  - signed annotated tag: `v0.1.0`
+  - GitHub release:
+    `https://github.com/aelaguiz/rally/releases/tag/v0.1.0`
+  - release workflow run: `24413066602`
+  - result:
+    - `metadata` passed
+    - `build` passed
+    - `publish-pypi` passed
+  - uploaded release assets:
+    - `rally_agents-0.1.0.tar.gz`
+    - `rally_agents-0.1.0-py3-none-any.whl`
+- The protected `pypi` environment was exercised for the real release and
+  approved through:
+  - `gh api --method POST repos/aelaguiz/rally/actions/runs/24413066602/pending_deployments --input -`
+- Verified the live PyPI JSON now reports `rally-agents 0.1.0`.
+- Current phase:
+  Phase 5 and Phase 6 execution work are complete, and the authoritative
+  audit block now matches the live release proof.

@@ -15,6 +15,8 @@ Use this section for work that is not public yet.
   `src/rally/_release_flow/**`.
 - Added `Makefile` targets for `release-prepare`, `release-tag`,
   `release-draft`, and `release-publish`.
+- Added repo-owned package release metadata under `src/rally/_package_release.py`.
+- Added `Makefile` targets for `build-dist` and `verify-package`.
 - Added split GitHub workflows for PR checks, dependency review, scorecards,
   and release publishing.
 - Added public `SUPPORT.md` and `SECURITY.md` files.
@@ -22,8 +24,12 @@ Use this section for work that is not public yet.
 ### Changed
 - Switched Rally package version truth to explicit `[project].version` in
   `pyproject.toml`.
+- Moved package-index environment names under `[tool.rally.package]` so the
+  workflow, release helper, and docs all read one package-publish owner path.
 - Rewrote Rally's versioning and release docs around the Doctrine-style public
   release model.
+- Reworked `publish.yml` to read package metadata first and use the same
+  environment names and project URLs for TestPyPI and PyPI publishes.
 
 When you cut a public release:
 
@@ -78,7 +84,7 @@ Release version: v0.1.0
 Affected surfaces: packaged runtime assets, explicit package metadata, the public release flow, and external host-repo setup.
 Who must act: maintainers cutting Rally releases and users installing Rally as a Python package.
 Who does not need to act: users who stay on unreleased commits and users who are not consuming Rally through package installers yet.
-Upgrade steps: Install Rally v0.1.0. If you were running from a source checkout only, switch to the published package and follow the README host-repo setup flow.
+Upgrade steps: Install `rally-agents` v0.1.0. The CLI stays `rally`. If you were running from a source checkout only, switch to the published package and follow the README host-repo setup flow.
 Verification: make verify
 Support-surface version changes: workspace manifest 1 (unchanged); compiled contract version 1 (unchanged); minimum Doctrine release v1.0.1
 
@@ -97,6 +103,8 @@ Support-surface version changes: workspace manifest 1 (unchanged); compiled cont
 - Moved Rally release policy and compatibility guidance into the canonical
   `docs/VERSIONING.md` and `CHANGELOG.md` pair.
 - Switched Rally package metadata to explicit `[project].version`.
+- Published Rally on package indexes under distribution name `rally-agents`
+  while keeping the import package and CLI name `rally`.
 - Replaced the tag-push-only publish path with a GitHub release
   publish workflow that rebuilds artifacts, reruns the external-user smoke
   proof, uploads release assets, and can publish to package indexes through
