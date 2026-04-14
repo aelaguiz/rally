@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import tomllib
 
+from rally._package_release import load_package_release_metadata
 from rally._release_flow.common import release_error, run_checked
 from rally._release_flow.models import (
     CHANGELOG_SECTION_RE,
@@ -114,24 +115,15 @@ def load_doctrine_package_line(repo_root: Path) -> str:
 
 def load_package_metadata_version(repo_root: Path) -> str:
     pyproject_path = repo_root / "pyproject.toml"
-    raw = _load_pyproject(pyproject_path)
-    project_table = raw.get("project")
-    if not isinstance(project_table, dict):
+    try:
+        return load_package_release_metadata(repo_root).version
+    except RuntimeError as exc:
         raise release_error(
             "E530",
             "Release package metadata version is missing or does not match",
-            "`pyproject.toml` must contain a `[project]` table with a string `version` value for this release.",
+            str(exc),
             location=pyproject_path,
-        )
-    version = project_table.get("version")
-    if not isinstance(version, str) or not version.strip():
-        raise release_error(
-            "E530",
-            "Release package metadata version is missing or does not match",
-            "`pyproject.toml` must contain `[project].version` as a non-empty string for this release.",
-            location=pyproject_path,
-        )
-    return version.strip()
+        ) from exc
 
 
 def load_workspace_version(repo_root: Path) -> int:

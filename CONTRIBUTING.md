@@ -67,6 +67,9 @@ Pick the smallest proof that matches the change:
 Rally uses the repo-owned release flow:
 
 ```bash
+make build-dist
+make verify-package
+make verify
 make release-prepare RELEASE=v0.1.0 CLASS=additive CHANNEL=stable
 make release-tag RELEASE=v0.1.0 CHANNEL=stable
 make release-draft RELEASE=v0.1.0 CHANNEL=stable PREVIOUS_TAG=auto
@@ -75,6 +78,7 @@ make release-publish RELEASE=v0.1.0
 
 Release rules live in `docs/VERSIONING.md`.
 Release history lives in `CHANGELOG.md`.
+The first TestPyPI and PyPI setup checklist also lives in `docs/VERSIONING.md`.
 
 ## Read next
 

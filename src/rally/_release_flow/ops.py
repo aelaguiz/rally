@@ -113,6 +113,7 @@ def render_release_worksheet(plan: ReleasePlan) -> str:
         "docs/VERSIONING.md",
         "CHANGELOG.md",
         "README.md",
+        "tests/unit/test_package_release.py",
         "tests/unit/test_release_flow.py",
     ]
     if plan.release_class == "breaking":
@@ -125,10 +126,13 @@ def render_release_worksheet(plan: ReleasePlan) -> str:
     doctrine_source = f"git+https://github.com/aelaguiz/doctrine.git@{plan.current_doctrine_floor}"
     verify_commands = [
         "uv run python tools/sync_bundled_assets.py --check",
+        "uv run pytest tests/unit/test_package_release.py -q",
         "uv run pytest tests/unit/test_release_flow.py -q",
-        "uv run pytest tests/unit -q",
-        "uv build",
+        "make build-dist",
+        "make verify-package",
         f"RALLY_TEST_DOCTRINE_SOURCE={doctrine_source} uv run pytest tests/integration/test_packaged_install.py -q",
+        "uv run pytest tests/unit -q",
+        "make verify",
     ]
 
     lines = [
@@ -159,6 +163,8 @@ def render_release_worksheet(plan: ReleasePlan) -> str:
         *[f"- {line}" for line in plan.release_header_lines],
         "Exact verify commands to run:",
         *[f"- {command}" for command in verify_commands],
+        "First package-index publish stop point:",
+        "- Before the first real TestPyPI or PyPI publish for `rally-agents`, follow `docs/VERSIONING.md` to create the GitHub Trusted Publishers and matching `testpypi` and `pypi` environments.",
         "Next commands:",
         f"- make release-tag RELEASE={plan.release_tag.raw} CHANNEL={plan.release_tag.channel}",
         (
