@@ -139,7 +139,11 @@ class FlowLoaderTests(unittest.TestCase):
             root = Path(temp_dir).resolve()
             repo_root = root / "workspace"
             framework_root = root / "framework"
-            self._write_fixture_repo(repo_root=repo_root)
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                schema_file="stdlib:schemas/rally_turn_result.schema.json",
+                example_file="stdlib:examples/rally_turn_result.example.json",
+            )
             shutil.rmtree(repo_root / "stdlib")
             (framework_root / "stdlib" / "rally" / "schemas").mkdir(parents=True)
             (framework_root / "stdlib" / "rally" / "examples").mkdir(parents=True)
@@ -285,6 +289,26 @@ class FlowLoaderTests(unittest.TestCase):
             with self.assertRaisesRegex(RallyConfigError, "must not escape its root"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
+    def test_load_flow_definition_accepts_internal_stdlib_rooted_support_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                schema_file="stdlib:schemas/rally_turn_result.schema.json",
+                example_file="stdlib:examples/rally_turn_result.example.json",
+            )
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            self.assertEqual(
+                flow.agent("01_scope_lead").compiled.final_output.schema_file,
+                repo_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
+            )
+            self.assertEqual(
+                flow.agent("01_scope_lead").compiled.final_output.example_file,
+                repo_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json",
+            )
+
     def test_load_flow_definition_accepts_control_ready_review_final_output(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -312,8 +336,8 @@ class FlowLoaderTests(unittest.TestCase):
         include_next_owner: bool = True,
         include_max_command_turns: bool = True,
         max_command_turns_yaml: str = "8",
-        schema_file: str = "stdlib:schemas/rally_turn_result.schema.json",
-        example_file: str = "stdlib:examples/rally_turn_result.example.json",
+        schema_file: str = "stdlib/rally/schemas/rally_turn_result.schema.json",
+        example_file: str = "stdlib/rally/examples/rally_turn_result.example.json",
         guarded_git_repos_yaml: str = "[]",
         host_inputs_yaml: str = "",
     ) -> None:
@@ -382,12 +406,12 @@ class FlowLoaderTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        if schema_file.startswith("stdlib:"):
+        if schema_file.startswith("stdlib:") or schema_file.startswith("stdlib/rally/"):
             (schema_root / "rally_turn_result.schema.json").write_text(
                 self._schema_text(include_next_owner=include_next_owner),
                 encoding="utf-8",
             )
-        if example_file.startswith("stdlib:"):
+        if example_file.startswith("stdlib:") or example_file.startswith("stdlib/rally/"):
             (example_root / "rally_turn_result.example.json").write_text(
                 '{"kind":"done","summary":"ok"}\n',
                 encoding="utf-8",

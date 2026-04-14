@@ -17,6 +17,12 @@ whole run on disk, and routes every turn from strict JSON instead of prose.
 > usable today. First-class Claude Code support and repo-local built-in memory
 > are next, and both already have concrete design docs in this repo.
 
+## Live Demo
+
+Rally running the shipped `poem_loop` flow from the real CLI.
+
+![Rally poem loop live demo](docs/assets/poem-loop-demo-run.png)
+
 ## Rally In One Line
 
 Rally is orchestration, governance, and harnessing for coding agents, but the
@@ -144,11 +150,12 @@ That split matters:
 - the runtime does not have to scrape prose and guess what the flow meant
 
 In authored source, Rally paths are rooted. Use `home:...`, `flow:...`,
-`workspace:...`, or `host:...`. Rally internals may also emit `stdlib:...`.
+`workspace:...`, or `host:...`. Rally internals may also use `stdlib:...`.
 Do not use bare relative paths in `flow.yaml`, prompt `path:` fields, or MCP
 path values. Inside shell commands that already run in the prepared home, plain
 paths like `repos/demo_repo` are still fine. Prompt support files still use the
-current compiler-relative form until Doctrine adds rooted support-file paths.
+current compiler-relative form. If rooted support-file paths are missing, Rally
+stops there and names the Doctrine gap instead of editing `../doctrine`.
 
 ## A Rally Repo Stays Small On Purpose
 

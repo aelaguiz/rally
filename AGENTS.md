@@ -25,12 +25,14 @@
 - Keep lasting notes on Rally-owned tools such as the Rally kernel skill and `rally issue note`. Keep route, done, blocker, and sleep truth only in `rally.turn_results`.
 - Use rooted Rally paths in authored source: `home:`, `flow:`, `workspace:`, and `host:`. Rally internals may also use `stdlib:`.
 - Do not use bare relative paths in `flow.yaml`, prompt `path:` fields, or MCP path values. In shell commands from the prepared home, plain paths like `repos/demo_repo` are fine.
-- Doctrine still owns prompt support-file resolution. Keep prompt `file:` and `example_file:` values in the compiler-safe form until Doctrine grows rooted support-file paths.
+- Doctrine still owns prompt support-file resolution. Keep prompt `file:` and `example_file:` values in the current compiler-safe form. If rooted support-file paths are missing, stop and discuss the Doctrine gap.
 - `home:issue.md` is the only shared run input and note file Rally sanctions by default. Do not add an external brief flag, stdin brief path, or a second shared brief, handoff, or note sidecar unless a flow clearly owns that extra file.
 - Doctrine owns the general language, compiler, and emitted build output. Treat it as a general framework, not a Rally extension point.
 - Every time you write or edit a `.prompt` file, stop and check whether Doctrine already has a built-in way to express the change.
 - Prefer Doctrine features such as imports, inheritance, abstract agents, shared inputs or outputs, reviews, workflow laws, and typed outputs over copied prose or Rally-only prompt patterns.
-- Do not edit the paired Doctrine repo during normal Rally work. If Rally is blocked on missing Doctrine support, stop in Rally and name the missing framework feature first.
+- Never edit `../doctrine` during Rally work unless the user clearly asks for Doctrine changes in this thread.
+- Do not stage, commit, test, clean up, or "just fix" `../doctrine` without that discussion.
+- If Rally is blocked on missing Doctrine support, stop in Rally and name the missing framework feature first.
 - Treat the prepared run home as the whole working world. Skills, MCPs, repos, artifacts, sessions, and adapter-local state belong there, not in machine-global Rally state or random filesystem paths.
 - Keep Rally-owned state in this repo, especially under `runs/`. Do not create hidden control planes under `~/.rally`, `~/.config`, or similar paths.
 - For Codex adapter work, keep the launch rules exact: Rally sets `cwd`, points `CODEX_HOME` at the run home, sets `RALLY_RUN_ID` and `RALLY_FLOW_CODE`, turns off ambient project-doc discovery, and injects compiled prompt output directly.
