@@ -27,7 +27,7 @@ from rally.services.flow_build import ensure_flow_assets_built
 from rally.services.final_response_loader import load_agent_final_response
 from rally.services.flow_loader import load_flow_code, load_flow_definition
 from rally.services.guarded_git_repos import check_guarded_git_repos, render_guarded_git_repo_blocker
-from rally.services.home_materializer import materialize_run_home, prepare_run_home_shell
+from rally.services.home_materializer import activate_agent_skills, materialize_run_home, prepare_run_home_shell
 from rally.services.issue_editor import (
     edit_existing_issue_file_in_editor,
     resolve_interactive_issue_editor,
@@ -658,6 +658,7 @@ def _execute_single_turn(
     agent = _resolve_current_agent(flow=flow, state=state)
     adapter = get_adapter(flow.adapter.name)
     turn_index = state.turn_index + 1
+    activate_agent_skills(run_home=run_home, agent=agent)
     artifacts = adapter.prepare_turn_artifacts(run_home=run_home, agent_slug=agent.slug, turn_index=turn_index)
 
     running_state = RunState(

@@ -1,0 +1,19 @@
+name: Docs or example improvement
+description: Ask for a docs fix, clearer guide, or better example.
+title: "docs: "
+body:
+  - type: textarea
+    id: gap
+    attributes:
+      label: What was confusing or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: target
+    attributes:
+      label: Which page or example should change?
+      placeholder: README, docs/RALLY_CLI_AND_LOGGING_2026-04-13.md, demo flow docs, etc.
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement

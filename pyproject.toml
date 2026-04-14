@@ -38,7 +38,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://pokerskill.com"
+Homepage = "https://github.com/aelaguiz/rally"
 Documentation = "https://github.com/aelaguiz/rally/tree/main/docs"
 Changelog = "https://github.com/aelaguiz/rally/blob/main/CHANGELOG.md"
 Repository = "https://github.com/aelaguiz/rally"

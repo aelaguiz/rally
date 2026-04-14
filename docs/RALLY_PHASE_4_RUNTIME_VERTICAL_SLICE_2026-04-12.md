@@ -71,8 +71,9 @@ What is real today:
 - home materialization for agents, repos, config, auth links, and setup
 - Rally-managed agents, skills, MCPs, config, and auth links refreshed on each start or resume
 - flow-validated skills and MCPs copied into the run home, with markdown
-  `SKILL.md` and Doctrine `prompts/SKILL.prompt` both supported, but still as
-  the per-flow union rather than per-agent-isolated subsets
+  `SKILL.md` and Doctrine `prompts/SKILL.prompt` both supported
+- per-agent skill views refreshed under `home/sessions/<agent>/skills/` and
+  the live `home/skills/` tree activated per turn from that prebuilt view
 - flow-level `setup_home_script`, `runtime.prompt_input_command`, and
   `runtime.guarded_git_repos`
 - dirty guarded-repo failures that block `handoff` or `done` loud instead of
@@ -113,7 +114,7 @@ What is still outside Phase 4:
 
 - `rally archive`
 - deeper stale-run diagnosis
-- per-agent runtime enforcement for `allowed_skills` and `allowed_mcps`
+- per-agent runtime enforcement for `allowed_mcps`
 - a full adapter-native MCP auth and readiness contract
 - run-home-owned Claude auth
 
@@ -187,7 +188,8 @@ The current checked-in runtime surface is:
   - prepares the shared run-home layout
   - enforces non-empty `home/issue.md`
   - syncs built-in framework assets
-  - copies compiled agents plus allowlisted skills and MCPs
+  - copies compiled agents, refreshes per-agent skill views under
+    `home/sessions/<agent>/skills/`, and copies allowlisted MCPs
   - calls `adapter.prepare_home(...)`
   - runs flow setup only when the run home first becomes ready
 - `src/rally/services/guarded_git_repos.py`
@@ -346,7 +348,7 @@ The next honest work after this slice is:
 1. add a standalone `rally archive` command
 2. add better stale-run diagnosis
 3. add a replay or viewer command for old runs
-4. enforce per-agent runtime capability access instead of today's per-flow union
+4. enforce per-agent runtime MCP access instead of today's shared MCP config
 5. add one real adapter-native MCP readiness contract
 6. decide later whether isolated Claude auth is worth the extra complexity
 

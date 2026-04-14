@@ -11,7 +11,14 @@ Run these first:
 ```bash
 git status --short
 rg --files flows stdlib skills mcps docs
+```
+
+Then sync, build the checked-in readback, and run the unit tests:
+
+```bash
 uv sync --dev
+uv run python -m doctrine.emit_docs --pyproject pyproject.toml --target _stdlib_smoke --target poem_loop --target software_engineering_demo
+uv run python -m doctrine.emit_skill --pyproject pyproject.toml --target rally-kernel --target rally-memory --target demo-git
 uv run pytest tests/unit -q
 ```
 
@@ -39,6 +46,14 @@ Pick the smallest proof that matches the change:
 - prompt change: rebuild the affected flow or skill and inspect the generated readback
 - runtime change: prove it through `uv run rally ...` or the owning unit tests
 - fixture repo change: run that fixture repo's tests from that repo root
+
+## Questions, bugs, and proposals
+
+- Use GitHub Discussions for questions and design talk.
+- Use GitHub Issues for bugs and scoped feature requests.
+- Use `SUPPORT.md` if you need the right help path first.
+- Use `SECURITY.md` for security issues.
+- Follow `CODE_OF_CONDUCT.md` in project spaces.
 
 ## Before you call work done
 

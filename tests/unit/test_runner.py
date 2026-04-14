@@ -422,6 +422,196 @@ class RunnerTests(unittest.TestCase):
             )
             self.assertTrue((run_dir / "home" / ".claude" / "skills").is_symlink())
 
+    def test_run_flow_activates_current_agent_skill_view_for_codex_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            self._write_doctrine_skill(
+                repo_root=repo_root,
+                skill_name="demo-git",
+                prompt_title="Demo Git",
+                emitted_heading="Demo Git",
+                description="Use git commands in the demo repo.",
+                include_reference=True,
+            )
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_path.write_text(
+                flow_path.read_text(encoding="utf-8").replace(
+                    "  02_change_engineer:\n"
+                    "    timeout_sec: 60\n"
+                    "    allowed_skills: [repo-search]\n",
+                    "  02_change_engineer:\n"
+                    "    timeout_sec: 60\n"
+                    "    allowed_skills: [demo-git]\n",
+                ),
+                encoding="utf-8",
+            )
+
+            observed_skill_sets: list[set[str]] = []
+
+            class _AssertingCodexRun(_FakeCodexRun):
+                def __call__(inner_self, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                    run_home = Path(command[command.index("-C") + 1])
+                    observed_skill_sets.append(
+                        {path.name for path in (run_home / "skills").iterdir() if path.is_dir()}
+                    )
+                    return super().__call__(command, **kwargs)
+
+            fake_run = _AssertingCodexRun(
+                [
+                    {
+                        "thread_id": "session-1",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_owner": "change_engineer",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    },
+                    {
+                        "thread_id": "session-2",
+                        "last_message": {
+                            "kind": "done",
+                            "next_owner": None,
+                            "summary": "verified",
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    },
+                ]
+            )
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Fix the pagination bug.\n", encoding="utf-8")
+                return IssueEditorResult(status="saved", cleaned_text="Fix the pagination bug.\n")
+
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                result = run_flow(
+                    repo_root=repo_root,
+                    request=RunRequest(flow_name="demo"),
+                    subprocess_run=fake_run,
+                )
+
+            run_dir = find_run_dir(repo_root=repo_root, run_id="DMO-1")
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertEqual(
+                observed_skill_sets,
+                [
+                    {"repo-search", "rally-kernel", "rally-memory"},
+                    {"demo-git", "rally-kernel", "rally-memory"},
+                ],
+            )
+            self.assertTrue((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "repo-search" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "demo-git").exists())
+            self.assertTrue((run_dir / "home" / "sessions" / "change_engineer" / "skills" / "demo-git" / "SKILL.md").is_file())
+            self.assertTrue(
+                (
+                    run_dir
+                    / "home"
+                    / "sessions"
+                    / "change_engineer"
+                    / "skills"
+                    / "demo-git"
+                    / "references"
+                    / "note_examples.md"
+                ).is_file()
+            )
+            self.assertFalse(
+                (run_dir / "home" / "sessions" / "change_engineer" / "skills" / "demo-git" / "prompts").exists()
+            )
+            self.assertTrue((run_dir / "home" / "skills" / "demo-git" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "skills" / "repo-search").exists())
+
+    def test_resume_run_activates_current_agent_skill_view_for_claude_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            self._write_markdown_skill(
+                repo_root=repo_root,
+                skill_name="pytest-local",
+                heading="Pytest Local",
+                description="Run local pytest commands.",
+            )
+            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_text = flow_text.replace("  adapter: codex\n", "  adapter: claude_code\n")
+            flow_text = flow_text.replace(
+                "  02_change_engineer:\n"
+                "    timeout_sec: 60\n"
+                "    allowed_skills: [repo-search]\n",
+                "  02_change_engineer:\n"
+                "    timeout_sec: 60\n"
+                "    allowed_skills: [pytest-local]\n",
+            )
+            flow_text = flow_text.replace("    project_doc_max_bytes: 0\n", "")
+            flow_path.write_text(flow_text, encoding="utf-8")
+
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+            observed_skill_sets: list[set[str]] = []
+
+            class _AssertingClaudeRun(_FakeClaudeRun):
+                def __call__(inner_self, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                    skills_root = Path(kwargs["cwd"]) / ".claude" / "skills"
+                    self.assertTrue(skills_root.is_symlink())
+                    observed_skill_sets.append({path.name for path in skills_root.iterdir() if path.is_dir()})
+                    return super().__call__(command, **kwargs)
+
+            fake_run = _AssertingClaudeRun(
+                [
+                    {
+                        "session_id": "claude-session-1",
+                        "structured_output": {
+                            "kind": "handoff",
+                            "next_owner": "change_engineer",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    },
+                    {
+                        "session_id": "claude-session-2",
+                        "structured_output": {
+                            "kind": "done",
+                            "next_owner": None,
+                            "summary": "verified",
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    },
+                ]
+            )
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=fake_run,
+            )
+
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertEqual(
+                observed_skill_sets,
+                [
+                    {"repo-search", "rally-kernel", "rally-memory"},
+                    {"pytest-local", "rally-kernel", "rally-memory"},
+                ],
+            )
+            self.assertTrue((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "repo-search" / "SKILL.md").is_file())
+            self.assertTrue(
+                (run_dir / "home" / "sessions" / "change_engineer" / "skills" / "pytest-local" / "SKILL.md").is_file()
+            )
+            self.assertTrue((run_dir / "home" / ".claude" / "skills").is_symlink())
+            self.assertTrue((run_dir / "home" / "skills" / "pytest-local" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "skills" / "repo-search").exists())
+
     def test_poem_loop_claude_review_accepts_embedded_fenced_json_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -994,6 +1184,10 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue((run_dir / "home" / "skills" / "repo-search" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertTrue((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "repo-search" / "SKILL.md").is_file())
+            self.assertTrue(
+                (run_dir / "home" / "sessions" / "change_engineer" / "skills" / "repo-search" / "SKILL.md").is_file()
+            )
             self.assertTrue((run_dir / "home" / "mcps" / "fixture-repo" / "server.toml").is_file())
 
             flow_text = flow_path.read_text(encoding="utf-8")
@@ -1038,6 +1232,12 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "repo-search").exists())
+            self.assertFalse((run_dir / "home" / "sessions" / "change_engineer" / "skills" / "repo-search").exists())
+            self.assertTrue((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "rally-kernel" / "SKILL.md").is_file())
+            self.assertTrue(
+                (run_dir / "home" / "sessions" / "change_engineer" / "skills" / "rally-memory" / "SKILL.md").is_file()
+            )
             self.assertFalse((run_dir / "home" / "mcps" / "fixture-repo").exists())
             config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
             self.assertEqual(config_text, "project_doc_max_bytes = 0\n")
@@ -2353,8 +2553,7 @@ class RunnerTests(unittest.TestCase):
             encoding="utf-8",
         )
         if copy_framework_builtins:
-            shutil.copytree(source_root / "skills" / "rally-kernel", repo_root / "skills" / "rally-kernel")
-            shutil.copytree(source_root / "skills" / "rally-memory", repo_root / "skills" / "rally-memory")
+            self._write_framework_builtin_skills(framework_root=repo_root)
         shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
 
         flow_root = repo_root / "flows" / "demo"
@@ -2452,9 +2651,32 @@ class RunnerTests(unittest.TestCase):
         source_root = Path(__file__).resolve().parents[2]
         shutil.copytree(source_root / "flows" / "poem_loop", repo_root / "flows" / "poem_loop")
         if copy_framework_builtins:
-            shutil.copytree(source_root / "skills" / "rally-kernel", repo_root / "skills" / "rally-kernel")
-            shutil.copytree(source_root / "skills" / "rally-memory", repo_root / "skills" / "rally-memory")
+            self._write_framework_builtin_skills(framework_root=repo_root)
         shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
+
+    def _write_framework_builtin_skills(self, *, framework_root: Path) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        self._copy_builtin_skill(source_root=source_root, framework_root=framework_root, skill_name="rally-kernel")
+        self._copy_builtin_skill(source_root=source_root, framework_root=framework_root, skill_name="rally-memory")
+
+    def _copy_builtin_skill(self, *, source_root: Path, framework_root: Path, skill_name: str) -> None:
+        skill_root = framework_root / "skills" / skill_name
+        shutil.copytree(source_root / "skills" / skill_name, skill_root)
+        if skill_name == "rally-memory" and not (skill_root / "build" / "SKILL.md").is_file():
+            (skill_root / "build").mkdir(parents=True, exist_ok=True)
+            (skill_root / "build" / "SKILL.md").write_text(
+                textwrap.dedent(
+                    """\
+                    ---
+                    name: "rally-memory"
+                    description: "Shared Rally memory skill."
+                    ---
+
+                    # Rally Memory
+                    """
+                ),
+                encoding="utf-8",
+            )
 
     def _write_markdown_skill(
         self,

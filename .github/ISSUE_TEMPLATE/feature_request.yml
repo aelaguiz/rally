@@ -1,0 +1,21 @@
+name: Feature request
+description: Propose a concrete runtime, CLI, or workflow improvement.
+title: "feature: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the narrowest useful addition.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What did you try already?
