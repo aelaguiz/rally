@@ -1,7 +1,7 @@
 # Rally
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python 3.12%2B](https://img.shields.io/badge/python-3.12%2B-3776AB.svg)](pyproject.toml)
+[![Python 3.14%2B](https://img.shields.io/badge/python-3.14%2B-3776AB.svg)](pyproject.toml)
 [![CI](https://img.shields.io/github/actions/workflow/status/aelaguiz/rally/ci.yml?branch=main&label=ci)](https://github.com/aelaguiz/rally/actions/workflows/ci.yml)
 [![Doctrine-powered](https://img.shields.io/badge/authored%20with-Doctrine-6E56CF.svg)](https://github.com/aelaguiz/doctrine)
 
