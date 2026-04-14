@@ -144,8 +144,8 @@ Each runnable flow lives under `flows/<flow-slug>/`.
 The canonical runtime contract for a flow is `flows/<flow-slug>/flow.yaml`.
 That file declares runtime facts, not instruction prose.
 It also carries runtime limits such as `runtime.max_command_turns`, plus
-runtime hooks such as one setup script, one prompt-input reducer, and guarded
-git repo paths.
+runtime hooks such as one setup script, one prompt-input reducer, one optional
+`runtime.env` map, and guarded git repo paths.
 
 Every runnable flow has three stable identities:
 
@@ -206,6 +206,10 @@ After that:
 
 A flow may also declare one prompt-input reducer that runs before each turn and
 one guarded-git list that Rally checks before it accepts `handoff` or `done`.
+If a flow sets `runtime.env`, Rally uses those env vars during startup host
+input checks, setup, prompt input, and adapter launches. That means
+`runtime.env` can satisfy `host_inputs.required_env` and `host:$VAR` paths
+before setup runs. Flow values win over duplicate shell env vars.
 
 Adapter-specific bootstrap rules still stay narrow:
 
@@ -427,8 +431,9 @@ The operator surface should stay small.
 Conceptually it is:
 
 ```bash
-rally run <flow> [--new]
-rally resume <FLOW_CODE>-<n> [--edit|--restart]
+rally run <flow> [--new] [--step] [--from-file <path>]
+rally resume <FLOW_CODE>-<n> [--edit|--restart] [--step]
+rally status [<FLOW_CODE>-<n>]
 rally archive <FLOW_CODE>-<n>
 rally issue note --run-id <FLOW_CODE>-<n> [--field key=value ...]
 rally memory search --run-id <FLOW_CODE>-<n> --query "<text>"
@@ -441,6 +446,8 @@ rally memory refresh --run-id <FLOW_CODE>-<n>
 a TTY and a plain text fallback when the output is not interactive. That
 startup view should show the run id, flow, flow code, model, thinking level,
 adapter, start agent, and agent count.
+`rally --help` should teach the happy path in plain English with a few short
+examples instead of only listing command names.
 Before either command starts the next turn, Rally should rebuild that flow's
 compiled agents through the paired Doctrine emit target and refresh the
 run-home `home/agents/` copy from the rebuilt readback.
@@ -450,8 +457,14 @@ strip that prompt back out if it is still there, and keep going after save.
 If the shell is not interactive or the editor does not produce real issue
 text, Rally should still stop loud and tell the operator to fill in that file
 before `rally resume`.
+If `--from-file` is passed, Rally should validate that file before it archives
+an old run or creates a new one. If the file is valid UTF-8 text and not
+blank, Rally should copy it into the new run's `home/issue.md`, add the seed
+path to the `Rally Run Started` block, and skip the issue editor.
 `rally run --new` should ask before it archives the current active run for that
 flow, then start a fresh run and reuse the same `home/issue.md` editor path.
+`rally run --step` should run one turn and then stop clean as `paused` if that
+turn handed work to another agent.
 Archived runs should not resume.
 `rally resume --edit` should open the current `home/issue.md` in place before
 the turn starts. If the run is blocked, a saved non-empty edit should move it
@@ -460,6 +473,10 @@ and wait for a real issue. If the operator changed the file text, Rally should
 append one `user edited issue.md` block with a unified diff at the end of the
 same ledger before the turn resumes. Done and archived runs should still
 refuse plain resume.
+Paused runs should resume with plain `rally resume`, and `rally resume --step`
+should take one more turn and pause again if the flow hands off.
+`rally status` should stay read-only, list active runs when no id is passed,
+and show one run summary with the likely next command when an id is passed.
 `rally resume --restart` should ask before it archives the current active run,
 recover the original issue from the earliest issue snapshot when it can, start
 a fresh run with a new run id, and seed that new run's `home/issue.md` with

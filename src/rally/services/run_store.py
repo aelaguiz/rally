@@ -91,6 +91,18 @@ def find_active_run_for_flow(*, repo_root: Path, flow_code: str) -> RunRecord | 
     return None
 
 
+def list_active_run_records(*, repo_root: Path) -> tuple[RunRecord, ...]:
+    runs_dir = active_runs_dir(repo_root)
+    if not runs_dir.is_dir():
+        return ()
+    records: list[RunRecord] = []
+    for run_dir in sorted(runs_dir.iterdir()):
+        if not run_dir.is_dir():
+            continue
+        records.append(load_run_record(run_dir=run_dir))
+    return tuple(records)
+
+
 def archive_run(*, repo_root: Path, run_id: str) -> Path:
     active_run_dir = active_runs_dir(repo_root) / run_id
     if not active_run_dir.is_dir():

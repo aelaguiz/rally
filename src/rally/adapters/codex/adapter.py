@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import selectors
 import json
 import subprocess
@@ -32,6 +31,7 @@ from rally.domain.flow import FlowAgent, FlowDefinition
 from rally.domain.rooted_path import INTERNAL_PATH_ROOTS, expand_rooted_value
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError
+from rally.services.flow_env import build_flow_subprocess_env
 from rally.services.run_events import RunEventRecorder
 from rally.services.workspace import WorkspaceContext
 
@@ -122,9 +122,11 @@ class CodexAdapter(RallyAdapter):
                 reason=f"Expected Codex config at `{config_file}`.",
             )
 
-        launch_env = {
-            **os.environ,
-            **build_codex_launch_env(
+        launch_env = build_flow_subprocess_env(
+            flow=flow,
+            workspace=workspace,
+            run_home=run_home,
+            extra_env=build_codex_launch_env(
                 workspace_dir=workspace.workspace_root,
                 cli_bin=workspace.cli_bin,
                 run_home=run_home,
@@ -133,7 +135,7 @@ class CodexAdapter(RallyAdapter):
                 agent_slug=agent.slug,
                 turn_index=turn_index,
             ),
-        }
+        )
         listed_servers, list_failure = _load_codex_mcp_list(
             run_home=run_home,
             env=launch_env,
@@ -242,9 +244,11 @@ class CodexAdapter(RallyAdapter):
         else:
             command.append("-")
 
-        env = {
-            **os.environ,
-            **build_codex_launch_env(
+        env = build_flow_subprocess_env(
+            flow=flow,
+            workspace=workspace,
+            run_home=run_home,
+            extra_env=build_codex_launch_env(
                 workspace_dir=workspace.workspace_root,
                 cli_bin=workspace.cli_bin,
                 run_home=run_home,
@@ -253,7 +257,7 @@ class CodexAdapter(RallyAdapter):
                 agent_slug=agent.slug,
                 turn_index=turn_index,
             ),
-        }
+        )
         write_codex_launch_record(
             run_dir=run_dir,
             turn_index=turn_index,

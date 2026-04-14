@@ -68,6 +68,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(flow.host_inputs.required_env, ())
         self.assertEqual(flow.host_inputs.required_files, ())
         self.assertEqual(flow.host_inputs.required_directories, ())
+        self.assertEqual(dict(flow.runtime_env), {})
         self.assertIsNone(flow.adapter.prompt_input_command)
         self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
@@ -99,6 +100,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(flow.host_inputs.required_env, ())
         self.assertEqual(flow.host_inputs.required_files, ())
         self.assertEqual(flow.host_inputs.required_directories, ())
+        self.assertEqual(dict(flow.runtime_env), {})
         self.assertIsNone(flow.adapter.prompt_input_command)
         self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
@@ -174,6 +176,32 @@ class FlowLoaderTests(unittest.TestCase):
                 (RootedPath(root="host", path_text="$PSMOBILE_SOURCE_REPO"),),
             )
 
+    def test_load_flow_definition_loads_runtime_env(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                runtime_env_yaml=textwrap.dedent(
+                    """\
+                      env:
+                        PROJECT_ROOT: workspace:fixtures/project
+                        FLOW_REPO: home:repos/demo_repo
+                        API_BASE_URL: https://example.test
+                    """
+                ),
+            )
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            self.assertEqual(
+                dict(flow.runtime_env),
+                {
+                    "PROJECT_ROOT": "workspace:fixtures/project",
+                    "FLOW_REPO": "home:repos/demo_repo",
+                    "API_BASE_URL": "https://example.test",
+                },
+            )
+
     def test_load_flow_definition_rejects_missing_workspace_stdlib(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve() / "workspace"
@@ -222,6 +250,38 @@ class FlowLoaderTests(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(RallyConfigError, "must not repeat"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_rejects_invalid_runtime_env_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                runtime_env_yaml=textwrap.dedent(
+                    """\
+                      env:
+                        bad-key: value
+                    """
+                ),
+            )
+
+            with self.assertRaisesRegex(RallyConfigError, "runtime.env"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_rejects_reserved_runtime_env_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                runtime_env_yaml=textwrap.dedent(
+                    """\
+                      env:
+                        RALLY_RUN_ID: DMO-1
+                    """
+                ),
+            )
+
+            with self.assertRaisesRegex(RallyConfigError, "reserved"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
     def test_poem_loop_compiled_readback_includes_kernel_skill_and_rationale_contract(self) -> None:
@@ -383,6 +443,7 @@ class FlowLoaderTests(unittest.TestCase):
         example_file: str = "stdlib/rally/examples/rally_turn_result.example.json",
         guarded_git_repos_yaml: str = "[]",
         host_inputs_yaml: str = "",
+        runtime_env_yaml: str = "",
     ) -> None:
         flow_root = repo_root / "flows" / "demo"
         build_root = flow_root / "build" / "agents" / "scope_lead"
@@ -396,6 +457,7 @@ class FlowLoaderTests(unittest.TestCase):
         example_root.mkdir(parents=True)
         max_command_turns_line = f"  max_command_turns: {max_command_turns_yaml}\n" if include_max_command_turns else ""
         guarded_git_repos_line = f"  guarded_git_repos: {guarded_git_repos_yaml}\n"
+        runtime_env_block = textwrap.indent(runtime_env_yaml, "  ") if runtime_env_yaml else ""
 
         flow_yaml = (
             "name: demo\n"
@@ -414,6 +476,7 @@ class FlowLoaderTests(unittest.TestCase):
             "  adapter: codex\n"
             f"{max_command_turns_line}"
             f"{guarded_git_repos_line}"
+            f"{runtime_env_block}"
             "  prompt_input_command: flow:setup/prompt_inputs.py\n"
             "  adapter_args:\n"
             "    model: gpt-5.4\n"

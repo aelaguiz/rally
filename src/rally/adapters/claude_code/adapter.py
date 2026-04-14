@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import selectors
 import shutil
 import subprocess
@@ -30,6 +29,7 @@ from rally.domain.flow import FlowAgent, FlowDefinition
 from rally.domain.rooted_path import INTERNAL_PATH_ROOTS, expand_rooted_value
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError
+from rally.services.flow_env import build_flow_subprocess_env
 from rally.services.run_events import RunEventRecorder
 from rally.services.workspace import WorkspaceContext
 
@@ -124,7 +124,7 @@ class ClaudeCodeAdapter(RallyAdapter):
         recorder: RunEventRecorder,
         subprocess_run: SubprocessRunner,
     ) -> AdapterReadinessFailure | None:
-        del repo_root, workspace, run_dir, run_record, agent, turn_index, recorder
+        del repo_root, run_dir, recorder
         config_file = run_home / "claude_code" / "mcp.json"
         config, failure = _load_claude_mcp_config(config_file=config_file)
         if failure is not None:
@@ -141,6 +141,19 @@ class ClaudeCodeAdapter(RallyAdapter):
                 reason="Generated Claude MCP config did not contain an `mcpServers` map.",
             )
 
+        launch_env = build_flow_subprocess_env(
+            flow=flow,
+            workspace=workspace,
+            run_home=run_home,
+            extra_env=build_claude_code_launch_env(
+                workspace_dir=workspace.workspace_root,
+                cli_bin=workspace.cli_bin,
+                run_id=run_record.id,
+                flow_code=run_record.flow_code,
+                agent_slug=agent.slug,
+                turn_index=turn_index,
+            ),
+        )
         for mcp_name in required_mcp_names:
             server_file = run_home / "mcps" / mcp_name / "server.toml"
             if not server_file.is_file():
@@ -158,10 +171,11 @@ class ClaudeCodeAdapter(RallyAdapter):
                     mcp_name=mcp_name,
                 )
 
-            start_failure = _probe_stdio_startability(
+            start_failure = _probe_claude_stdio_startability(
                 mcp_name=mcp_name,
                 server_config=server_config,
                 run_home=run_home,
+                env=launch_env,
                 subprocess_run=subprocess_run,
             )
             if start_failure is not None:
@@ -213,9 +227,11 @@ class ClaudeCodeAdapter(RallyAdapter):
         if previous_session is not None:
             command.extend(["--resume", previous_session.session_id])
 
-        env = {
-            **os.environ,
-            **build_claude_code_launch_env(
+        env = build_flow_subprocess_env(
+            flow=flow,
+            workspace=workspace,
+            run_home=run_home,
+            extra_env=build_claude_code_launch_env(
                 workspace_dir=workspace.workspace_root,
                 cli_bin=workspace.cli_bin,
                 run_id=run_record.id,
@@ -223,7 +239,7 @@ class ClaudeCodeAdapter(RallyAdapter):
                 agent_slug=agent.slug,
                 turn_index=turn_index,
             ),
-        }
+        )
         write_claude_code_launch_record(
             run_dir=run_dir,
             turn_index=turn_index,
@@ -602,11 +618,12 @@ def _load_claude_mcp_config(*, config_file: Path) -> tuple[dict[str, object], Ad
     return payload, None
 
 
-def _probe_stdio_startability(
+def _probe_claude_stdio_startability(
     *,
     mcp_name: str,
     server_config: dict[str, object],
     run_home: Path,
+    env: dict[str, str],
     subprocess_run: SubprocessRunner,
 ) -> AdapterReadinessFailure | None:
     return probe_stdio_startability(
@@ -616,7 +633,7 @@ def _probe_stdio_startability(
         raw_env=server_config.get("env"),
         raw_cwd=server_config.get("cwd"),
         run_home=run_home,
-        env=os.environ,
+        env=env,
         subprocess_run=subprocess_run,
         config_label="Claude MCP config",
         timeout_sec=5,
