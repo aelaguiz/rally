@@ -87,8 +87,6 @@ abstract agent RallyManagedBaseAgent:
         "Rally owns the run home, the note path, and the final JSON for this turn."
         "End the turn with the final JSON shape this turn declares."
         "Many Rally turns use `rally.turn_results.RallyTurnResult`."
-        "On that shared shape, send `agent_issues` with one short issue or `none`."
-        "`agent_issues` is diagnostics only. It never changes route, done, blocker, or sleep behavior."
         "Review-native turns may end with Doctrine review JSON that Rally can read."
         "Use `home:issue.md` as the shared run ledger for this run."
         "Leave a note only when a later reader needs context."

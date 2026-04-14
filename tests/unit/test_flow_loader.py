@@ -241,7 +241,12 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertIn("## Read First", writer_readback)
         self.assertIn("Artistic Rationale", writer_readback)
         self.assertIn("### Rally Turn Result", writer_readback)
-        self.assertIn("On that shared shape, send `agent_issues` with one short issue or `none`.", writer_readback)
+        agent_issues_line = (
+            "`agent_issues` is optional diagnostics only. When you send it, use one short issue summary or the literal `none`. "
+            "It never changes route, done, blocker, or sleep behavior."
+        )
+        self.assertIn(agent_issues_line, writer_readback)
+        self.assertEqual(writer_readback.count(agent_issues_line), 1)
         self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', writer_readback)
         self.assertNotIn("### Issue Note", critic_readback)
         self.assertIn("## Poem Review", critic_readback)

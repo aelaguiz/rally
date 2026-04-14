@@ -96,3 +96,12 @@ Plan doc: [docs/RALLY_DEFAULT_AGENT_ISSUE_REPORTING_2026-04-14.md](/Users/aelagu
   `uv run pytest tests/integration/test_packaged_install.py -q`
 - Result:
   `2 passed in 10.49s`
+
+## 2026-04-14 - Prompt cleanup follow-through
+- Moved the shared `agent_issues` wording fully onto
+  `stdlib/rally/prompts/rally/turn_results.prompt`.
+- Dropped the duplicate field wording from
+  `stdlib/rally/prompts/rally/base_agent.prompt` so the shared field rule now
+  appears once in shared-default readback.
+- Tightened the readback guard in `tests/unit/test_flow_loader.py` to check the
+  one combined line and keep it single-occurrence.
