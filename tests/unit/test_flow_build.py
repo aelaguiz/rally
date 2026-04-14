@@ -55,7 +55,7 @@ class FlowBuildTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve() / "rally"
             repo_root.mkdir(parents=True)
-            (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally'\n", encoding="utf-8")
+            (repo_root / "pyproject.toml").write_text("[project]\nname = 'workspace'\n", encoding="utf-8")
             self._write_flow_file(repo_root=repo_root, allowed_skills=("demo-git", "repo-search"))
             self._write_doctrine_skill(repo_root=repo_root, skill_name="demo-git")
             self._write_markdown_skill(repo_root=repo_root, skill_name="repo-search")

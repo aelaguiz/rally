@@ -244,6 +244,139 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("### Findings First", issue_text)
             self.assertIn("The poem is ready to keep as written.", issue_text)
 
+    def test_resume_run_rebuilds_flow_and_stdlib_prompt_sources_before_next_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_poem_repo(repo_root=repo_root)
+            self.ensure_flow_assets_built.side_effect = build_flow_assets
+            pyproject_path = repo_root / "pyproject.toml"
+            pyproject_path.write_text(
+                pyproject_path.read_text(encoding="utf-8").replace("name = 'poem-fixture'", "name = 'rally'")
+                + "\n[[tool.doctrine.emit.targets]]\n"
+                'name = "rally-kernel"\n'
+                'entrypoint = "skills/rally-kernel/prompts/SKILL.prompt"\n'
+                'output_dir = "skills/rally-kernel/build"\n'
+                "\n[[tool.doctrine.emit.targets]]\n"
+                'name = "rally-memory"\n'
+                'entrypoint = "skills/rally-memory/prompts/SKILL.prompt"\n'
+                'output_dir = "skills/rally-memory/build"\n',
+                encoding="utf-8",
+            )
+            shutil.rmtree(repo_root / "skills" / "rally-kernel")
+            shutil.rmtree(repo_root / "skills" / "rally-memory")
+            self._write_framework_builtin_skills(framework_root=repo_root)
+
+            flow_path = repo_root / "flows" / "poem_loop" / "flow.yaml"
+            flow_path.write_text(
+                flow_path.read_text(encoding="utf-8").replace("  max_command_turns: 20\n", "  max_command_turns: 1\n"),
+                encoding="utf-8",
+            )
+
+            first_turn = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-poem-1",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_owner": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Write a sonnet about the moon.\n", encoding="utf-8")
+                return IssueEditorResult(
+                    status="saved",
+                    cleaned_text="Write a sonnet about the moon.\n",
+                )
+
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                first_result = run_flow(
+                    repo_root=repo_root,
+                    request=RunRequest(flow_name="poem_loop"),
+                    subprocess_run=first_turn,
+                )
+
+            run_dir = find_run_dir(repo_root=repo_root, run_id="POM-1")
+            self.assertEqual(first_result.status, RunStatus.BLOCKED)
+            self.assertEqual(first_result.current_agent_key, "02_poem_critic")
+
+            flow_prompt_path = repo_root / "flows" / "poem_loop" / "prompts" / "roles" / "poem_critic.prompt"
+            flow_prompt_marker = "Call out the anchor image before the verdict."
+            flow_prompt_path.write_text(
+                flow_prompt_path.read_text(encoding="utf-8").replace(
+                    '    "Accept only when you would be glad to hand the poem back as finished."\n',
+                    '    "Accept only when you would be glad to hand the poem back as finished."\n'
+                    f'    "{flow_prompt_marker}"\n',
+                ),
+                encoding="utf-8",
+            )
+
+            stdlib_prompt_path = repo_root / "stdlib" / "rally" / "prompts" / "rally" / "base_agent.prompt"
+            stdlib_prompt_marker = "Keep the newest proof in view when Rally rules mention the CLI."
+            stdlib_prompt_path.write_text(
+                stdlib_prompt_path.read_text(encoding="utf-8").replace(
+                    '        "Use `RALLY_CLI_BIN` when a flow tells you to call the Rally CLI."\n',
+                    '        "Use `RALLY_CLI_BIN` when a flow tells you to call the Rally CLI."\n'
+                    f'        "{stdlib_prompt_marker}"\n',
+                ),
+                encoding="utf-8",
+            )
+
+            second_turn = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-poem-2",
+                        "last_message": {
+                            "verdict": "accept",
+                            "reviewed_artifact": "home:artifacts/poem.md",
+                            "analysis_performed": "The sonnet keeps its moon focus, the images stay clear, and the draft now feels finished.",
+                            "findings_first": "The poem is ready to keep as written.",
+                        },
+                    }
+                ]
+            )
+
+            with patch(
+                "rally.services.runner.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.runner.edit_existing_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                second_result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="POM-1", edit_issue=True),
+                    subprocess_run=second_turn,
+                )
+
+            prompt_text = second_turn.calls[0]["kwargs"]["input"]
+            repo_readback = (
+                repo_root / "flows" / "poem_loop" / "build" / "agents" / "poem_critic" / "AGENTS.md"
+            ).read_text(encoding="utf-8")
+            run_home_readback = (run_dir / "home" / "agents" / "poem_critic" / "AGENTS.md").read_text(encoding="utf-8")
+
+            # Prompt source is the shipped truth. A resume must rebuild prompt
+            # source edits and send that updated text on the very next turn.
+            self.assertEqual(second_result.status, RunStatus.DONE)
+            self.assertIn(flow_prompt_marker, prompt_text)
+            self.assertIn(stdlib_prompt_marker, prompt_text)
+            self.assertIn(flow_prompt_marker, repo_readback)
+            self.assertIn(stdlib_prompt_marker, repo_readback)
+            self.assertIn(flow_prompt_marker, run_home_readback)
+            self.assertIn(stdlib_prompt_marker, run_home_readback)
+
     def test_run_flow_syncs_builtin_skills_into_workspace_when_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
