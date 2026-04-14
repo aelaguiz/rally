@@ -11,6 +11,7 @@ from typing import Mapping
 
 from rally.adapters.base import (
     AdapterInvocation,
+    AdapterReadinessFailure,
     AdapterSessionRecord,
     RallyAdapter,
     SubprocessRunner,
@@ -88,6 +89,108 @@ class CodexAdapter(RallyAdapter):
             cwd=cwd,
             now=now,
         )
+
+    def check_turn_readiness(
+        self,
+        *,
+        repo_root: Path,
+        workspace: WorkspaceContext,
+        run_dir: Path,
+        run_home: Path,
+        flow: FlowDefinition,
+        run_record: RunRecord,
+        agent: FlowAgent,
+        turn_index: int,
+        recorder: RunEventRecorder,
+        subprocess_run: SubprocessRunner,
+    ) -> AdapterReadinessFailure | None:
+        del repo_root, run_dir, recorder
+        required_mcp_names = _allowed_mcp_names(flow)
+        if not required_mcp_names:
+            return None
+
+        config_file = run_home / "config.toml"
+        if not config_file.is_file():
+            return AdapterReadinessFailure(
+                failed_check="run_home_materialization",
+                reason=f"Expected Codex config at `{config_file}`.",
+            )
+
+        launch_env = {
+            **os.environ,
+            **build_codex_launch_env(
+                workspace_dir=workspace.workspace_root,
+                cli_bin=workspace.cli_bin,
+                run_home=run_home,
+                run_id=run_record.id,
+                flow_code=run_record.flow_code,
+                agent_slug=agent.slug,
+                turn_index=turn_index,
+            ),
+        }
+        listed_servers, list_failure = _load_codex_mcp_list(
+            run_home=run_home,
+            env=launch_env,
+            subprocess_run=subprocess_run,
+        )
+        if list_failure is not None:
+            return list_failure
+        listed_by_name = {
+            server["name"]: server
+            for server in listed_servers
+            if isinstance(server, dict) and isinstance(server.get("name"), str)
+        }
+
+        for mcp_name in required_mcp_names:
+            server_file = run_home / "mcps" / mcp_name / "server.toml"
+            if not server_file.is_file():
+                return AdapterReadinessFailure(
+                    failed_check="run_home_materialization",
+                    reason=f"Expected projected MCP file at `{server_file}`.",
+                    mcp_name=mcp_name,
+                )
+
+            server_config, get_failure = _load_codex_mcp_config(
+                run_home=run_home,
+                env=launch_env,
+                mcp_name=mcp_name,
+                subprocess_run=subprocess_run,
+            )
+            if get_failure is not None:
+                return get_failure
+            transport = _extract_transport(server_config=server_config)
+            if transport is None:
+                return AdapterReadinessFailure(
+                    failed_check="codex_config_visibility",
+                    reason="`codex mcp get --json` did not return a transport block.",
+                    mcp_name=mcp_name,
+                )
+
+            listed_server = listed_by_name.get(mcp_name)
+            if listed_server is None:
+                return AdapterReadinessFailure(
+                    failed_check="codex_auth_status",
+                    reason="`codex mcp list --json` did not include this server.",
+                    mcp_name=mcp_name,
+                )
+            auth_failure = _check_codex_auth_state(
+                mcp_name=mcp_name,
+                transport=transport,
+                listed_server=listed_server,
+            )
+            if auth_failure is not None:
+                return auth_failure
+
+            start_failure = _probe_stdio_startability(
+                mcp_name=mcp_name,
+                transport=transport,
+                run_home=run_home,
+                env=launch_env,
+                subprocess_run=subprocess_run,
+            )
+            if start_failure is not None:
+                return start_failure
+        return None
 
     def invoke(
         self,
@@ -478,8 +581,9 @@ def _write_codex_config(*, workspace_root: Path, run_home: Path, flow: FlowDefin
             flow=flow,
             context=f"MCP server `{mcp_name}`",
         )
+        rendered_payload = {**expanded_payload, "required": True}
         lines.append(f'[mcp_servers."{mcp_name}"]')
-        for key, value in expanded_payload.items():
+        for key, value in rendered_payload.items():
             lines.append(f"{key} = {_render_toml_value(value)}")
         lines.append("")
     (run_home / "config.toml").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
@@ -499,6 +603,226 @@ def _seed_codex_auth(*, run_home: Path) -> None:
 
 def _allowed_mcp_names(flow: FlowDefinition) -> tuple[str, ...]:
     return tuple(sorted({mcp for agent in flow.agents.values() for mcp in agent.allowed_mcps}))
+
+
+def _load_codex_mcp_list(
+    *,
+    run_home: Path,
+    env: dict[str, str],
+    subprocess_run: SubprocessRunner,
+) -> tuple[list[dict[str, object]], AdapterReadinessFailure | None]:
+    stdout_text, failure = _run_codex_probe(
+        command=["codex", "mcp", "list", "--json"],
+        run_home=run_home,
+        env=env,
+        subprocess_run=subprocess_run,
+        failed_check="codex_auth_status",
+    )
+    if failure is not None:
+        return [], failure
+    try:
+        payload = json.loads(stdout_text)
+    except json.JSONDecodeError as exc:
+        return [], AdapterReadinessFailure(
+            failed_check="codex_auth_status",
+            reason=f"`codex mcp list --json` returned invalid JSON: {exc}.",
+        )
+    if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
+        return [], AdapterReadinessFailure(
+            failed_check="codex_auth_status",
+            reason="`codex mcp list --json` did not return a JSON list of servers.",
+        )
+    return payload, None
+
+
+def _load_codex_mcp_config(
+    *,
+    run_home: Path,
+    env: dict[str, str],
+    mcp_name: str,
+    subprocess_run: SubprocessRunner,
+) -> tuple[dict[str, object], AdapterReadinessFailure | None]:
+    stdout_text, failure = _run_codex_probe(
+        command=["codex", "mcp", "get", mcp_name, "--json"],
+        run_home=run_home,
+        env=env,
+        subprocess_run=subprocess_run,
+        failed_check="codex_config_visibility",
+        mcp_name=mcp_name,
+    )
+    if failure is not None:
+        return {}, failure
+    try:
+        payload = json.loads(stdout_text)
+    except json.JSONDecodeError as exc:
+        return {}, AdapterReadinessFailure(
+            failed_check="codex_config_visibility",
+            reason=f"`codex mcp get --json` returned invalid JSON: {exc}.",
+            mcp_name=mcp_name,
+        )
+    if not isinstance(payload, dict):
+        return {}, AdapterReadinessFailure(
+            failed_check="codex_config_visibility",
+            reason="`codex mcp get --json` did not return a JSON object.",
+            mcp_name=mcp_name,
+        )
+    return payload, None
+
+
+def _run_codex_probe(
+    *,
+    command: list[str],
+    run_home: Path,
+    env: dict[str, str],
+    subprocess_run: SubprocessRunner,
+    failed_check: str,
+    mcp_name: str | None = None,
+) -> tuple[str, AdapterReadinessFailure | None]:
+    try:
+        completed = subprocess_run(
+            command,
+            capture_output=True,
+            text=True,
+            cwd=run_home,
+            env=env,
+            timeout=15,
+            check=False,
+        )
+    except FileNotFoundError:
+        return "", AdapterReadinessFailure(
+            failed_check=failed_check,
+            reason="`codex` is not installed or not on PATH.",
+            mcp_name=mcp_name,
+        )
+    except subprocess.TimeoutExpired:
+        return "", AdapterReadinessFailure(
+            failed_check=failed_check,
+            reason=f"`{' '.join(command)}` timed out before Codex reported readiness data.",
+            mcp_name=mcp_name,
+        )
+    if completed.returncode != 0:
+        return "", AdapterReadinessFailure(
+            failed_check=failed_check,
+            reason=_render_probe_failure(command=command, returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr),
+            mcp_name=mcp_name,
+        )
+    return completed.stdout or "", None
+
+
+def _extract_transport(*, server_config: dict[str, object]) -> dict[str, object] | None:
+    transport = server_config.get("transport")
+    if isinstance(transport, dict):
+        return transport
+    return None
+
+
+def _check_codex_auth_state(
+    *,
+    mcp_name: str,
+    transport: dict[str, object],
+    listed_server: dict[str, object],
+) -> AdapterReadinessFailure | None:
+    if transport.get("type") != "streamable_http":
+        return None
+    auth_status = listed_server.get("auth_status")
+    if auth_status not in {"bearer_token", "oauth"}:
+        return AdapterReadinessFailure(
+            failed_check="codex_auth_status",
+            reason=f"Codex reported non-usable auth status `{auth_status}` for this streamable HTTP server.",
+            mcp_name=mcp_name,
+        )
+    return None
+
+
+def _probe_stdio_startability(
+    *,
+    mcp_name: str,
+    transport: dict[str, object],
+    run_home: Path,
+    env: dict[str, str],
+    subprocess_run: SubprocessRunner,
+) -> AdapterReadinessFailure | None:
+    if transport.get("type") != "stdio":
+        return None
+    command_name = transport.get("command")
+    if not isinstance(command_name, str) or not command_name.strip():
+        return AdapterReadinessFailure(
+            failed_check="command_startability",
+            reason="Codex config did not expose a non-empty stdio command.",
+            mcp_name=mcp_name,
+        )
+    command = [command_name]
+    raw_args = transport.get("args")
+    if raw_args is None:
+        args: list[str] = []
+    elif isinstance(raw_args, list) and all(isinstance(item, str) for item in raw_args):
+        args = list(raw_args)
+    else:
+        return AdapterReadinessFailure(
+            failed_check="command_startability",
+            reason="Codex config returned non-string stdio args.",
+            mcp_name=mcp_name,
+        )
+    command.extend(args)
+
+    probe_env = dict(env)
+    raw_env = transport.get("env")
+    if isinstance(raw_env, dict):
+        for key, value in raw_env.items():
+            if isinstance(key, str) and isinstance(value, str):
+                probe_env[key] = value
+
+    raw_cwd = transport.get("cwd")
+    cwd = run_home
+    if isinstance(raw_cwd, str) and raw_cwd.strip():
+        cwd = Path(raw_cwd)
+    timeout_sec = _probe_timeout_sec(transport.get("startup_timeout_sec"))
+    try:
+        completed = subprocess_run(
+            command,
+            input="",
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            env=probe_env,
+            timeout=timeout_sec,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    except FileNotFoundError:
+        return AdapterReadinessFailure(
+            failed_check="command_startability",
+            reason=f"Command `{command_name}` was not found.",
+            mcp_name=mcp_name,
+        )
+    except OSError as exc:
+        return AdapterReadinessFailure(
+            failed_check="command_startability",
+            reason=f"Command `{command_name}` could not start: {exc}.",
+            mcp_name=mcp_name,
+        )
+    return AdapterReadinessFailure(
+        failed_check="command_startability",
+        reason=_render_probe_failure(command=command, returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr),
+        mcp_name=mcp_name,
+    )
+
+
+def _probe_timeout_sec(raw_value: object) -> float:
+    if isinstance(raw_value, (int, float)) and not isinstance(raw_value, bool) and raw_value > 0:
+        return float(min(raw_value, 5))
+    return 5.0
+
+
+def _render_probe_failure(*, command: list[str], returncode: int, stdout: str | None, stderr: str | None) -> str:
+    stderr_text = (stderr or "").strip()
+    if stderr_text:
+        return stderr_text
+    stdout_text = (stdout or "").strip()
+    if stdout_text:
+        return stdout_text.splitlines()[-1]
+    return f"`{' '.join(command)}` exited with code {returncode}."
 
 
 def _expand_mcp_payload(

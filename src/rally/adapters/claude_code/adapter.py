@@ -12,6 +12,7 @@ from typing import Mapping
 
 from rally.adapters.base import (
     AdapterInvocation,
+    AdapterReadinessFailure,
     AdapterSessionRecord,
     RallyAdapter,
     SubprocessRunner,
@@ -105,7 +106,7 @@ class ClaudeCodeAdapter(RallyAdapter):
         session_id: str,
         cwd: Path,
         now=None,
-    ) -> AdapterSessionRecord:
+        ) -> AdapterSessionRecord:
         return record_claude_code_session(
             run_home=run_home,
             agent_slug=agent_slug,
@@ -113,6 +114,23 @@ class ClaudeCodeAdapter(RallyAdapter):
             cwd=cwd,
             now=now,
         )
+
+    def check_turn_readiness(
+        self,
+        *,
+        repo_root: Path,
+        workspace: WorkspaceContext,
+        run_dir: Path,
+        run_home: Path,
+        flow: FlowDefinition,
+        run_record: RunRecord,
+        agent: FlowAgent,
+        turn_index: int,
+        recorder: RunEventRecorder,
+        subprocess_run: SubprocessRunner,
+    ) -> AdapterReadinessFailure | None:
+        del repo_root, workspace, run_dir, run_home, flow, run_record, agent, turn_index, recorder, subprocess_run
+        return None
 
     def invoke(
         self,
