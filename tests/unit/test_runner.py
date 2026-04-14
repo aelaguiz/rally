@@ -227,7 +227,6 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("### Issue Note", prompt_text)
             self.assertNotIn("\n### Writer Issue Note\n", prompt_text)
             self.assertIn("Use the shared `rally-kernel` skill for that note.", prompt_text)
-            self.assertIn("Use the shared `rally-memory` skill only when a past lesson could help", prompt_text)
             self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', prompt_text)
             self.assertIn("Artistic Rationale", prompt_text)
             self.assertIn("### Rally Turn Result", prompt_text)

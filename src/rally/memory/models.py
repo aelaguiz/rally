@@ -74,16 +74,6 @@ class MemoryEntry:
             f"{self.body_markdown()}"
         )
 
-    def issue_markdown(self) -> str:
-        return (
-            "### Lesson\n"
-            f"{self.lesson.strip()}\n\n"
-            "### When This Matters\n"
-            f"{self.when_this_matters.strip()}\n\n"
-            "### What To Do\n"
-            f"{self.what_to_do.strip()}\n"
-        )
-
 
 @dataclass(frozen=True)
 class MemorySearchHit:

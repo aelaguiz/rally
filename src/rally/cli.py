@@ -9,8 +9,8 @@ from typing import TextIO
 from rally.domain.flow import FlowDefinition
 from rally.domain.run import ResumeRequest, RunRecord, RunRequest
 from rally.errors import RallyError, RallyUsageError
+from rally.memory.service import refresh_memory, save_memory, search_memory, use_memory
 from rally.services.issue_ledger import append_issue_note
-from rally.services.memory_runtime import refresh_memory, save_memory, search_memory, use_memory
 from rally.services.runner import resume_run, run_flow
 from rally.services.workspace import resolve_workspace
 from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display

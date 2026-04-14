@@ -6,12 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
-from rally.domain.memory import MemoryEntry, MemoryRefreshResult, MemorySaveResult, MemoryScope, MemorySearchHit
 from rally.errors import RallyStateError, RallyUsageError
-from rally.services.issue_ledger import append_memory_saved, append_memory_used
-from rally.services.memory_index import BridgeSubprocessRunner, refresh_memory_index, search_memory_index
-from rally.services.memory_store import load_memory_entry, save_memory_entry
-from rally.services.run_events import record_memory_saved, record_memory_used
+from rally.memory.events import record_memory_saved, record_memory_used
+from rally.memory.index import BridgeSubprocessRunner, refresh_memory_index, search_memory_index
+from rally.memory.models import MemoryEntry, MemoryRefreshResult, MemorySaveResult, MemoryScope, MemorySearchHit
+from rally.memory.store import load_memory_entry, save_memory_entry
 from rally.services.run_store import find_run_dir, load_run_record, load_run_state
 
 
@@ -119,12 +118,6 @@ def use_memory(
         turn_index=context.turn_index,
         agent_slug=context.scope.agent_slug,
     )
-    append_memory_used(
-        repo_root=context.repo_root,
-        run_id=context.run_id,
-        entry=entry,
-        turn_index=context.turn_index,
-    )
     return entry
 
 
@@ -163,12 +156,6 @@ def save_memory(
         save_result=save_result,
         turn_index=context.turn_index,
         agent_slug=context.scope.agent_slug,
-    )
-    append_memory_saved(
-        repo_root=context.repo_root,
-        run_id=context.run_id,
-        save_result=save_result,
-        turn_index=context.turn_index,
     )
     return save_result, refresh_result
 

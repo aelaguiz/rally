@@ -6,9 +6,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rally.domain.memory import MemoryScope
-from rally.services.memory_store import save_memory_entry
-from rally.services.memory_index import refresh_memory_index, search_memory_index
+from rally.memory.index import refresh_memory_index, search_memory_index
+from rally.memory.models import MemoryScope
+from rally.memory.store import save_memory_entry
 
 
 class MemoryIndexTests(unittest.TestCase):
@@ -46,10 +46,7 @@ class MemoryIndexTests(unittest.TestCase):
 
             self.assertEqual(result.indexed, 1)
             self.assertEqual(len(calls), 1)
-            self.assertEqual(
-                calls[0]["command"],
-                ["node", str(bridge_script), "refresh"],
-            )
+            self.assertEqual(calls[0]["command"], ["node", str(bridge_script), "refresh"])
             self.assertEqual(calls[0]["kwargs"]["cwd"], repo_root / "tools" / "qmd_bridge")
             self.assertEqual(
                 calls[0]["kwargs"]["env"]["XDG_CACHE_HOME"],
@@ -69,7 +66,7 @@ class MemoryIndexTests(unittest.TestCase):
             bridge_script.parent.mkdir(parents=True, exist_ok=True)
             bridge_script.write_text("// bridge\n", encoding="utf-8")
             scope = MemoryScope(flow_code="POM", agent_slug="poem_writer")
-            entry = save_memory_entry(
+            save_memory_entry(
                 repo_root=repo_root,
                 scope=scope,
                 run_id="POM-7",
@@ -81,7 +78,7 @@ class MemoryIndexTests(unittest.TestCase):
                     "# What To Do\n"
                     "Ask for one clear target before you ask for a rewrite.\n"
                 ),
-            ).entry
+            )
 
             def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
                 del kwargs

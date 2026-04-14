@@ -6,9 +6,9 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
-from rally.domain.memory import MemoryScope
 from rally.errors import RallyStateError
-from rally.services.memory_store import load_memory_entry_from_path, save_memory_entry
+from rally.memory.models import MemoryScope
+from rally.memory.store import load_memory_entry_from_path, save_memory_entry
 
 
 class MemoryStoreTests(unittest.TestCase):

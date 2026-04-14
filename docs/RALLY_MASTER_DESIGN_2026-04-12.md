@@ -96,7 +96,7 @@ This is the canonical split between Doctrine and Rally.
 - the Rally kernel skill
 - the Rally memory skill
 - repo-local memory files, QMD state, and memory indexing
-- memory issue-ledger readback and runtime event records
+- durable memory files, memory indexing, and runtime event records
 - the runtime's interpretation of validated final turn results
 
 ### `paperclip_agents` owns nothing in the framework
@@ -219,7 +219,7 @@ It should:
 - begin with the operator's brief exactly as entered
 - remain append-only after that initial brief
 - add one hidden `<!-- RALLY_ORIGINAL_ISSUE_END -->` marker before the first Rally-owned block
-- hold setup notes, serialized notes, normalized final-turn response records, memory-use and memory-save readback, and runner-generated status records
+- hold setup notes, serialized notes, normalized final-turn response records, and runner-generated status records
 - use one Markdown `---` divider between Rally-owned blocks after that marker
 - add `- Turn: \`N\`` on turn-scoped blocks without asking the agent to manage that line
 
@@ -286,7 +286,7 @@ The Rally memory skill should:
 
 - teach agents to use `rally memory search`, `rally memory use`, `rally memory save`, and `rally memory refresh`
 - keep memory as explicit CLI behavior instead of hidden prompt-only magic
-- keep notes run-local and cross-run lessons in the shared memory path
+- keep reusable lessons in the shared memory path
 
 The checked-in shared prompts under `stdlib/rally/prompts/rally/` should stay small and direct.
 The favored design is now:

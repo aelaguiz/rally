@@ -17,14 +17,10 @@ skills SoftwareEngineeringSkills: "Skills And Tools"
     how_to_use: "How To Use"
         "Start with `demo-git` for branch and status."
         "Use `repo-search` before you guess where code or tests live."
-        "Use `rally-memory` only when a past lesson could help."
         "Use `pytest-local` only when the turn needs proof."
 
     can_run: "Can Run"
         skill rally_kernel: rally.base_agent.RallyKernelSkill
-            requirement: Required
-
-        skill rally_memory: rally.base_agent.RallyMemorySkill
             requirement: Required
 
         skill demo_git: DemoGitSkill

@@ -5,7 +5,6 @@ skill RallyMemorySkill: "rally-memory"
         "Use this when a past lesson could help the current turn."
         "Use this when this turn learns a short lesson worth reusing later."
 
-
 document RallyMemoryEntryDocument: "Rally Memory Entry"
     section lesson: "Lesson"
         "State the lesson in plain words."
@@ -24,7 +23,7 @@ workflow RallyReadFirst: "Read First"
         "Read memory only when a past lesson could help."
 
 
-workflow RallyHowToTakeATurn: "How To Take A Turn"
+workflow RallyHowToTakeATurn: "Memory Turn Rules"
     turn_sequence: "Turn Sequence"
         "Start with the current issue and this role's local job."
         "When a past lesson could help, use `rally-memory` to search first."

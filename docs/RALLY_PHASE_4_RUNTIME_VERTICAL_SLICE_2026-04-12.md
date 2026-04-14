@@ -28,7 +28,7 @@ read strict final JSON results, including control-ready review finals, and drive
 state.
 The current repo also ships the first built-in Rally memory slice on top of that runtime:
 shared Doctrine memory contract, repo-local markdown truth, repo-local QMD state,
-Rally memory CLI, and visible memory issue and event records.
+Rally memory CLI, and visible memory runtime events.
 
 Use `docs/RALLY_CLI_AND_LOGGING_2026-04-13.md` for the focused command and
 logging contract.
@@ -71,7 +71,6 @@ What is real today:
 - durable memory markdown under `runs/memory/entries/<flow_code>/<agent_slug>/`
 - repo-local QMD state under `runs/memory/qmd/index.sqlite` and `runs/memory/qmd/cache/`
 - a pinned QMD bridge under `tools/qmd_bridge/`
-- `Memory Used` and `Memory Saved` blocks in `home/issue.md`
 - `memory_used` and `memory_saved` in the canonical runtime event stream
 - `logs/events.jsonl`
 - `logs/agents/<agent>.jsonl`
@@ -137,17 +136,19 @@ The current checked-in runtime surface is:
   - ships `issue note`, including repeatable `--field key=value`
   - ships `memory search`, `memory use`, `memory save`, and `memory refresh`
   - stamps `- Turn: \`N\`` on in-turn notes automatically when Rally launched that turn
-- `src/rally/domain/memory.py`
+- `src/rally/memory/models.py`
   - defines `MemoryScope`, `MemoryEntry`, `MemorySearchHit`, `MemorySaveResult`, and `MemoryRefreshResult`
-- `src/rally/services/memory_store.py`
+- `src/rally/memory/store.py`
   - keeps markdown under `runs/memory/entries/...` as the durable memory truth
-- `src/rally/services/memory_index.py`
+- `src/rally/memory/index.py`
   - forces repo-local QMD paths
   - talks only to the pinned Node bridge
   - owns scoped refresh and search behavior
-- `src/rally/services/memory_runtime.py`
+- `src/rally/memory/service.py`
   - resolves scope from run state and env
   - keeps memory CLI behavior thin and Rally-owned
+- `src/rally/memory/events.py`
+  - writes memory-specific runtime events through the shared run-event path
 - `src/rally/services/run_store.py`
   - allocates run ids
   - writes `run.yaml` and `state.yaml`
@@ -164,14 +165,13 @@ The current checked-in runtime surface is:
   - renders the blocker text Rally writes when those checks fail
 - `src/rally/services/issue_ledger.py`
   - appends Rally-stamped notes and runtime event blocks
-  - appends normalized `Memory Used` and `Memory Saved` readback
   - renders flat structured note fields as `- Field <key>: \`<value>\`` header lines
   - inserts one hidden original-issue marker before the first Rally-owned block
   - can recover the original issue from the earliest issue snapshot
   - snapshots the full issue log after each append
 - `src/rally/services/run_events.py`
   - writes canonical run events
-  - records `memory_used` and `memory_saved`
+  - fans memory activity through `memory_used` and `memory_saved`
   - fans them out to whole-run logs, agent logs, and the rendered transcript
 - `tools/qmd_bridge/`
   - pins `@tobilu/qmd` `2.1.0`

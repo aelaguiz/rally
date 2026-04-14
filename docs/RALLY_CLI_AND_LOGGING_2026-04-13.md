@@ -222,7 +222,7 @@ What it does today:
 - reads one scoped markdown memory file
 - prints the memory body
 - records `memory_used` in the canonical runtime event stream
-- appends one normalized `## Memory Used` block to `home/issue.md`
+- does not append to `home/issue.md`
 
 `rally memory save` today:
 
@@ -231,7 +231,7 @@ What it does today:
 - writes or updates one markdown memory file
 - refreshes only the scoped QMD collection
 - records `memory_saved`
-- appends one normalized `## Memory Saved` block to `home/issue.md`
+- does not append to `home/issue.md`
 
 `rally memory refresh` today:
 
@@ -266,8 +266,6 @@ original issue for `resume --restart`.
 After that, Rally appends:
 
 - note blocks from `rally issue note`
-- `Memory Used` blocks from `rally memory use`
-- `Memory Saved` blocks from `rally memory save`
 - review-note blocks from `rally runtime review` when Rally consumes a review-native final response
 - `resume --edit` diff blocks when the operator changed `home/issue.md`
 - run-start records
@@ -296,7 +294,7 @@ The current Rally note block format is:
 ```
 
 Turn-scoped runtime blocks use the same optional `- Turn:` metadata line.
-That includes `Memory Used`, `Memory Saved`, `Rally Turn Result`, `Rally Done`, `Rally Blocked`, and
+That includes `Rally Turn Result`, `Rally Done`, `Rally Blocked`, and
 `Rally Sleeping` when the block belongs to one active turn.
 Non-turn blocks such as `Rally Run Started`, `Rally Archived`, and
 `user edited issue.md` stay unnumbered.

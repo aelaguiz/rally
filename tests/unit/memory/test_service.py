@@ -7,11 +7,11 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from rally.services.memory_runtime import save_memory, search_memory, use_memory
+from rally.memory.service import save_memory, search_memory, use_memory
 
 
-class MemoryRuntimeTests(unittest.TestCase):
-    def test_save_memory_writes_file_and_visible_records(self) -> None:
+class MemoryServiceTests(unittest.TestCase):
+    def test_save_memory_writes_file_and_event_only(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_run(repo_root=repo_root, run_id="POM-7", flow_code="POM", current_agent_slug="poem_writer")
@@ -38,6 +38,9 @@ class MemoryRuntimeTests(unittest.TestCase):
                     stderr="",
                 )
 
+            issue_path = repo_root / "runs" / "POM-7" / "home" / "issue.md"
+            before_issue = issue_path.read_text(encoding="utf-8")
+
             save_result, refresh_result = save_memory(
                 repo_root=repo_root,
                 run_id="POM-7",
@@ -45,17 +48,15 @@ class MemoryRuntimeTests(unittest.TestCase):
                 subprocess_run=fake_run,
             )
 
-            issue_text = (repo_root / "runs" / "POM-7" / "home" / "issue.md").read_text(encoding="utf-8")
             events_text = (repo_root / "runs" / "POM-7" / "logs" / "events.jsonl").read_text(encoding="utf-8")
 
             self.assertEqual(save_result.outcome, "created")
             self.assertEqual(refresh_result.indexed, 1)
             self.assertTrue(save_result.entry.path.is_file())
-            self.assertIn("## Memory Saved", issue_text)
-            self.assertIn("- Outcome: `created`", issue_text)
+            self.assertEqual(issue_path.read_text(encoding="utf-8"), before_issue)
             self.assertIn('"kind": "memory_saved"', events_text)
 
-    def test_use_memory_appends_issue_and_event(self) -> None:
+    def test_use_memory_records_event_only(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_run(repo_root=repo_root, run_id="POM-7", flow_code="POM", current_agent_slug="poem_writer")
@@ -89,7 +90,7 @@ class MemoryRuntimeTests(unittest.TestCase):
                 subprocess_run=fake_refresh,
             )
             issue_path = repo_root / "runs" / "POM-7" / "home" / "issue.md"
-            issue_path.write_text("# Brief\n\nWrite a sonnet.\n", encoding="utf-8")
+            before_issue = issue_path.read_text(encoding="utf-8")
 
             entry = use_memory(
                 repo_root=repo_root,
@@ -97,12 +98,10 @@ class MemoryRuntimeTests(unittest.TestCase):
                 memory_id=save_result.entry.memory_id,
             )
 
-            issue_text = issue_path.read_text(encoding="utf-8")
             events_text = (repo_root / "runs" / "POM-7" / "logs" / "events.jsonl").read_text(encoding="utf-8")
 
             self.assertEqual(entry.memory_id, save_result.entry.memory_id)
-            self.assertIn("## Memory Used", issue_text)
-            self.assertIn(f"- Memory ID: `{entry.memory_id}`", issue_text)
+            self.assertEqual(issue_path.read_text(encoding="utf-8"), before_issue)
             self.assertIn('"kind": "memory_used"', events_text)
 
     def test_search_memory_does_not_touch_issue_log(self) -> None:

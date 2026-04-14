@@ -2,6 +2,10 @@
 
 Plan doc: docs/RALLY_QMD_AGENT_MEMORY_MODEL_2026-04-13.md
 
+Historical note
+- Early entries record the first shipped memory shape.
+- Current repo truth moved the runtime implementation under `src/rally/memory/` and removed memory-specific issue-ledger writeback.
+
 ## Initial entry
 - Run started.
 - Current phase: Phase 1 - Land the shared Doctrine memory contract.
@@ -106,3 +110,17 @@ Plan doc: docs/RALLY_QMD_AGENT_MEMORY_MODEL_2026-04-13.md
   - A one-off raw bridge inspection command was started without forced `XDG_CACHE_HOME` during debugging. It created `~/.cache/qmd/`. I removed that cache and rechecked that `~/.cache/qmd/` is now missing again.
 - Next steps:
   - Hand control back to the next fresh audit so it can decide whether Phase 4 is now closed.
+
+## Cleanup follow-through after the notes-decoupling and package reorg pass
+- Work completed:
+  - Removed the memory-specific note-boundary language from the shared prompt and skill source.
+  - Moved the runtime implementation from the old flat files into `src/rally/memory/models.py`, `src/rally/memory/store.py`, `src/rally/memory/index.py`, `src/rally/memory/service.py`, and `src/rally/memory/events.py`.
+  - Moved memory-specific tests into `tests/unit/memory/`.
+  - Removed memory-specific issue-ledger writeback so `memory use` and `memory save` now surface through durable markdown plus `memory_used` and `memory_saved` runtime events.
+- Tests run + results:
+  - `uv run pytest tests/unit -q`
+  - passing on current head after the cleanup pass
+- Issues / deviations:
+  - None.
+- Next steps:
+  - Keep the canonical design docs aligned with this feature-package layout and event-only visibility model.

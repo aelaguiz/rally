@@ -7,9 +7,9 @@ import subprocess
 from pathlib import Path
 from typing import Callable
 
-from rally.domain.memory import MemoryRefreshResult, MemoryScope, MemorySearchHit
 from rally.errors import RallyStateError
-from rally.services.memory_store import load_memory_entry_from_path
+from rally.memory.models import MemoryRefreshResult, MemoryScope, MemorySearchHit
+from rally.memory.store import load_memory_entry_from_path
 
 BridgeSubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
 _FRONTMATTER_ID_RE = re.compile(r'\bid:\s*"([^"]+)"')

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import yaml
 
-from rally.domain.memory import MemoryEntry, MemorySaveResult, MemoryScope
 from rally.errors import RallyStateError
+from rally.memory.models import MemoryEntry, MemorySaveResult, MemoryScope
 
 _BODY_SECTION_TITLES = ("Lesson", "When This Matters", "What To Do")
 _BODY_SECTION_PATTERN = re.compile(r"(?m)^# (Lesson|When This Matters|What To Do)\s*$")
