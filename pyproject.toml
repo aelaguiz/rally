@@ -34,7 +34,7 @@ classifiers = [
 dependencies = [
     "doctrine>=1.0.1,<2",
     "PyYAML>=6,<7",
-    "rich>=14,<15",
+    "rich>=15.0.0,<16",
 ]
 
 [project.urls]
