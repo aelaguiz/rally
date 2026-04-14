@@ -34,6 +34,8 @@ If this file and the code disagree, the code wins.
 ## CLI
 
 The current checked-in CLI is small and explicit.
+Help output is still plain `argparse`, but it now includes quick examples and
+short next-step hints for the main operator paths.
 
 ### `rally workspace sync`
 
@@ -63,12 +65,34 @@ Current limits:
 If the current workspace is the Rally source repo itself, the command is a
 no-op and says the workspace already owns those built-ins.
 
+### `rally status`
+
+Current shape:
+
+```bash
+rally status [run-id]
+```
+
+What it does today:
+
+- reads run truth from `run.yaml` and `state.yaml`
+- with no `run-id`, lists active runs only
+- with `run-id`, shows one compact readable summary for either an active or archived run
+- prints the flow, status, current agent, turn, update time, issue path, and next-action hint
+- shows blocker reason, done summary, sleep details, and last result kind when those fields exist
+- keeps the command read-only and filesystem-first
+
+Current limits:
+
+- it does not inspect adapter logs or sessions to guess hidden state
+- it does not mutate runs
+
 ### `rally run`
 
 Current shape:
 
 ```bash
-rally run <flow_name> [--new]
+rally run <flow_name> [--new] [--step] [--from-file <path>]
 ```
 
 What it does today:
@@ -78,6 +102,8 @@ What it does today:
 - loads the rebuilt flow through `src/rally/services/flow_loader.py`
 - creates a real active run
 - when `--new` is passed, asks before it archives the current active run for the same flow
+- when `--step` is passed, runs one turn and then stops as `paused`
+- when `--from-file` is passed, reads that file and copies its text into the new run's `home/issue.md`
 - creates the run shell under `runs/active/<run-id>/home/`
 - opens the editor for a missing or blank `home/issue.md` on a real TTY when an editor is available
 - strips the starter prompt back out before saving the issue
@@ -94,8 +120,9 @@ What it does today:
 - opens a live color stream on a TTY
 - falls back to plain text when stdout is not a TTY
 - keeps running turns through the selected adapter across handoffs
+- stops after one turn and marks the next agent as current when `--step` is passed
 - stops only when the run reaches `done`, hits a blocker, hits a runtime failure such as a timeout, or hits the per-command turn cap
-- prints the resulting run status line
+- prints the resulting run status line plus the usual next command
 
 Current limits:
 
@@ -108,17 +135,22 @@ If the shell is not interactive, no editor is available, or the editor closes
 without real issue text, `rally run` stops with exit code `2` after creating
 the run shell. The operator writes `home/issue.md` and then uses
 `rally resume <run-id>`.
+If `--from-file` is passed, Rally validates that file before it archives any
+active run or creates a new one. If the file is real UTF-8 text and not
+blank, Rally copies it into `home/issue.md` and skips the issue editor.
 If `--new` finds an active run for that flow, Rally asks before it archives
 that run. If the operator says yes, Rally moves that run under
 `runs/archive/` and starts a fresh active run. If the shell is not
 interactive, Rally refuses `--new` because it cannot ask.
+If `--step` is passed and the turn hands off, Rally writes `paused` state,
+adds one `Rally Paused` ledger block, and leaves the next agent as current.
 
 ### `rally resume`
 
 Current shape:
 
 ```bash
-rally resume <run-id> [--edit|--restart]
+rally resume <run-id> [--edit|--restart] [--step]
 ```
 
 What it does today:
@@ -127,9 +159,11 @@ What it does today:
 - takes the flow lock and rebuilds that run's flow through Doctrine before loading compiled agents
 - when `--edit` is passed, opens the current `home/issue.md` in place before Rally tries the turn
 - when `--restart` is passed, asks before Rally archives the old run and starts a fresh run from the original issue
+- when `--step` is passed, runs one turn and then stops as `paused`
 - opens the same issue editor path as `rally run` when `home/issue.md` is missing or blank on a real TTY
 - refuses archived runs
 - refuses done runs for plain resume
+- resumes paused runs with plain `resume` or `resume --step`
 - lets a blocked run try again after `--edit` saves a non-empty issue
 - lets a blocked or done run restart from the original issue when `--restart` is confirmed
 - can still resume a legacy sleeping run after its wake time
@@ -143,6 +177,7 @@ What it does today:
 - reloads any flow-declared runtime prompt-input sections before each turn
 - blocks `handoff` or `done` when a flow-declared guarded git repo is missing,
   not a git work tree, or dirty
+- prints the resulting run status line plus the usual next command
 
 If `--edit` is passed, Rally edits the real `home/issue.md` file.
 It does not seed or strip the starter prompt for that path.
@@ -156,12 +191,15 @@ unified diff before the run resumes.
 If `--restart` is passed, Rally refuses to edit in place. It asks for
 confirmation on a real TTY, archives the old run, restores only the original
 issue into a fresh run with a new run id, and starts that new run from turn 0.
+If `--step` is passed and the turn hands off, Rally leaves the next agent as
+current, marks the run `paused`, and waits for the operator to resume.
 
 ### `runtime.max_command_turns`
 
 Each flow now sets `runtime.max_command_turns` in `flow.yaml`.
 This is a hard cap on how many turns one `rally run` or `rally resume`
 command can start before Rally stops and blocks the run.
+It is separate from `--step`, which is the operator-facing one-turn command.
 
 The cap is checked before the next turn starts.
 If Rally hits it, Rally keeps the next agent as current, writes a clear
@@ -186,6 +224,25 @@ What Rally does today:
   - `RALLY_RUN_HOME`
   - `RALLY_RUN_ID`
   - `RALLY_WORKSPACE_DIR`
+- also passes any optional `runtime.env` values from `flow.yaml`
+- lets `runtime.env` override duplicate shell env vars
+
+### `runtime.env`
+
+A flow may declare one optional `runtime.env` map in `flow.yaml`.
+
+What Rally does today:
+
+- accepts a flat string map only
+- applies it during startup host-input checks, the setup script,
+  prompt-input command, and adapter launches
+- expands rooted Rally paths such as `workspace:fixtures/project` before launch
+- lets `runtime.env` satisfy `host_inputs.required_env`
+- lets `host_inputs.required_files` and `required_directories` resolve
+  `host:$VAR` paths from that same effective startup env
+- lets flow values win over duplicate shell env vars
+- keeps Rally and adapter-reserved keys out of `runtime.env`
+- does not copy those flow-only env vars into `logs/adapter_launch/*.json`
 - writes one `INPUTS` lifecycle event before the command and one `INPUTS OK`
   or failure event after it
 
@@ -308,7 +365,7 @@ After that, Rally appends:
 - `resume --edit` diff blocks when the operator changed `home/issue.md`
 - run-start records
 - turn-result records
-- blocked or done status records when they apply
+- paused, blocked, or done status records when they apply
 
 Rally writes one Markdown thematic break, `---`, between Rally-owned blocks.
 It does not add a leading divider at the top of the file.
@@ -362,6 +419,10 @@ Adapter-specific launchers then add their own narrow extras:
 - Codex adds `CODEX_HOME`
 - Claude adds `ENABLE_CLAUDEAI_MCP_SERVERS=false`
 
+Rally applies any optional `runtime.env` values before those adapter extras.
+Rally also uses that same merged env before startup host-input checks.
+Rally-owned and adapter-owned env keys still win last.
+
 The runner uses those values with these current launch shapes:
 
 ```bash
@@ -390,7 +451,9 @@ The runtime also:
 
 - injects the refreshed run-home `AGENTS.md` readback directly on stdin
 - appends runtime prompt inputs when the flow declares a prompt-input command
-- keeps Codex project-doc discovery off with `project_doc_max_bytes = 0`
+- merges optional flow `runtime.env` values before startup host-input checks,
+  setup, and adapter launch
+- keeps Codex project-doc discovery off inside the adapter
 - saves one adapter session id per agent for later resume
 - uses `RALLY_TURN_NUMBER` so in-turn `rally issue note` calls can stamp the
   right turn without asking the agent to manage that metadata

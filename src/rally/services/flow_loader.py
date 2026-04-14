@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -31,12 +32,16 @@ from rally.domain.rooted_path import (
     WORKSPACE_ROOT,
     PathRoot,
     RootedPath,
+    maybe_parse_rooted_path,
     parse_rooted_path,
     resolve_rooted_path,
 )
 from rally.errors import RallyConfigError
 
 SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS = frozenset({1})
+_FLOW_RUNTIME_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_FLOW_RUNTIME_ENV_ALLOWED_ROOTS = frozenset({HOME_ROOT, FLOW_ROOT, WORKSPACE_ROOT, HOST_ROOT})
+_RESERVED_FLOW_RUNTIME_ENV_KEYS = frozenset({"CODEX_HOME", "ENABLE_CLAUDEAI_MCP_SERVERS"})
 
 
 def load_flow_code(*, repo_root: Path, flow_name: str) -> str:
@@ -100,6 +105,7 @@ def load_flow_definition(
         "guarded_git_repos",
         context="runtime",
     )
+    runtime_env = _load_runtime_env(runtime_payload=runtime_payload)
     adapter_args = _require_mapping(runtime_payload, "adapter_args", context="runtime")
     get_adapter(adapter_name).validate_args(args=adapter_args)
     prompt_input_command_raw = runtime_payload.get("prompt_input_command")
@@ -147,6 +153,7 @@ def load_flow_definition(
         start_agent_key=start_agent_key,
         max_command_turns=max_command_turns,
         guarded_git_repos=guarded_git_repos,
+        runtime_env=runtime_env,
         host_inputs=host_inputs,
         agents=agents,
         adapter=AdapterConfig(name=adapter_name, prompt_input_command=prompt_input_command, args=adapter_args),
@@ -238,6 +245,32 @@ def _load_host_inputs(*, payload: Mapping[str, Any]) -> FlowHostInputs:
             example="workspace:fixtures/data",
         ),
     )
+
+
+def _load_runtime_env(*, runtime_payload: Mapping[str, Any]) -> dict[str, str]:
+    raw_env = runtime_payload.get("env")
+    if raw_env is None:
+        return {}
+    env_payload = _require_mapping(runtime_payload, "env", context="runtime")
+
+    runtime_env: dict[str, str] = {}
+    for key, value in env_payload.items():
+        if not isinstance(key, str) or not _FLOW_RUNTIME_ENV_KEY_RE.fullmatch(key):
+            raise RallyConfigError(
+                "`runtime.env` keys must be env var names like `PROJECT_ROOT`."
+            )
+        if key.startswith("RALLY_") or key in _RESERVED_FLOW_RUNTIME_ENV_KEYS:
+            raise RallyConfigError(f"`runtime.env.{key}` is reserved for Rally or the adapter.")
+        if not isinstance(value, str) or not value:
+            raise RallyConfigError(f"`runtime.env.{key}` must be a non-empty string in runtime.")
+        maybe_parse_rooted_path(
+            value,
+            context=f"`runtime.env.{key}`",
+            allowed_roots=_FLOW_RUNTIME_ENV_ALLOWED_ROOTS,
+            example="workspace:fixtures/project",
+        )
+        runtime_env[key] = value
+    return runtime_env
 
 
 def _load_compiled_agent_contract(

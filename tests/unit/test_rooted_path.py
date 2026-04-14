@@ -135,6 +135,28 @@ class RootedPathTests(unittest.TestCase):
                 Path(temp_dir).resolve(),
             )
 
+    def test_resolve_host_path_from_explicit_env_mapping(self) -> None:
+        rooted = parse_rooted_path(
+            "host:$PSMOBILE_SOURCE_REPO",
+            context="host directory",
+            allowed_roots={HOST_ROOT},
+            example="host:$PSMOBILE_SOURCE_REPO",
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            os.environ,
+            {"PSMOBILE_SOURCE_REPO": "/tmp/wrong"},
+            clear=False,
+        ):
+            self.assertEqual(
+                resolve_rooted_path(
+                    rooted,
+                    env={"PSMOBILE_SOURCE_REPO": temp_dir},
+                    context="host directory",
+                ),
+                Path(temp_dir).resolve(),
+            )
+
     def test_rejects_unresolved_host_env_var(self) -> None:
         rooted = parse_rooted_path(
             "host:$PSMOBILE_SOURCE_REPO",

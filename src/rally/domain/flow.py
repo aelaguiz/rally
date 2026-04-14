@@ -127,11 +127,13 @@ class FlowDefinition:
     start_agent_key: str
     max_command_turns: int
     guarded_git_repos: tuple[Path, ...]
+    runtime_env: Mapping[str, str]
     host_inputs: FlowHostInputs
     agents: Mapping[str, FlowAgent]
     adapter: AdapterConfig
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "runtime_env", MappingProxyType(dict(self.runtime_env)))
         object.__setattr__(self, "agents", MappingProxyType(dict(self.agents)))
 
     def agent(self, agent_key: str) -> FlowAgent:
