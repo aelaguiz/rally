@@ -44,6 +44,13 @@ class AdapterInvocation:
     session_id: str | None
 
 
+@dataclass(frozen=True)
+class AdapterReadinessFailure:
+    failed_check: str
+    reason: str
+    mcp_name: str | None = None
+
+
 class RallyAdapter(Protocol):
     name: str
     display_name: str
@@ -90,6 +97,22 @@ class RallyAdapter(Protocol):
         now: datetime | None = None,
     ) -> AdapterSessionRecord:
         """Persist the adapter session for one agent."""
+
+    def check_turn_readiness(
+        self,
+        *,
+        repo_root: Path,
+        workspace: "WorkspaceContext",
+        run_dir: Path,
+        run_home: Path,
+        flow: "FlowDefinition",
+        run_record: "RunRecord",
+        agent: "FlowAgent",
+        turn_index: int,
+        recorder: RunEventRecorder,
+        subprocess_run: "SubprocessRunner",
+    ) -> AdapterReadinessFailure | None:
+        """Return one blocker when adapter prerequisites are not ready."""
 
     def invoke(
         self,
