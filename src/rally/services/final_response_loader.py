@@ -20,6 +20,7 @@ from rally.errors import RallyStateError
 class LoadedFinalResponse:
     payload: Mapping[str, object]
     turn_result: TurnResult
+    agent_issues: str | None = None
     review_note_markdown: str | None = None
 
 
@@ -41,11 +42,16 @@ def load_agent_final_response(
     payload = load_turn_result_payload(last_message_file=last_message_file)
     try:
         if compiled_agent.review is None:
-            return LoadedFinalResponse(payload=payload, turn_result=parse_turn_result(payload))
+            return LoadedFinalResponse(
+                payload=payload,
+                turn_result=parse_turn_result(payload),
+                agent_issues=_optional_agent_issues(payload),
+            )
         turn_result = _parse_review_turn_result(payload=payload, review=compiled_agent.review)
         return LoadedFinalResponse(
             payload=payload,
             turn_result=turn_result,
+            agent_issues=_optional_agent_issues(payload),
             review_note_markdown=_render_review_note_markdown(payload=payload, review=compiled_agent.review),
         )
     except ValueError as exc:
@@ -82,6 +88,15 @@ def _strip_json_fence(raw_text: str) -> str:
     if not lines[0].startswith("```") or lines[-1].strip() != "```":
         return raw_text
     return "\n".join(lines[1:-1]).strip()
+
+
+def _optional_agent_issues(payload: Mapping[str, object]) -> str | None:
+    value = payload.get("agent_issues")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("`agent_issues` must be a non-empty string when present.")
+    return value
 
 
 def _parse_review_turn_result(

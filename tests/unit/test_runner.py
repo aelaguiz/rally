@@ -168,6 +168,40 @@ class RunnerTests(unittest.TestCase):
                 fake_run.calls[0]["command"],
             )
 
+    def test_resume_run_records_agent_issues_in_issue_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+            fake_run = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-1",
+                        "last_message": {
+                            "kind": "done",
+                            "next_owner": None,
+                            "summary": "verified",
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                            "agent_issues": "Needed clearer fixture naming.",
+                        },
+                    }
+                ]
+            )
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=fake_run,
+            )
+
+            issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("- Agent Issues: Needed clearer fixture naming.", issue_text)
+            self.assertIn("## Rally Done\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
+
     def test_run_flow_step_pauses_after_one_turn(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()

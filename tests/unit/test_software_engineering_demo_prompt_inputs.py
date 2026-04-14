@@ -32,6 +32,7 @@ class SoftwareEngineeringDemoPromptInputTests(unittest.TestCase):
 - Source: `rally runtime`
 - Agent: `01_architect`
 - Result: `handoff`
+- Agent Issues: none
 - Next Owner: `critic`
 """.strip()
 
@@ -51,6 +52,7 @@ class SoftwareEngineeringDemoPromptInputTests(unittest.TestCase):
 - Source: `rally runtime`
 - Agent: `04_qa_docs_tester`
 - Result: `handoff`
+- Agent Issues: Needs one more docs pass.
 - Next Owner: `critic`
 """.strip()
 
