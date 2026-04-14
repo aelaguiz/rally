@@ -69,7 +69,6 @@ The prompt graph can stay Doctrine-authored.
 - `src/rally/services/run_store.py`
 - `src/rally/adapters/codex/launcher.py`
 - `src/rally/adapters/codex/event_stream.py`
-- `src/rally/adapters/codex/result_contract.py`
 - `src/rally/adapters/codex/session_store.py`
 - `tests/unit/test_launcher.py`
 - `tests/unit/test_runner.py`

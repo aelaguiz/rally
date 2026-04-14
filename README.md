@@ -5,7 +5,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/aelaguiz/rally/ci.yml?branch=main&label=ci)](https://github.com/aelaguiz/rally/actions/workflows/ci.yml)
 [![Doctrine-powered](https://img.shields.io/badge/authored%20with-Doctrine-6E56CF.svg)](https://github.com/aelaguiz/doctrine)
 
-[Doctrine](https://github.com/aelaguiz/doctrine) · [Contributing](CONTRIBUTING.md)
+[Doctrine](https://github.com/aelaguiz/doctrine) · [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
 
 Run coding-agent workflows from plain repo files.
 
@@ -128,6 +128,9 @@ If the story only works when the control plane is hidden, the runtime is not tru
 
 - Use [Discussions](https://github.com/aelaguiz/rally/discussions) for questions and design talk.
 - Use [Issues](https://github.com/aelaguiz/rally/issues) for clear bugs or scoped proposals.
+- Use [SUPPORT.md](SUPPORT.md) when you are not sure which path fits.
+- Use [SECURITY.md](SECURITY.md) for security reports.
+- Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) in project spaces.
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for the bootstrap and proof commands.
 
 If this direction is useful, star the repo and watch releases.

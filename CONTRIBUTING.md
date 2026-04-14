@@ -57,6 +57,9 @@ Pick the smallest proof that matches the change:
 
 - Use GitHub Discussions for questions and design talk.
 - Use GitHub Issues for bugs and scoped feature requests.
+- Use `SUPPORT.md` if you need the right help path first.
+- Use `SECURITY.md` for security issues.
+- Follow `CODE_OF_CONDUCT.md` in project spaces.
 
 ## Before you call work done
 
