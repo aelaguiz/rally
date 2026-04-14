@@ -4,12 +4,13 @@ from pathlib import Path
 
 from rally.adapters.base import build_rally_launch_env, write_adapter_launch_record
 
+_DISABLED_CLAUDE_AI_MCP = "false"
 
-def build_codex_launch_env(
+
+def build_claude_code_launch_env(
     *,
     workspace_dir: Path,
     cli_bin: Path,
-    run_home: Path,
     run_id: str,
     flow_code: str,
     agent_slug: str,
@@ -24,11 +25,11 @@ def build_codex_launch_env(
             agent_slug=agent_slug,
             turn_index=turn_index,
         ),
-        "CODEX_HOME": str(run_home.resolve()),
+        "ENABLE_CLAUDEAI_MCP_SERVERS": _DISABLED_CLAUDE_AI_MCP,
     }
 
 
-def write_codex_launch_record(
+def write_claude_code_launch_record(
     *,
     run_dir: Path,
     turn_index: int,
@@ -46,5 +47,5 @@ def write_codex_launch_record(
         cwd=cwd,
         env=env,
         timeout_sec=timeout_sec,
-        extra_env_keys=("CODEX_HOME",),
+        extra_env_keys=("ENABLE_CLAUDEAI_MCP_SERVERS",),
     )

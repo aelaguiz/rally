@@ -7,16 +7,21 @@ related:
   - docs/RALLY_MASTER_DESIGN_2026-04-12.md
   - docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md
   - src/rally/cli.py
+  - src/rally/adapters/base.py
+  - src/rally/adapters/claude_code/launcher.py
+  - src/rally/adapters/claude_code/event_stream.py
   - src/rally/services/issue_ledger.py
   - src/rally/services/run_events.py
+  - src/rally/services/final_response_loader.py
   - src/rally/terminal/display.py
-  - src/rally/adapters/codex/event_stream.py
   - src/rally/adapters/codex/launcher.py
   - tests/unit/test_cli.py
   - tests/unit/test_issue_ledger.py
   - tests/unit/test_launcher.py
   - tests/unit/test_run_events.py
   - tests/unit/test_codex_event_stream.py
+  - tests/unit/test_claude_code_event_stream.py
+  - tests/unit/test_claude_code_launcher.py
 ---
 
 # Summary
@@ -51,14 +56,15 @@ What it does today:
 - strips the starter prompt back out before saving the issue
 - still fails loud unless `home/issue.md` ends up with non-empty text
 - prepares the full run home only after `home/issue.md` is ready
-- refreshes `home/agents/`, `home/skills/`, `home/mcps/`, `config.toml`, and Codex auth links from current repo state before the next turn starts
+- refreshes `home/agents/`, `home/skills/`, `home/mcps/`, and adapter-owned
+  bootstrap files from current repo state before the next turn starts
 - runs flow setup only the first time the run home becomes ready
 - loads any flow-declared runtime prompt-input sections before each turn
 - blocks `handoff` or `done` when a flow-declared guarded git repo is missing,
   not a git work tree, or dirty
 - opens a live color stream on a TTY
 - falls back to plain text when stdout is not a TTY
-- keeps running turns through Codex across handoffs
+- keeps running turns through the selected adapter across handoffs
 - stops only when the run reaches `done`, hits a blocker, hits a runtime failure such as a timeout, or hits the per-command turn cap
 - prints the resulting run status line
 
@@ -98,10 +104,11 @@ What it does today:
 - lets a blocked run try again after `--edit` saves a non-empty issue
 - lets a blocked or done run restart from the original issue when `--restart` is confirmed
 - can still resume a legacy sleeping run after its wake time
-- reuses the saved Codex session id when one exists
+- reuses the saved adapter session id when one exists
 - opens the same live stream rules as `rally run`
 - keeps going across handoffs until Rally reaches a real stop point
-- refreshes `home/agents/`, `home/skills/`, `home/mcps/`, `config.toml`, and Codex auth links before the next turn starts
+- refreshes `home/agents/`, `home/skills/`, `home/mcps/`, and adapter-owned
+  bootstrap files before the next turn starts
 - does not rerun flow setup after the run home is already ready
 - reloads any flow-declared runtime prompt-input sections before each turn
 - blocks `handoff` or `done` when a flow-declared guarded git repo is missing,
@@ -306,13 +313,12 @@ Snapshot behavior today:
 - snapshot filenames use the UTC pattern
   `YYYYMMDDTHHMMSSffffffZ-issue.md`
 
-## Codex Launch Env
+## Adapter Launch Env
 
-The current Codex launch helper is small and real.
+The current shared launch-env path is small and real.
 
-`src/rally/adapters/codex/launcher.py` builds only these env vars today:
+`src/rally/adapters/base.py` builds these shared env vars today:
 
-- `CODEX_HOME`
 - `RALLY_WORKSPACE_DIR`
 - `RALLY_CLI_BIN`
 - `RALLY_RUN_ID`
@@ -320,7 +326,12 @@ The current Codex launch helper is small and real.
 - `RALLY_AGENT_SLUG`
 - `RALLY_TURN_NUMBER`
 
-The runner uses those values with this Codex launch shape:
+Adapter-specific launchers then add their own narrow extras:
+
+- Codex adds `CODEX_HOME`
+- Claude adds `ENABLE_CLAUDEAI_MCP_SERVERS=false`
+
+The runner uses those values with these current launch shapes:
 
 ```bash
 codex exec \
@@ -332,19 +343,33 @@ codex exec \
   -o <last-message-file>
 ```
 
+```bash
+claude -p \
+  --output-format stream-json \
+  --verbose \
+  --permission-mode dontAsk \
+  --mcp-config <run-home>/claude_code/mcp.json \
+  --strict-mcp-config \
+  --tools <explicit-list> \
+  --allowedTools <explicit-list> \
+  --json-schema <schema-text>
+```
+
 The runtime also:
 
 - injects the refreshed run-home `AGENTS.md` readback directly on stdin
 - appends runtime prompt inputs when the flow declares a prompt-input command
-- sets `project_doc_max_bytes = 0`
-- saves the Codex session id per agent for later resume
+- keeps Codex project-doc discovery off with `project_doc_max_bytes = 0`
+- saves one adapter session id per agent for later resume
 - uses `RALLY_TURN_NUMBER` so in-turn `rally issue note` calls can stamp the
   right turn without asking the agent to manage that metadata
 
 ## MCP Readiness Gap
 
-Today Rally refreshes MCP entries in `config.toml` and refreshes Codex auth
-links on each `run` or `resume`.
+Today Rally refreshes adapter bootstrap on each `run` or `resume`.
+For Codex that still means `config.toml` plus auth links.
+For Claude that now means generated `home/claude_code/mcp.json`, the
+`home/.claude/skills` link, and `ENABLE_CLAUDEAI_MCP_SERVERS=false`.
 That closes the stale-home gap, but it is not the full readiness rule yet.
 
 Rally does not yet prove that a required MCP can start, that its auth is
@@ -388,14 +413,14 @@ That event stream now covers:
 
 - Rally lifecycle events such as run create, resume, home prep, setup, prompt-input load, launch, and final turn status
 - `memory_used` and `memory_saved`
-- Codex session start or resume events
-- assistant output lines when Codex emits text chunks
-- reasoning summary lines when Codex emits reasoning items
-- tool start, success, and failure summaries when Codex exposes item events
+- adapter session start or resume events
+- assistant output lines when an adapter emits text chunks
+- reasoning summary lines when an adapter exposes them
+- tool start, success, and failure summaries when an adapter exposes them
 - token-use summaries
 - stderr lines, warnings, and hard errors
 
-Unknown Codex JSON events still stay in the raw per-turn `exec.jsonl` file.
+Unknown adapter JSON events still stay in the raw per-turn `exec.jsonl` file.
 Rally keeps them out of the live stream unless they look like warnings or
 errors.
 
@@ -424,7 +449,8 @@ The color rules are still simple:
 - timestamps: dim
 - Rally lifecycle: cyan
 - agent labels: per-agent background colors in flow order on a TTY
-- reasoning summaries: magenta, with indented detail lines when Codex sends more than one summary line
+- reasoning summaries: magenta, with indented detail lines when an adapter
+  sends more than one summary line
 - tool traces: bright blue, with indented detail lines for short args, results, exit codes, or changed paths
 - final success state: green
 - warnings: amber
@@ -433,7 +459,7 @@ The color rules are still simple:
 `logs/rendered.log` still keeps the plain one-line format. The rich detail rows
 only show up in the live TTY stream.
 
-Rally shows the reasoning summary that `codex exec --json` exposes today. It
+Rally shows the reasoning summary that the adapter stream exposes today. It
 does not show raw chain-of-thought.
 
 ## Remaining Gaps
@@ -452,7 +478,7 @@ Use the docs in this order:
 2. this doc
 3. `docs/RALLY_PHASE_4_RUNTIME_VERTICAL_SLICE_2026-04-12.md`
 4. the current code in `src/rally/cli.py`, `src/rally/services/issue_ledger.py`,
-   and `src/rally/adapters/codex/launcher.py`
+   `src/rally/adapters/base.py`, and the adapter launchers
 
 That gives you:
 

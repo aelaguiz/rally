@@ -14,8 +14,9 @@ related:
   - stdlib/rally/prompts/rally/turn_results.prompt
   - skills/rally-kernel/SKILL.md
   - src/rally/cli.py
+  - src/rally/adapters/base.py
   - src/rally/services/issue_ledger.py
-  - src/rally/adapters/codex/launcher.py
+  - src/rally/services/final_response_loader.py
 ---
 
 # Summary
@@ -27,7 +28,8 @@ Phase 3 changed Rally to one simple communication model:
 
 There is no separate handoff artifact.
 There is no second return path.
-The final JSON still ends the turn through one adapter path.
+The final JSON still ends the turn through one shared final-response path after
+adapter execution.
 Many turns use one flat five-key object.
 Review-native turns may use control-ready Doctrine review JSON instead.
 
@@ -60,8 +62,10 @@ Review-native turns may use control-ready Doctrine review JSON instead.
   - ships `rally issue note`, including repeatable `--field key=value`
 - `src/rally/services/issue_ledger.py`
   - owns note append, flat note-field header lines, issue-history snapshots, Markdown `---` dividers, and optional turn labels
-- `src/rally/adapters/codex/launcher.py`
-  - builds the required launch env map, including the active turn number for note labeling
+- `src/rally/adapters/base.py`
+  - builds the shared Rally launch env map, including the active turn number for note labeling
+- `src/rally/services/final_response_loader.py`
+  - keeps one shared final JSON read path after adapter execution
 
 # Doctrine Note
 
@@ -80,7 +84,8 @@ The Phase 3 proof path is:
 
 - rebuild the affected flows with the paired Doctrine compiler into `flows/*/build/agents/*`
 - inspect emitted `AGENTS.md` and `AGENTS.contract.json`
-- run the focused Rally unit tests for note writes, launcher env setup, flow loading, and turn-result parsing
+- run the focused Rally unit tests for note writes, shared launch-env setup,
+  flow loading, and turn-result parsing
 
 # Live Truth
 

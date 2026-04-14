@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from rally.adapters.registry import get_adapter
 from rally.domain.flow import (
     AdapterConfig,
     CompiledAgentContract,
@@ -14,6 +15,7 @@ from rally.domain.flow import (
     FinalOutputContract,
     FlowAgent,
     FlowDefinition,
+    FlowHostInputs,
     ReviewContract,
     ReviewFinalResponseContract,
     ReviewOutcomeContract,
@@ -80,6 +82,7 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
         context="runtime",
     )
     adapter_args = _require_mapping(runtime_payload, "adapter_args", context="runtime")
+    get_adapter(adapter_name).validate_args(args=adapter_args)
     prompt_input_command_rel = runtime_payload.get("prompt_input_command")
     prompt_input_command = None
     if prompt_input_command_rel is not None:
@@ -106,6 +109,7 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
             relative_path=setup_home_script_rel,
             context="setup_home_script",
         )
+    host_inputs = _load_host_inputs(payload=payload)
 
     return FlowDefinition(
         name=flow_name,
@@ -118,6 +122,7 @@ def load_flow_definition(*, repo_root: Path, flow_name: str) -> FlowDefinition:
         start_agent_key=start_agent_key,
         max_command_turns=max_command_turns,
         guarded_git_repos=guarded_git_repos,
+        host_inputs=host_inputs,
         agents=agents,
         adapter=AdapterConfig(name=adapter_name, prompt_input_command=prompt_input_command, args=adapter_args),
     )
@@ -168,6 +173,30 @@ def _load_compiled_agents(*, repo_root: Path, build_agents_dir: Path) -> dict[st
     if not compiled_agents:
         raise RallyConfigError(f"No compiled agents were found under `{build_agents_dir}`.")
     return compiled_agents
+
+
+def _load_host_inputs(*, payload: Mapping[str, Any]) -> FlowHostInputs:
+    raw_host_inputs = payload.get("host_inputs")
+    if raw_host_inputs is None:
+        return FlowHostInputs(required_env=(), required_files=(), required_directories=())
+    host_inputs_payload = _require_mapping(payload, "host_inputs", context="flow.yaml")
+    return FlowHostInputs(
+        required_env=_require_unique_string_list(
+            host_inputs_payload,
+            "required_env",
+            context="host_inputs",
+        ),
+        required_files=_require_unique_string_list(
+            host_inputs_payload,
+            "required_files",
+            context="host_inputs",
+        ),
+        required_directories=_require_unique_string_list(
+            host_inputs_payload,
+            "required_directories",
+            context="host_inputs",
+        ),
+    )
 
 
 def _load_compiled_agent_contract(
@@ -523,6 +552,26 @@ def _require_string_list(payload: Mapping[str, Any], key: str, *, context: str) 
     if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
         raise RallyConfigError(f"`{key}` must be a list of non-empty strings in {context}.")
     return tuple(value)
+
+
+def _require_unique_string_list(payload: Mapping[str, Any], key: str, *, context: str) -> tuple[str, ...]:
+    value = payload.get(key)
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise RallyConfigError(f"`{key}` must be a list of non-empty strings in {context}.")
+
+    items: list[str] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            raise RallyConfigError(f"`{key}[{index}]` must be a non-empty string in {context}.")
+        normalized = item.strip()
+        if normalized in seen:
+            raise RallyConfigError(f"`{key}` must not repeat `{normalized}` in {context}.")
+        seen.add(normalized)
+        items.append(normalized)
+    return tuple(items)
 
 
 def _require_run_home_relative_paths(
