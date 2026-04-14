@@ -258,6 +258,72 @@ Plan doc: /Users/aelaguiz/workspace/rally/docs/RALLY_RELEASE_PACKAGING_VERSIONIN
 - Re-checked the live GitHub workflow surface after the local fix:
   - `gh api repos/aelaguiz/rally/actions/workflows`
   - `gh run list --workflow pr.yml ...`
+
+## 2026-04-14 - Live PR gate and publish dry-run proof completed
+- Merged PR `#5` (`release: align rally with doctrine conventions`) into
+  `main` after the live required checks passed under the active ruleset.
+- The live PR proof now exists in GitHub, not just locally:
+  - `bundled-assets`
+  - `unit`
+  - `packaged-install`
+  - `security / dependency-review`
+- After merge, `gh api repos/aelaguiz/rally/actions/workflows` showed the new
+  default-branch workflow set live on `main`:
+  - `dependency-review.yml`
+  - `pr.yml`
+  - `publish.yml`
+  - `scorecards.yml`
+- Ran the publish transport dry run on `main`:
+  - `gh workflow run publish.yml --ref main -f ref=main -f publish_target=none`
+  - workflow run `24403594896`
+  - result: success
+  - the `build` job passed bundled-assets, unit, build, and packaged-install,
+    then stored the distribution artifacts
+  - the TestPyPI and PyPI publish jobs skipped cleanly because the dry run used
+    `publish_target=none`
+- Followed the README host-repo path by hand in a temp external workspace from
+  the built wheel:
+  - installed Rally `0.1.0` plus Doctrine `v1.0.1` into an isolated venv
+  - ran `rally run demo` with the venv `bin/` on `PATH`
+  - confirmed Rally created `DMO-1`, synced `stdlib/rally/`,
+    `skills/rally-kernel/`, and `skills/rally-memory/` into the host repo,
+    and stopped at the documented pending `home/issue.md` step
+- Current phase: complete pending fresh implementation audit.
+
+## 2026-04-14 - CodeQL gate completed and final live readiness proof landed
+- The fresh audit reopened Phase 4 and Phase 6 because the split PR gate was
+  live, but the `main` ruleset still did not require CodeQL after the baseline
+  turned green.
+- I verified the baseline first:
+  - `gh api repos/aelaguiz/rally/code-scanning/default-setup`
+  - `gh run list --workflow CodeQL --branch main --limit 5 --json ...`
+  - result: CodeQL default setup was configured and the latest `main` run was
+    green
+- I updated the active `main` ruleset to add a real `code_scanning` rule for
+  `CodeQL` with thresholds:
+  - alerts: `errors`
+  - security alerts: `medium_or_higher`
+- I did not keep `Analyze (...)` as required status checks. GitHub's code
+  scanning merge protection is the right surface here, and open Dependabot PRs
+  already showed those raw `Analyze (...)` contexts are not a stable required
+  check contract.
+- Opened proof PR `#9` from branch `codeql-required-gate-proof` after one
+  local targeted check:
+  - `uv run pytest tests/unit/test_bundled_assets.py -q`
+- The finished live-gate proof is now real:
+  - PR `#9` started `BLOCKED` while:
+    - `Analyze (actions)` was pending
+    - `Analyze (javascript-typescript)` was pending
+    - `Analyze (python)` was pending
+  - the same PR became `CLEAN` only after all three CodeQL analyses passed,
+    together with:
+    - `bundled-assets`
+    - `unit`
+    - `packaged-install`
+    - `security / dependency-review`
+- Merged PR `#9` into `main`, so the final readiness proof now exists on the
+  default branch, not only in a temporary proof branch.
+- Current phase: complete pending fresh implementation audit.
   - `gh run list --workflow publish.yml ...`
 - Result: the default branch still exposes only `ci.yml` and CodeQL, and both
   `pr.yml` and `publish.yml` still return `404` on `main`.

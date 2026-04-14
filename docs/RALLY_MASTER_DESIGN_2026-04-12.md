@@ -363,18 +363,20 @@ adapter is actually seeing.
 
 ### Adapter MCP And Auth Health
 
-Rally still needs one clean adapter-native way to make required MCPs usable
-inside the run.
+Rally now has one clean Codex-native way to check required MCP health before
+agent work starts.
 
-This section records the need.
-It does not choose the answer yet.
+For this slice, `required MCP` means the Codex-visible MCP set Rally already
+materializes into shared `home/mcps/` and writes into `home/config.toml`.
+Rally marks each of those Codex MCPs as `required = true`.
 
 Rally should be able to tell, for each required MCP:
 
 - was it materialized into the run home
-- does the current adapter see it through the supported config path
-- does the run have the auth that MCP needs
-- will a child agent started from that turn keep the same MCP access
+- does `codex mcp get --json` see it through the supported `CODEX_HOME` path
+- does `codex mcp list --json` show a usable auth state when the server is
+  streamable HTTP
+- can the stdio launcher stay up long enough to look like a real MCP server
 - can Rally detect when that setup is broken on a later turn or on resume
 
 Rules:
@@ -391,9 +393,8 @@ Rules:
   expected and why Rally refused to run.
 - This work should stay in the Rally runtime and adapter boundary unless it
   reveals a true adapter or Doctrine platform gap.
-
-The next design pass should compare the smallest honest options and prove which
-one keeps both parent and child agents ready across fresh runs and resumes.
+- Broader per-agent runtime MCP isolation is still later work. This shipped
+  readiness rule is about today's shared Codex-visible MCP set.
 
 ### Canonical Runtime Surfaces
 
@@ -604,11 +605,12 @@ Phase 5 should still remain:
 - no DB source of truth
 - no background scheduler
 
-Phase 5 should also close the MCP gap with:
+Phase 5 now closes the Codex MCP gap with:
 
 - one honest adapter-native MCP auth and readiness path
 - clear failure when a required MCP is missing or broken
-- proof that child agents keep the same MCP access on fresh runs and resumes
+- proof that child agents keep the same MCP access from the same prepared run
+  home
 
 Phase 5 should also close the remaining per-agent capability gap with:
 

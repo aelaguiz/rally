@@ -374,12 +374,14 @@ Today Rally refreshes adapter bootstrap on each `run` or `resume`.
 For Codex that still means `config.toml` plus auth links.
 For Claude that now means generated `home/claude_code/mcp.json`, the
 `home/.claude/skills` link, and `ENABLE_CLAUDEAI_MCP_SERVERS=false`.
-That closes the stale-home gap, but it is not the full readiness rule yet.
+For Codex, Rally now also runs one readiness check before agent work starts.
+It marks the projected Codex MCP set as `required = true`, checks visibility
+through `codex mcp get/list`, blocks any non-usable streamable HTTP auth
+state, and probes stdio launchers with a short bounded start check.
 
-Rally does not yet prove that a required MCP can start, that its auth is
-present and still valid, or that child agents will keep the same access.
-The next runtime pass should add one clear readiness check and one clear
-failure record that names the broken MCP and the reason.
+If one of those checks fails, Rally blocks before the turn starts and writes
+one failure record that names the broken MCP and the failed check. Broader
+per-agent MCP isolation is still later work.
 
 ## Logging Today
 
