@@ -43,6 +43,7 @@ class PackagedInstallTests(unittest.TestCase):
             self.assertIn("usage: rally", help_result.stdout)
             self.assertIn("run", help_result.stdout)
             self.assertIn("resume", help_result.stdout)
+            self.assertIn("status", help_result.stdout)
             self.assertIn("workspace", help_result.stdout)
 
             self._write_host_workspace(host_root)

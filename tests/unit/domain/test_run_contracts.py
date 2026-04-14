@@ -9,6 +9,7 @@ class RunContractsTests(unittest.TestCase):
     def test_run_status_values_stay_stable(self) -> None:
         self.assertEqual(RunStatus.PENDING.value, "pending")
         self.assertEqual(RunStatus.RUNNING.value, "running")
+        self.assertEqual(RunStatus.PAUSED.value, "paused")
         self.assertEqual(RunStatus.SLEEPING.value, "sleeping")
         self.assertEqual(RunStatus.BLOCKED.value, "blocked")
         self.assertEqual(RunStatus.DONE.value, "done")

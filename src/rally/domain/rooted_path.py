@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Literal
@@ -20,6 +20,7 @@ STDLIB_ROOT: PathRoot = "stdlib"
 PUBLIC_PATH_ROOTS = frozenset({HOME_ROOT, FLOW_ROOT, WORKSPACE_ROOT, HOST_ROOT})
 INTERNAL_PATH_ROOTS = frozenset({*PUBLIC_PATH_ROOTS, STDLIB_ROOT})
 _HOST_ENV_REF_RE = re.compile(r"^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})(?:/.*)?$")
+_HOST_ENV_VAR_RE = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})")
 
 
 @dataclass(frozen=True)
@@ -84,10 +85,11 @@ def resolve_rooted_path(
     workspace_root: Path | None = None,
     flow_root: Path | None = None,
     run_home: Path | None = None,
+    env: Mapping[str, str] | None = None,
     context: str,
 ) -> Path:
     if rooted_path.root == HOST_ROOT:
-        host_path = _expand_host_path(path_text=rooted_path.path_text, context=context)
+        host_path = _expand_host_path(path_text=rooted_path.path_text, env=env, context=context)
         return Path(host_path).expanduser().resolve(strict=False)
 
     if rooted_path.root == HOME_ROOT:
@@ -124,6 +126,7 @@ def expand_rooted_string(
     workspace_root: Path | None = None,
     flow_root: Path | None = None,
     run_home: Path | None = None,
+    env: Mapping[str, str] | None = None,
     allowed_roots: Collection[PathRoot] = INTERNAL_PATH_ROOTS,
     context: str,
     example: str = "home:issue.md",
@@ -142,6 +145,7 @@ def expand_rooted_string(
             workspace_root=workspace_root,
             flow_root=flow_root,
             run_home=run_home,
+            env=env,
             context=context,
         )
     )
@@ -153,6 +157,7 @@ def expand_rooted_value(
     workspace_root: Path | None = None,
     flow_root: Path | None = None,
     run_home: Path | None = None,
+    env: Mapping[str, str] | None = None,
     allowed_roots: Collection[PathRoot] = INTERNAL_PATH_ROOTS,
     context: str,
     example: str = "home:issue.md",
@@ -163,6 +168,7 @@ def expand_rooted_value(
             workspace_root=workspace_root,
             flow_root=flow_root,
             run_home=run_home,
+            env=env,
             allowed_roots=allowed_roots,
             context=context,
             example=example,
@@ -174,6 +180,7 @@ def expand_rooted_value(
                 workspace_root=workspace_root,
                 flow_root=flow_root,
                 run_home=run_home,
+                env=env,
                 allowed_roots=allowed_roots,
                 context=context,
                 example=example,
@@ -187,6 +194,7 @@ def expand_rooted_value(
                 workspace_root=workspace_root,
                 flow_root=flow_root,
                 run_home=run_home,
+                env=env,
                 allowed_roots=allowed_roots,
                 context=f"{context}.{key}",
                 example=example,
@@ -221,8 +229,8 @@ def _normalize_host_path(*, path_text: str, context: str) -> str:
     return value
 
 
-def _expand_host_path(*, path_text: str, context: str) -> str:
-    expanded = os.path.expandvars(path_text).strip()
+def _expand_host_path(*, path_text: str, env: Mapping[str, str] | None, context: str) -> str:
+    expanded = _expand_host_env_vars(path_text, env=env).strip()
     if not expanded:
         raise RallyConfigError(f"{context} must resolve to a host path.")
     if "$" in expanded:
@@ -230,6 +238,17 @@ def _expand_host_path(*, path_text: str, context: str) -> str:
             f"{context} references an unresolved env var in host path `{path_text}`."
         )
     return _normalize_host_path(path_text=expanded, context=context)
+
+
+def _expand_host_env_vars(path_text: str, *, env: Mapping[str, str] | None) -> str:
+    source_env = os.environ if env is None else env
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        env_name = token[2:-1] if token.startswith("${") else token[1:]
+        return source_env.get(env_name, token)
+
+    return _HOST_ENV_VAR_RE.sub(replace, path_text)
 
 
 def _resolve_under_root(*, base_path: Path, rooted_path: RootedPath, context: str) -> Path:

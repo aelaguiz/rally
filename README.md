@@ -139,6 +139,34 @@ Do not point support files at `../rally/stdlib/...`.
 Rally copies the support files into the host workspace so Doctrine emit stays
 inside the project root.
 
+If your flow needs stable launch env vars, put them in `flow.yaml` instead of
+relying only on the shell that launches `rally`:
+
+```yaml
+name: demo
+code: DMO
+start_agent: 01_scope_lead
+agents:
+  01_scope_lead:
+    timeout_sec: 900
+    allowed_skills: []
+    allowed_mcps: []
+runtime:
+  adapter: codex
+  max_command_turns: 8
+  env:
+    PROJECT_ROOT: workspace:fixtures/project
+    API_BASE_URL: https://example.test
+  adapter_args:
+    model: gpt-5.4
+```
+
+Rally applies `runtime.env` before startup host-input checks, to the setup
+script, to the prompt-input command, and to the adapter launch. That means
+`runtime.env` can satisfy `host_inputs.required_env` and `host:$VAR` paths
+during preflight. Flow values win over duplicate shell env vars. Rally still
+keeps its own `RALLY_*` keys and adapter keys reserved.
+
 If you want a manual build before the first run, emit from the host repo after
 the sync:
 
@@ -150,10 +178,28 @@ Then run the flow:
 
 ```bash
 rally run demo
+rally run demo --from-file ./issue.md
 ```
 
 `rally run` and `rally resume` still refresh those built-ins before each
 start or resume.
+If you already wrote the starting issue somewhere else, `--from-file` copies
+that file into the new run's `home/issue.md` and starts from there.
+If you want one agent turn at a time, use `--step`:
+
+```bash
+rally run demo --step
+rally resume DMO-1 --step
+```
+
+That runs one turn, writes the next agent into run state as `paused`, and
+lets you choose when to take the next step.
+If you want to see what is active before you resume, use:
+
+```bash
+rally status
+rally status DMO-1
+```
 
 In most host repos, treat the synced built-ins as generated framework files and
 ignore them in git unless you are choosing to vendor them on purpose:
@@ -198,6 +244,13 @@ Then run the smallest shipped demo:
 uv run rally run poem_loop
 ```
 
+If you want to walk the flow one agent turn at a time:
+
+```bash
+uv run rally run poem_loop --step
+uv run rally resume POM-1 --step
+```
+
 If Rally stops for issue text:
 
 If you do not have an interactive editor configured, Rally will stop and tell you where the issue file lives. On a fresh repo, that path will be:
@@ -210,6 +263,13 @@ Write the issue there, then resume the run:
 
 ```bash
 uv run rally resume POM-1
+```
+
+To check what Rally thinks is active or blocked:
+
+```bash
+uv run rally status
+uv run rally status POM-1
 ```
 
 Run the unit tests any time with:

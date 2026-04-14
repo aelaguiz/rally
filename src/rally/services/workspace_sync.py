@@ -22,7 +22,10 @@ def sync_workspace_builtins(*, workspace: WorkspaceContext) -> WorkspaceSyncResu
             workspace_root=workspace_root,
             synced_paths=(),
             already_owned=True,
-            message=f"Workspace `{workspace_root}` already owns Rally built-ins. Nothing to sync.",
+            message=(
+                f"Workspace `{workspace_root}` already owns Rally built-ins. Nothing to sync.\n"
+                "Next: emit your flow if needed, or start one with `rally run <flow>`."
+            ),
         )
 
     copied = tuple(
@@ -36,5 +39,8 @@ def sync_workspace_builtins(*, workspace: WorkspaceContext) -> WorkspaceSyncResu
         workspace_root=workspace_root,
         synced_paths=copied,
         already_owned=False,
-        message=f"Synced Rally built-ins into `{workspace_root}`: {rendered_paths}.",
+        message=(
+            f"Synced Rally built-ins into `{workspace_root}`: {rendered_paths}.\n"
+            "Next: emit your flow if needed, or start one with `rally run <flow>`."
+        ),
     )

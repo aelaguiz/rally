@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import selectors
 import json
 import subprocess
@@ -23,7 +22,6 @@ from rally.adapters.base import (
 from rally.adapters.codex.event_stream import CodexEventStreamParser
 from rally.adapters.codex.launcher import (
     build_codex_launch_env,
-    codex_project_doc_max_bytes,
     write_codex_launch_record,
 )
 from rally.adapters.mcp_readiness import (
@@ -36,8 +34,11 @@ from rally.domain.flow import FlowAgent, FlowDefinition
 from rally.domain.rooted_path import INTERNAL_PATH_ROOTS, expand_rooted_value
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError
+from rally.services.flow_env import build_flow_subprocess_env
 from rally.services.run_events import RunEventRecorder
 from rally.services.workspace import WorkspaceContext
+
+_CODEX_PROJECT_DOC_MAX_BYTES = 0
 
 
 class CodexAdapter(RallyAdapter):
@@ -47,9 +48,7 @@ class CodexAdapter(RallyAdapter):
     def validate_args(self, *, args: Mapping[str, object]) -> None:
         _validate_common_string_arg(args=args, key="model")
         _validate_common_string_arg(args=args, key="reasoning_effort")
-        project_doc_max_bytes = args.get("project_doc_max_bytes", 0)
-        if not isinstance(project_doc_max_bytes, int) or project_doc_max_bytes < 0:
-            raise RallyConfigError("`runtime.adapter_args.project_doc_max_bytes` must be a non-negative integer.")
+        _validate_legacy_project_doc_max_bytes(args=args)
         _reject_unknown_args(args=args, allowed={"model", "reasoning_effort", "project_doc_max_bytes"})
 
     def prepare_home(
@@ -126,9 +125,11 @@ class CodexAdapter(RallyAdapter):
                 reason=f"Expected Codex config at `{config_file}`.",
             )
 
-        launch_env = {
-            **os.environ,
-            **build_codex_launch_env(
+        launch_env = build_flow_subprocess_env(
+            flow=flow,
+            workspace=workspace,
+            run_home=run_home,
+            extra_env=build_codex_launch_env(
                 workspace_dir=workspace.workspace_root,
                 cli_bin=workspace.cli_bin,
                 run_home=run_home,
@@ -137,7 +138,7 @@ class CodexAdapter(RallyAdapter):
                 agent_slug=agent.slug,
                 turn_index=turn_index,
             ),
-        }
+        )
         listed_servers, list_failure = _load_codex_mcp_list(
             run_home=run_home,
             env=launch_env,
@@ -233,7 +234,7 @@ class CodexAdapter(RallyAdapter):
             "-o",
             str(artifacts.last_message_file),
             "-c",
-            f"project_doc_max_bytes={codex_project_doc_max_bytes(flow=flow)}",
+            f"project_doc_max_bytes={_codex_project_doc_max_bytes()}",
         ]
         model = flow.adapter.args.get("model")
         if isinstance(model, str) and model.strip():
@@ -246,9 +247,11 @@ class CodexAdapter(RallyAdapter):
         else:
             command.append("-")
 
-        env = {
-            **os.environ,
-            **build_codex_launch_env(
+        env = build_flow_subprocess_env(
+            flow=flow,
+            workspace=workspace,
+            run_home=run_home,
+            extra_env=build_codex_launch_env(
                 workspace_dir=workspace.workspace_root,
                 cli_bin=workspace.cli_bin,
                 run_home=run_home,
@@ -257,7 +260,7 @@ class CodexAdapter(RallyAdapter):
                 agent_slug=agent.slug,
                 turn_index=turn_index,
             ),
-        }
+        )
         write_codex_launch_record(
             run_dir=run_dir,
             turn_index=turn_index,
@@ -567,11 +570,12 @@ def _coerce_stream_text(raw_value: str | bytes | None) -> str:
         return raw_value.decode("utf-8", errors="replace")
     return raw_value
 
+def _codex_project_doc_max_bytes() -> int:
+    return _CODEX_PROJECT_DOC_MAX_BYTES
+
 
 def _write_codex_config(*, workspace_root: Path, run_home: Path, flow: FlowDefinition) -> None:
-    project_doc_max_bytes = codex_project_doc_max_bytes(flow=flow)
-
-    lines = [f"project_doc_max_bytes = {project_doc_max_bytes}", ""]
+    lines = [f"project_doc_max_bytes = {_codex_project_doc_max_bytes()}", ""]
     for mcp_name in allowed_mcp_names(flow):
         server_file = run_home / "mcps" / mcp_name / "server.toml"
         payload = tomllib.loads(server_file.read_text(encoding="utf-8"))
@@ -799,6 +803,19 @@ def _validate_common_string_arg(*, args: Mapping[str, object], key: str) -> None
     if isinstance(value, str) and value.strip():
         return
     raise RallyConfigError(f"`runtime.adapter_args.{key}` must be a non-empty string when present.")
+
+
+def _validate_legacy_project_doc_max_bytes(*, args: Mapping[str, object]) -> None:
+    if "project_doc_max_bytes" not in args:
+        return
+    value = args["project_doc_max_bytes"]
+    if not isinstance(value, int) or value < 0:
+        raise RallyConfigError("`runtime.adapter_args.project_doc_max_bytes` must be 0 when present.")
+    if value != _CODEX_PROJECT_DOC_MAX_BYTES:
+        raise RallyConfigError(
+            "`runtime.adapter_args.project_doc_max_bytes` is no longer configurable for `codex`; "
+            "remove it from `flow.yaml`. Codex always uses 0."
+        )
 
 
 def _reject_unknown_args(*, args: Mapping[str, object], allowed: set[str]) -> None:

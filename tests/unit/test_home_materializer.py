@@ -114,6 +114,7 @@ def _demo_flow(*, repo_root: Path) -> FlowDefinition:
         start_agent_key=agent.key,
         max_command_turns=8,
         guarded_git_repos=(),
+        runtime_env={},
         host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
         agents={agent.key: agent},
         adapter=AdapterConfig(name="codex", prompt_input_command=None, args={}),

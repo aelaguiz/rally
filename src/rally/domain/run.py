@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 
 
 class RunStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
+    PAUSED = "paused"
     SLEEPING = "sleeping"
     BLOCKED = "blocked"
     DONE = "done"
@@ -16,6 +18,8 @@ class RunStatus(StrEnum):
 class RunRequest:
     flow_name: str
     start_new: bool = False
+    step: bool = False
+    issue_seed_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -23,6 +27,7 @@ class ResumeRequest:
     run_id: str
     edit_issue: bool = False
     restart: bool = False
+    step: bool = False
 
 
 @dataclass(frozen=True)

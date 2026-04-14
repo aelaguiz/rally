@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
 import shlex
 import shutil
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Sequence
 
@@ -12,6 +12,7 @@ from rally.domain.flow import FlowAgent, FlowDefinition
 from rally.domain.rooted_path import RootedPath, resolve_rooted_path
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError, RallyStateError, RallyUsageError
+from rally.services.flow_env import build_flow_subprocess_env
 from rally.services.issue_editor import edit_issue_file_in_editor, resolve_interactive_issue_editor
 from rally.services.issue_ledger import snapshot_issue_log
 from rally.services.run_events import RunEventRecorder
@@ -91,6 +92,7 @@ def materialize_run_home(
     _require_host_inputs_ready(
         workspace=workspace_context,
         flow=flow,
+        run_home=run_home,
         event_recorder=event_recorder,
     )
     _run_setup_script(
@@ -467,19 +469,24 @@ def _run_setup_script(
             message=f"Running setup script `{flow.setup_home_script.name}`.",
         )
 
-    env = {
-        "RALLY_CLI_BIN": str(workspace.cli_bin.resolve()),
-        "RALLY_FLOW_CODE": run_record.flow_code,
-        "RALLY_FLOW_HOME": str(run_home.resolve()),
-        "RALLY_ISSUE_PATH": str(issue_path.resolve()),
-        "RALLY_RUN_HOME": str(run_home.resolve()),
-        "RALLY_RUN_ID": run_record.id,
-        "RALLY_WORKSPACE_DIR": str(workspace.workspace_root.resolve()),
-    }
+    env = build_flow_subprocess_env(
+        flow=flow,
+        workspace=workspace,
+        run_home=run_home,
+        extra_env={
+            "RALLY_CLI_BIN": str(workspace.cli_bin.resolve()),
+            "RALLY_FLOW_CODE": run_record.flow_code,
+            "RALLY_FLOW_HOME": str(run_home.resolve()),
+            "RALLY_ISSUE_PATH": str(issue_path.resolve()),
+            "RALLY_RUN_HOME": str(run_home.resolve()),
+            "RALLY_RUN_ID": run_record.id,
+            "RALLY_WORKSPACE_DIR": str(workspace.workspace_root.resolve()),
+        },
+    )
     completed = subprocess.run(
         ["bash", str(flow.setup_home_script)],
         cwd=flow.root_dir,
-        env={**os.environ, **env},
+        env=env,
         capture_output=True,
         text=True,
         check=False,
@@ -511,10 +518,16 @@ def _require_host_inputs_ready(
     *,
     workspace: WorkspaceContext,
     flow: FlowDefinition,
+    run_home: Path,
     event_recorder: RunEventRecorder | None = None,
 ) -> None:
+    effective_env = build_flow_subprocess_env(
+        flow=flow,
+        workspace=workspace,
+        run_home=run_home,
+    )
     for env_name in flow.host_inputs.required_env:
-        if os.environ.get(env_name, "").strip():
+        if effective_env.get(env_name, "").strip():
             continue
         message = (
             f"Flow `{flow.name}` requires env var `{env_name}` before "
@@ -524,7 +537,11 @@ def _require_host_inputs_ready(
         raise RallyUsageError(message)
 
     for rooted_path in flow.host_inputs.required_files:
-        resolved_path = _resolve_host_input_path(workspace=workspace, rooted_path=rooted_path)
+        resolved_path = _resolve_host_input_path(
+            workspace=workspace,
+            rooted_path=rooted_path,
+            env=effective_env,
+        )
         if resolved_path.is_file():
             continue
         message = (
@@ -539,7 +556,11 @@ def _require_host_inputs_ready(
         raise RallyUsageError(message)
 
     for rooted_path in flow.host_inputs.required_directories:
-        resolved_path = _resolve_host_input_path(workspace=workspace, rooted_path=rooted_path)
+        resolved_path = _resolve_host_input_path(
+            workspace=workspace,
+            rooted_path=rooted_path,
+            env=effective_env,
+        )
         if resolved_path.is_dir():
             continue
         message = (
@@ -554,10 +575,16 @@ def _require_host_inputs_ready(
         raise RallyUsageError(message)
 
 
-def _resolve_host_input_path(*, workspace: WorkspaceContext, rooted_path: RootedPath) -> Path:
+def _resolve_host_input_path(
+    *,
+    workspace: WorkspaceContext,
+    rooted_path: RootedPath,
+    env: Mapping[str, str] | None = None,
+) -> Path:
     return resolve_rooted_path(
         rooted_path,
         workspace_root=workspace.workspace_root,
+        env=env,
         context="host input",
     )
 
@@ -578,6 +605,8 @@ def _emit_host_input_error(
         level="error",
         data=data,
     )
+
+
 def _coerce_workspace(
     *,
     workspace: WorkspaceContext | None,
