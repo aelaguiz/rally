@@ -213,10 +213,10 @@ Cut a public release with the repo-owned flow:
 make build-dist
 make verify-package
 make verify
-make release-prepare RELEASE=v0.1.0 CLASS=additive CHANNEL=stable
-make release-tag RELEASE=v0.1.0 CHANNEL=stable
-make release-draft RELEASE=v0.1.0 CHANNEL=stable PREVIOUS_TAG=auto
-make release-publish RELEASE=v0.1.0
+make release-prepare RELEASE=vX.Y.Z CLASS=internal|additive|soft-deprecated|breaking CHANNEL=stable
+make release-tag RELEASE=vX.Y.Z CHANNEL=stable
+make release-draft RELEASE=vX.Y.Z CHANNEL=stable PREVIOUS_TAG=auto
+make release-publish RELEASE=vX.Y.Z
 ```
 
 The full rules live in [docs/VERSIONING.md](docs/VERSIONING.md). The release
