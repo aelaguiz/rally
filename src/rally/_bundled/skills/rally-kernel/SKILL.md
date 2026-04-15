@@ -10,7 +10,6 @@ Use this skill when a later reader needs one short saved note on this run.
 ## Quick model
 
 - Use Rally CLI for notes.
-- Notes save run-local context.
 
 ## When to use
 
@@ -28,17 +27,14 @@ Use this skill when a later reader needs one short saved note on this run.
 ## First move
 
 1. Confirm `RALLY_CLI_BIN`, `RALLY_RUN_ID`, and the active Rally workspace are present.
-2. Read `home:issue.md` again before you act.
-3. Decide whether a later reader needs one short saved note.
+2. Decide whether a later reader needs one short saved note.
 
 ## Workflow
 
-1. Read `home:issue.md` again before you act.
-2. Use a note only when later readers would lose context that does not belong in the main file.
-3. Write the note through Rally CLI when needed.
-4. Keep the note short. Save context, exact commands, or constraints.
-5. Keep `--field` labels simple. Put the human explanation in the note body, not in the field names.
-6. After the note, end the turn with the normal declared output.
+1. Use a note only when later readers would lose context that does not belong in the main file.
+2. Write the note through Rally CLI when needed.
+3. Keep the note short. Save context, exact commands, or constraints.
+4. Keep `--field` labels simple. Put the human explanation in the note body, not in the field names.
 
 ## Preferred stdin form
 
@@ -77,7 +73,6 @@ EOF
 
 - When no saved context is needed, do not write a note.
 - When saved context is needed, write one note only.
-- This skill is for note work only. It does not replace the turn's declared output.
 
 ## Reference map
 

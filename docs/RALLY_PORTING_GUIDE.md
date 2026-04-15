@@ -40,7 +40,9 @@ A good Rally port does five things:
    no current artifact yet.
 4. It turns repeated procedure into skills or setup helpers instead of
    reteaching raw commands in every role home.
-5. It drops source-system control planes that Rally does not need.
+5. It uses Doctrine-owned structured outputs for JSON contracts, not
+   Rally-owned raw schema files.
+6. It drops source-system control planes that Rally does not need.
 
 ## Lead With The Move
 
@@ -78,6 +80,31 @@ That keeps the important review parts in the right owner:
 Use ordinary agent workflow prose when the lane is producing work.
 Use review law when the lane is judging work.
 
+## Use Doctrine For JSON Outputs
+
+When a port needs structured JSON, write that contract in Doctrine prompt
+source.
+
+Use:
+
+- `output schema` for the JSON object
+- `output shape` and `final_output` for the final response
+- `review` or `review_family` when the JSON is review control
+- imports and inheritance when a flow extends a shared contract
+
+Do not add Rally-owned `.schema.json` or `.example.json` files for framework
+or shipped-demo JSON.
+
+After emit, Rally reads the package Doctrine built:
+
+- `AGENTS.md` for human instruction readback
+- `schemas/<name>.schema.json` for the JSON wire shape
+- `final_output.contract.json` for final-output and review-control metadata
+
+That pattern has to work for Rally users too. A user should be able to inherit
+or extend the shared Rally JSON contract in their own prompt source without
+copying raw JSON into their flow.
+
 ## The Real Failure Patterns
 
 These matter more than the generic port checklist.
@@ -86,7 +113,7 @@ These matter more than the generic port checklist.
 
 The first pass added a whole reducer-fed control plane:
 
-- `flow.yaml` used `prompt_input_command`
+- `flow.yaml` used `prompt_input_command` to run a reducer every turn
 - shared prompt inputs defined typed route and review facts
 - setup code parsed `home:issue.md` into a custom state model
 - setup code fed that model back into prompts
@@ -476,8 +503,10 @@ Good cleanup removes Rally-foreign machinery instead of polishing it.
 
 The important wins are concrete:
 
-- `flow.yaml` drops `prompt_input_command` instead of keeping a prompt-side
-  reducer loop alive
+- `flow.yaml` drops `prompt_input_command` when it only exists to keep a
+  prompt-side reducer loop alive
+- `prompt_input_command` stays available only for narrow computed context that
+  cannot be exposed cleanly through files, tools, setup, or the issue ledger
 - prompt source stops importing special state builders and roles read the ledger
   directly
 - shared contracts use one plain ledger input from `home:issue.md` instead of

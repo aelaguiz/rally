@@ -54,7 +54,8 @@ What ships today:
 
 - per-command Doctrine rebuild for the current flow before Rally loads compiled
   agents
-- flow loading plus compiled `AGENTS.contract.json` checks
+- flow loading plus emitted agent-package checks:
+  `AGENTS.md`, emitted schema files, and `final_output.contract.json`
 - one shared adapter boundary under `src/rally/adapters/base.py` and
   `src/rally/adapters/registry.py`
 - supported adapters: `codex` and `claude_code`
@@ -72,8 +73,8 @@ What ships today:
   `SKILL.md` and Doctrine `prompts/SKILL.prompt` both supported
 - per-agent skill views refreshed under `home/sessions/<agent>/skills/` and
   the live `home/skills/` tree activated per turn from that prebuilt view
-- flow-level `setup_home_script`, `runtime.env`, and
-  `runtime.guarded_git_repos`
+- flow-level `setup_home_script`, `runtime.prompt_input_command`,
+  `runtime.env`, and `runtime.guarded_git_repos`
 - dirty guarded-repo failures that block `handoff` or `done` loud instead of
   letting Rally claim a clean finish
 - `rally workspace sync`
@@ -137,7 +138,8 @@ What is not shipped yet:
 - all four memory commands are visible Rally events.
 - agent-run memory commands should render as memory rows, not generic shell rows.
 - `AGENTS.md` is injected instruction readback only.
-- `AGENTS.contract.json` is the compiler-owned metadata file Rally loads.
+- `final_output.contract.json` is the compiler-owned metadata file Rally loads.
+- Emitted schema files under `schemas/` are the payload wire contract.
 - There is no separate handoff artifact.
 - Shared runtime owns prompt assembly, home policy, state routing, and the
   final JSON read path.
@@ -155,9 +157,11 @@ The current checked-in runtime surface is:
   - validates supported adapter names and adapter args through the registry
   - validates `runtime.max_command_turns`, `runtime.env`, and guarded repo paths
   - requires compiled `build/agents/*`
-  - requires `AGENTS.contract.json`
+  - requires `AGENTS.md`, emitted schema files, and
+    `final_output.contract.json`
   - validates flow codes, `runtime.max_command_turns`, `runtime.env`,
-    `runtime.guarded_git_repos`, and the shared turn-result schema
+    `runtime.guarded_git_repos`, `runtime.prompt_input_command`, and the
+    shared turn-result schema
   - carries the compiled slug forward as the source-of-truth agent identity after validation
 - `src/rally/services/skill_bundles.py`
   - resolves markdown skill roots from `SKILL.md`

@@ -10,7 +10,6 @@ Use this skill when past work could help on this turn.
 ## Quick model
 
 - Memory keeps cross-run lessons.
-- Memory does not replace run-local notes.
 
 ## When to use
 
@@ -24,7 +23,6 @@ Use this skill when past work could help on this turn.
 - Use Rally CLI for memory actions.
 - Use a memory only when it clearly fits this issue and role.
 - Save only short reusable lessons.
-- Do not use memory to replace run-local notes.
 - Do not edit memory files or QMD state directly.
 - Fail loud if `RALLY_CLI_BIN`, `RALLY_RUN_ID`, or `RALLY_AGENT_SLUG` is missing.
 
@@ -39,7 +37,6 @@ Use this skill when past work could help on this turn.
 - Use `use` only after you pick one memory that clearly fits.
 - If you had to fix your own work, use `save` to keep the general lesson.
 - Use `refresh` when the index needs to rebuild from markdown files.
-- Keep the issue and local repo state primary. Memory is support context.
 
 ## Search Example
 
@@ -90,4 +87,3 @@ _Advisory · code · bash_
 
 - Use `search` for discovery only.
 - `use` and `save` should become visible Rally records.
-- This skill is for memory work only. It does not replace the turn's declared output.

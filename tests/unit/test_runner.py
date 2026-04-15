@@ -115,6 +115,121 @@ class RunnerTests(unittest.TestCase):
 
             self.assertEqual(prompt, "# Demo Agent\n\nRead the ledger.\n")
 
+    def test_build_agent_prompt_appends_runtime_prompt_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            for directory_name in ("flows", "skills", "mcps", "stdlib", "runs"):
+                (repo_root / directory_name).mkdir(parents=True, exist_ok=True)
+            (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally-test'\n", encoding="utf-8")
+
+            run_dir = repo_root / "runs" / "active" / "DMO-1"
+            run_home = run_dir / "home"
+            agent_markdown = run_home / "agents" / "demo_agent" / "AGENTS.md"
+            agent_markdown.parent.mkdir(parents=True, exist_ok=True)
+            agent_markdown.write_text("# Demo Agent\n\nRead the ledger.\n", encoding="utf-8")
+            flow_root = repo_root / "flows" / "demo"
+            prompt_input_command = flow_root / "setup" / "prompt_inputs.py"
+            prompt_input_command.parent.mkdir(parents=True, exist_ok=True)
+            prompt_input_command.write_text("print('{}')\n", encoding="utf-8")
+
+            workspace = workspace_context_from_root(repo_root)
+            final_output = FinalOutputContract(
+                exists=True,
+                contract_version=1,
+                declaration_key="DemoTurnResult",
+                declaration_name="DemoTurnResult",
+                format_mode="json_object",
+                schema_profile="OpenAIStructuredOutput",
+                generated_schema_file=None,
+                metadata_file=None,
+            )
+            compiled = CompiledAgentContract(
+                name="DemoAgent",
+                slug="demo_agent",
+                entrypoint=flow_root / "prompts" / "AGENTS.prompt",
+                markdown_path=agent_markdown,
+                metadata_file=run_home / "agents" / "demo_agent" / "final_output.contract.json",
+                contract_version=1,
+                final_output=final_output,
+            )
+            agent = FlowAgent(
+                key="01_demo_agent",
+                slug="demo_agent",
+                timeout_sec=60,
+                allowed_skills=(),
+                allowed_mcps=(),
+                compiled=compiled,
+            )
+            flow = FlowDefinition(
+                name="demo",
+                code="DMO",
+                root_dir=flow_root,
+                flow_file=flow_root / "flow.yaml",
+                prompt_entrypoint=flow_root / "prompts" / "AGENTS.prompt",
+                build_agents_dir=flow_root / "build" / "agents",
+                setup_home_script=None,
+                start_agent_key="01_demo_agent",
+                max_command_turns=8,
+                guarded_git_repos=(),
+                runtime_env={"PROJECT_ROOT": "workspace:fixtures/project"},
+                host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
+                agents={"01_demo_agent": agent},
+                adapter=AdapterConfig(name="codex", args={}, prompt_input_command=prompt_input_command),
+            )
+            run_record = RunRecord(
+                id="DMO-1",
+                flow_name="demo",
+                flow_code="DMO",
+                adapter_name="codex",
+                start_agent_key="01_demo_agent",
+                created_at="2026-04-15T00:00:00Z",
+            )
+            recorder = RunEventRecorder(run_dir=run_dir, run_id="DMO-1", flow_code="DMO")
+            captured: dict[str, object] = {}
+
+            def fake_prompt_input_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                captured["command"] = command
+                captured["kwargs"] = kwargs
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout=json.dumps(
+                        {
+                            "Ledger": "Read the newest note.",
+                            "Context": {"turn": 1},
+                        }
+                    ),
+                    stderr="",
+                )
+
+            with patch("rally.services.runner.subprocess.run", side_effect=fake_prompt_input_run):
+                prompt = _build_agent_prompt(
+                    workspace=workspace,
+                    run_home=run_home,
+                    flow=flow,
+                    run_record=run_record,
+                    agent=agent,
+                    recorder=recorder,
+                    turn_index=1,
+                )
+
+            kwargs = captured["kwargs"]
+            env = kwargs["env"]
+            self.assertEqual(captured["command"], [sys.executable, str(prompt_input_command)])
+            self.assertEqual(kwargs["cwd"], flow_root)
+            self.assertEqual(env["RALLY_AGENT_KEY"], "01_demo_agent")
+            self.assertEqual(env["RALLY_AGENT_SLUG"], "demo_agent")
+            self.assertEqual(env["RALLY_CLI_BIN"], str(workspace.cli_bin.resolve()))
+            self.assertEqual(env["RALLY_FLOW_CODE"], "DMO")
+            self.assertEqual(env["RALLY_ISSUE_PATH"], str((run_home / "issue.md").resolve()))
+            self.assertEqual(env["RALLY_RUN_HOME"], str(run_home.resolve()))
+            self.assertEqual(env["RALLY_RUN_ID"], "DMO-1")
+            self.assertEqual(env["RALLY_WORKSPACE_DIR"], str(repo_root))
+            self.assertEqual(env["PROJECT_ROOT"], str(repo_root / "fixtures" / "project"))
+            self.assertIn("## Runtime Prompt Inputs", prompt)
+            self.assertIn("### Ledger\n\nRead the newest note.", prompt)
+            self.assertIn('"turn": 1', prompt)
+
     def test_run_flow_creates_pending_run_until_issue_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()

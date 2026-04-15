@@ -8,7 +8,6 @@ skill package RallyKernel: "Rally Kernel"
     quick_model: "Quick model"
         bullets points:
             "Use Rally CLI for notes."
-            "Notes save run-local context."
 
     when_to_use: "When to use"
         bullets cases:
@@ -26,17 +25,14 @@ skill package RallyKernel: "Rally Kernel"
     first_move: "First move"
         sequence steps:
             "Confirm `RALLY_CLI_BIN`, `RALLY_RUN_ID`, and the active Rally workspace are present."
-            "Read `home:issue.md` again before you act."
             "Decide whether a later reader needs one short saved note."
 
     workflow: "Workflow"
         sequence steps:
-            "Read `home:issue.md` again before you act."
             "Use a note only when later readers would lose context that does not belong in the main file."
             "Write the note through Rally CLI when needed."
             "Keep the note short. Save context, exact commands, or constraints."
             "Keep `--field` labels simple. Put the human explanation in the note body, not in the field names."
-            "After the note, end the turn with the normal declared output."
 
     code stdin_note: "Preferred stdin form" advisory
         language: bash
@@ -69,7 +65,6 @@ EOF
         bullets rules:
             "When no saved context is needed, do not write a note."
             "When saved context is needed, write one note only."
-            "This skill is for note work only. It does not replace the turn's declared output."
 
     reference_map: "Reference map"
         bullets references:

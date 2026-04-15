@@ -59,7 +59,8 @@ block in `home:issue.md`.
 - `stdlib/rally/prompts/rally/memory.prompt`
   - shared memory skill meaning and memory entry shape
 - `stdlib/rally/prompts/rally/turn_results.prompt`
-  - the classic shared final JSON contract
+  - the classic shared final JSON contract, authored with Doctrine
+    `output schema`
 - `skills/rally-kernel/SKILL.md`
   - teaches note procedure and note examples
 - `skills/rally-memory/SKILL.md`
@@ -89,7 +90,8 @@ That still stays on the same one final-return path.
 The proof path is:
 
 - rebuild the affected flows with the paired Doctrine compiler into `flows/*/build/agents/*`
-- inspect emitted `AGENTS.md` and `AGENTS.contract.json`
+- inspect emitted `AGENTS.md`, emitted schema files under `schemas/`, and
+  `final_output.contract.json`
 - run the focused Rally unit tests for note writes, shared launch-env setup,
   flow loading, and turn-result parsing
 

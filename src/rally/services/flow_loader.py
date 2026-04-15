@@ -107,10 +107,18 @@ def load_flow_definition(
     runtime_env = _load_runtime_env(runtime_payload=runtime_payload)
     adapter_args = _require_mapping(runtime_payload, "adapter_args", context="runtime")
     get_adapter(adapter_name).validate_args(args=adapter_args)
-    if "prompt_input_command" in runtime_payload:
-        raise RallyConfigError(
-            "`runtime.prompt_input_command` was removed. "
-            "Use `setup_home_script`, declared inputs, file/env sources, or deterministic skills instead."
+    prompt_input_command_raw = runtime_payload.get("prompt_input_command")
+    prompt_input_command = None
+    if prompt_input_command_raw is not None:
+        if not isinstance(prompt_input_command_raw, str) or not prompt_input_command_raw:
+            raise RallyConfigError("`runtime.prompt_input_command` must be a non-empty string when present.")
+        prompt_input_command = _resolve_rooted_existing_file(
+            raw_value=prompt_input_command_raw,
+            repo_root=repo_root,
+            flow_root=flow_root,
+            context="runtime.prompt_input_command",
+            allowed_roots={FLOW_ROOT},
+            example="flow:setup/prompt_inputs.py",
         )
     prompt_entrypoint = _resolve_repo_relative_file(
         repo_root=repo_root,
@@ -147,7 +155,7 @@ def load_flow_definition(
         runtime_env=runtime_env,
         host_inputs=host_inputs,
         agents=agents,
-        adapter=AdapterConfig(name=adapter_name, args=adapter_args),
+        adapter=AdapterConfig(name=adapter_name, args=adapter_args, prompt_input_command=prompt_input_command),
     )
 
 

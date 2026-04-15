@@ -711,13 +711,17 @@ class FlowLoaderTests(unittest.TestCase):
 
 
 class FlowLoaderRuntimeConfigTests(unittest.TestCase):
-    def test_load_flow_definition_rejects_removed_prompt_input_command(self) -> None:
+    def test_load_flow_definition_resolves_prompt_input_command(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_runtime_fixture_repo(repo_root=repo_root)
 
-            with self.assertRaisesRegex(RallyConfigError, "was removed"):
-                load_flow_definition(repo_root=repo_root, flow_name="demo")
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            self.assertEqual(
+                flow.adapter.prompt_input_command,
+                repo_root / "flows" / "demo" / "setup" / "prompt_inputs.py",
+            )
 
     def _write_runtime_fixture_repo(self, *, repo_root: Path) -> None:
         flow_root = repo_root / "flows" / "demo"
@@ -753,6 +757,7 @@ class FlowLoaderRuntimeConfigTests(unittest.TestCase):
         )
         (flow_root / "setup").mkdir(parents=True)
         (flow_root / "setup" / "prepare_home.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+        (flow_root / "setup" / "prompt_inputs.py").write_text("print('{}')\n", encoding="utf-8")
         (prompts_root / "AGENTS.prompt").write_text("agent ScopeLead:\n", encoding="utf-8")
         (build_root / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
         (build_root / "final_output.contract.json").write_text(
