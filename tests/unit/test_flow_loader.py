@@ -338,11 +338,20 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertIn("## Rally Context", writer_readback)
         self.assertIn("## Read First", writer_readback)
         self.assertIn("## Shared Rules", writer_readback)
+        self.assertNotIn("### Read Order", writer_readback)
+        self.assertNotIn("### Turn Sequence", writer_readback)
         self.assertIn("Artistic Rationale", writer_readback)
         self.assertIn("### Rally Turn Result", writer_readback)
         self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', writer_readback)
-        self.assertIn("For this turn, read skills from `home:skills/`.", writer_readback)
-        self.assertIn("On Codex turns, that same folder is `$CODEX_HOME/skills/`.", writer_readback)
+        self.assertIn(
+            "Rally runs this flow. Read `home:issue.md` first, use it as the shared ledger for this run, "
+            "leave one short note only when later readers need it, and end the turn with the final JSON this role declares.",
+            writer_readback,
+        )
+        self.assertIn("Use `home:issue.md` as the shared ledger for this run.", writer_readback)
+        self.assertNotIn("For this turn, read skills from `home:skills/`.", writer_readback)
+        self.assertNotIn("On Codex turns, that same folder is `$CODEX_HOME/skills/`.", writer_readback)
+        self.assertNotIn("Many turns use this shared result.", writer_readback)
         self.assertNotIn("### Saved Run Note", critic_readback)
         self.assertIn("## Poem Review", critic_readback)
         self.assertIn("### Poem Review Response", critic_readback)
@@ -362,8 +371,10 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertNotIn("Use `rally-memory` only when a past lesson could help.", flow_skills_source)
         self.assertNotIn("skill rally_memory:", flow_skills_source)
         self.assertIn("skill rally_memory: rally.memory.RallyMemorySkill", base_source)
-        self.assertIn("workflow RallyReadFirst", memory_source)
-        self.assertIn("workflow RallyHowToTakeATurn", memory_source)
+        self.assertIn("workflow RallyReadFirst", base_source)
+        self.assertIn("workflow RallyHowToTakeATurn", base_source)
+        self.assertNotIn("workflow RallyReadFirst", memory_source)
+        self.assertNotIn("workflow RallyHowToTakeATurn", memory_source)
 
     def test_load_flow_definition_rejects_unsupported_contract_version(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

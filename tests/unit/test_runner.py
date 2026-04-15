@@ -737,7 +737,15 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("### rally-memory", prompt_text)
             self.assertIn("### Saved Run Note", prompt_text)
             self.assertNotIn("\n### Writer Issue Note\n", prompt_text)
-            self.assertIn("Use the shared `rally-kernel` skill for saved notes.", prompt_text)
+            self.assertIn(
+                "Rally runs this flow. Read `home:issue.md` first, use it as the shared ledger for this run, "
+                "leave one short note only when later readers need it, and end the turn with the final JSON this role declares.",
+                prompt_text,
+            )
+            self.assertIn("Use `home:issue.md` as the shared ledger for this run.", prompt_text)
+            self.assertNotIn("### Read Order", prompt_text)
+            self.assertNotIn("### Turn Sequence", prompt_text)
+            self.assertNotIn("Use the shared `rally-kernel` skill for saved notes.", prompt_text)
             self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', prompt_text)
             self.assertIn("Artistic Rationale", prompt_text)
             self.assertIn("### Rally Turn Result", prompt_text)
@@ -829,11 +837,11 @@ class RunnerTests(unittest.TestCase):
             )
 
             stdlib_prompt_path = repo_root / "stdlib" / "rally" / "prompts" / "rally" / "base_agent.prompt"
-            stdlib_prompt_marker = "Keep the newest proof in view when Rally rules mention the CLI."
+            stdlib_prompt_marker = "Keep the shared Rally rules short and action-first."
             stdlib_prompt_path.write_text(
                 stdlib_prompt_path.read_text(encoding="utf-8").replace(
-                    '        "Use `RALLY_CLI_BIN` when a flow tells you to call the Rally CLI."\n',
-                    '        "Use `RALLY_CLI_BIN` when a flow tells you to call the Rally CLI."\n'
+                    '        "Rally runs this flow. Read `home:issue.md` first, use it as the shared ledger for this run, leave one short note only when later readers need it, and end the turn with the final JSON this role declares."\n',
+                    '        "Rally runs this flow. Read `home:issue.md` first, use it as the shared ledger for this run, leave one short note only when later readers need it, and end the turn with the final JSON this role declares."\n'
                     f'        "{stdlib_prompt_marker}"\n',
                 ),
                 encoding="utf-8",

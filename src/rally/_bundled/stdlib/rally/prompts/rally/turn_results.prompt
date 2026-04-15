@@ -9,13 +9,11 @@ output shape RallyTurnResultJson: "Rally Turn Result JSON"
     example_file: "examples/rally_turn_result.example.json"
 
     field_notes: "Field Notes"
-        "Use the schema fields exactly once."
         "Always send all five keys."
         "Use `null` for fields that do not apply."
         "`kind` tells Rally what to do next."
         "Use `handoff` with `next_owner`, `done` with `summary`, `blocker` with `reason`, and `sleep` with `reason` plus `sleep_duration_seconds`."
         "If you set `next_owner`, use the flow owner key, not the display name."
-        "Many turns use this shared result. Review-native turns may declare a different final JSON that Rally can still read."
 
 
 output RallyTurnResult: "Rally Turn Result"

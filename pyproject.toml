@@ -49,6 +49,9 @@ Security = "https://github.com/aelaguiz/rally/security/policy"
 [project.scripts]
 rally = "rally.cli:main"
 
+[tool.uv.sources]
+doctrine-agents = { path = "../doctrine", editable = true }
+
 [tool.rally.workspace]
 version = 1
 

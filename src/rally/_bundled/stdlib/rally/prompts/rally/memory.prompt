@@ -1,9 +1,9 @@
 skill RallyMemorySkill: "rally-memory"
-    purpose: "Use the shared Rally memory skill when past work could help on this turn or when you learned a short lesson worth keeping."
+    purpose: "Use the shared Rally memory skill when an older lesson could help on this turn or when you learned one worth keeping."
 
     use_when: "Use When"
-        "Use this when past work like this could help."
-        "Use this when you had to fix your own work and learned a short lesson worth keeping."
+        "Past work like this could help."
+        "You learned a short lesson worth keeping."
 
 document RallyMemoryEntryDocument: "Rally Memory Entry"
     section lesson: "Lesson"
@@ -14,26 +14,3 @@ document RallyMemoryEntryDocument: "Rally Memory Entry"
 
     section what_to_do: "What To Do"
         "Say the next action in plain steps."
-
-
-# This read-first block stays small on purpose.
-# It teaches the one shared habit every Rally agent should keep.
-workflow RallyReadFirst: "Read First"
-    read_order: "Read Order"
-        "Read `home:issue.md` first."
-        "If this turn starts after `sleep` or a resumed run, read it again before you do anything else."
-        "Then read this role's local rules, files, and outputs."
-        "Check `rally-memory` only when past work like this could help."
-
-
-workflow RallyHowToTakeATurn: "Shared Rules"
-    turn_sequence: "Turn Sequence"
-        "Start with the issue and this role's local job."
-        "Use the shared `rally-kernel` skill for saved notes. Do not edit `home:issue.md` directly."
-        "Leave a saved note only when a later reader needs context for this run."
-        "If Rally already saves the final review to `home:issue.md`, do not add a second note unless the flow asks for one."
-        "Use `rally-memory` only when it clearly fits this issue, role, and repo state."
-        "Keep notes run-local and keep memory cross-run."
-        "If you had to fix your own work, save the short lesson for later."
-        "End the turn with the final JSON this turn declares."
-        "Keep routing, `done`, `blocker`, and `sleep` in final JSON, not in memory or notes."
