@@ -7,7 +7,7 @@ agents:
     timeout_sec: 900
     allowed_skills: [demo-git, repo-search]
     allowed_mcps: []
-  02_critic:
+  02_architect_reviewer:
     timeout_sec: 900
     allowed_skills: [demo-git, repo-search]
     allowed_mcps: []
@@ -15,16 +15,23 @@ agents:
     timeout_sec: 900
     allowed_skills: [demo-git, repo-search, pytest-local]
     allowed_mcps: []
-  04_qa_docs_tester:
+  04_developer_reviewer:
+    timeout_sec: 900
+    allowed_skills: [demo-git, repo-search]
+    allowed_mcps: []
+  05_qa_docs_tester:
     timeout_sec: 900
     allowed_skills: [demo-git, repo-search, pytest-local]
+    allowed_mcps: []
+  06_qa_reviewer:
+    timeout_sec: 900
+    allowed_skills: [demo-git, repo-search]
     allowed_mcps: []
 runtime:
   adapter: codex
   max_command_turns: 12
   guarded_git_repos:
     - home:repos/demo_repo
-  prompt_input_command: flow:setup/prompt_inputs.py
   adapter_args:
     model: gpt-5.4
     reasoning_effort: medium

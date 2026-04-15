@@ -1148,19 +1148,7 @@ def _build_agent_prompt(
     turn_index: int,
 ) -> str:
     compiled_markdown = (run_home / "agents" / agent.slug / "AGENTS.md").read_text(encoding="utf-8").rstrip()
-    prompt_inputs = _load_prompt_inputs(
-        workspace=workspace,
-        flow=flow,
-        run_record=run_record,
-        run_home=run_home,
-        agent=agent,
-        recorder=recorder,
-        turn_index=turn_index,
-    )
-    parts = [compiled_markdown]
-    if prompt_inputs:
-        parts.append(_render_prompt_inputs(prompt_inputs))
-    return "\n\n".join(parts).rstrip() + "\n"
+    return compiled_markdown + "\n"
 
 
 @dataclass(frozen=True)
@@ -1241,118 +1229,6 @@ def _block_for_guarded_git_repos(
             message=_render_blocked_message(run_id=run_record.id, reason=blocker_reason),
         ),
     )
-
-
-def _load_prompt_inputs(
-    *,
-    workspace: WorkspaceContext,
-    flow: FlowDefinition,
-    run_record: RunRecord,
-    run_home: Path,
-    agent: FlowAgent,
-    recorder: RunEventRecorder,
-    turn_index: int,
-) -> dict[str, object]:
-    command_path = flow.adapter.prompt_input_command
-    if command_path is None:
-        return {}
-
-    recorder.emit(
-        source="rally",
-        kind="lifecycle",
-        code="INPUTS",
-        message=f"Loading runtime prompt inputs for `{agent.key}`.",
-        turn_index=turn_index,
-        agent_key=agent.key,
-        agent_slug=agent.slug,
-    )
-    completed = subprocess.run(
-        [sys.executable, str(command_path)],
-        cwd=flow.root_dir,
-        env=build_flow_subprocess_env(
-            flow=flow,
-            workspace=workspace,
-            run_home=run_home,
-            extra_env={
-                "RALLY_AGENT_KEY": agent.key,
-                "RALLY_AGENT_SLUG": agent.slug,
-                "RALLY_CLI_BIN": str(workspace.cli_bin.resolve()),
-                "RALLY_FLOW_CODE": run_record.flow_code,
-                "RALLY_ISSUE_PATH": str((run_home / "issue.md").resolve()),
-                "RALLY_RUN_HOME": str(run_home.resolve()),
-                "RALLY_RUN_ID": run_record.id,
-                "RALLY_WORKSPACE_DIR": str(workspace.workspace_root.resolve()),
-            },
-        ),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        stderr = completed.stderr.strip() or completed.stdout.strip() or "prompt input command failed"
-        recorder.emit(
-            source="rally",
-            kind="warning",
-            code="ERROR",
-            message=f"Prompt input command failed: {stderr}",
-            level="error",
-            turn_index=turn_index,
-            agent_key=agent.key,
-            agent_slug=agent.slug,
-        )
-        raise RallyStateError(f"Prompt input command failed for `{agent.key}`: {stderr}")
-
-    raw_output = completed.stdout.strip()
-    if not raw_output:
-        recorder.emit(
-            source="rally",
-            kind="lifecycle",
-            code="INPUTS",
-            message=f"No runtime prompt inputs for `{agent.key}`.",
-            turn_index=turn_index,
-            agent_key=agent.key,
-            agent_slug=agent.slug,
-        )
-        return {}
-    try:
-        payload = json.loads(raw_output)
-    except json.JSONDecodeError as exc:
-        recorder.emit(
-            source="rally",
-            kind="warning",
-            code="ERROR",
-            message="Prompt input command returned invalid JSON.",
-            level="error",
-            turn_index=turn_index,
-            agent_key=agent.key,
-            agent_slug=agent.slug,
-        )
-        raise RallyStateError("Prompt input command did not return valid JSON.") from exc
-    if not isinstance(payload, dict):
-        raise RallyStateError("Prompt input command must return one JSON object.")
-    recorder.emit(
-        source="rally",
-        kind="lifecycle",
-        code="INPUTS OK",
-        message=f"Loaded {len(payload)} runtime prompt input section(s).",
-        turn_index=turn_index,
-        agent_key=agent.key,
-        agent_slug=agent.slug,
-    )
-    return payload
-
-
-def _render_prompt_inputs(payload: dict[str, object]) -> str:
-    sections = ["## Runtime Prompt Inputs"]
-    for key, value in payload.items():
-        sections.append(f"### {key}")
-        if isinstance(value, str):
-            sections.append(value.rstrip())
-            continue
-        sections.append("```json")
-        sections.append(json.dumps(value, indent=2, sort_keys=True))
-        sections.append("```")
-    return "\n\n".join(section for section in sections if section)
 
 def _state_from_turn_result(
     *,

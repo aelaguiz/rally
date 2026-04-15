@@ -205,28 +205,6 @@ The cap is checked before the next turn starts.
 If Rally hits it, Rally keeps the next agent as current, writes a clear
 `Rally Blocked` record, and tells the operator why it stopped.
 
-### `runtime.prompt_input_command`
-
-A flow may declare one `runtime.prompt_input_command` in `flow.yaml`.
-
-What Rally does today:
-
-- runs that command before each turn
-- runs it from the flow root, not from the run home
-- expects one JSON object whose top-level keys become appended prompt-input
-  section titles
-- passes current run facts through env vars:
-  - `RALLY_AGENT_KEY`
-  - `RALLY_AGENT_SLUG`
-  - `RALLY_CLI_BIN`
-  - `RALLY_FLOW_CODE`
-  - `RALLY_ISSUE_PATH`
-  - `RALLY_RUN_HOME`
-  - `RALLY_RUN_ID`
-  - `RALLY_WORKSPACE_DIR`
-- also passes any optional `runtime.env` values from `flow.yaml`
-- lets `runtime.env` override duplicate shell env vars
-
 ### `runtime.env`
 
 A flow may declare one optional `runtime.env` map in `flow.yaml`.
@@ -234,8 +212,7 @@ A flow may declare one optional `runtime.env` map in `flow.yaml`.
 What Rally does today:
 
 - accepts a flat string map only
-- applies it during startup host-input checks, the setup script,
-  prompt-input command, and adapter launches
+- applies it during startup host-input checks, the setup script, and adapter launches
 - expands rooted Rally paths such as `workspace:fixtures/project` before launch
 - lets `runtime.env` satisfy `host_inputs.required_env`
 - lets `host_inputs.required_files` and `required_directories` resolve
@@ -245,9 +222,6 @@ What Rally does today:
 - does not copy those flow-only env vars into `logs/adapter_launch/*.json`
 - writes one `INPUTS` lifecycle event before the command and one `INPUTS OK`
   or failure event after it
-
-Today Rally uses that path in `software_engineering_demo` to feed grounding
-with current branch facts, carry-forward source, and review-basis facts.
 
 ### `runtime.guarded_git_repos`
 

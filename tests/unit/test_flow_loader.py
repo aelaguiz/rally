@@ -69,7 +69,6 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(flow.host_inputs.required_files, ())
         self.assertEqual(flow.host_inputs.required_directories, ())
         self.assertEqual(dict(flow.runtime_env), {})
-        self.assertIsNone(flow.adapter.prompt_input_command)
         self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
             flow.agent("01_poem_writer").compiled.final_output.schema_file,
@@ -101,7 +100,6 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(flow.host_inputs.required_files, ())
         self.assertEqual(flow.host_inputs.required_directories, ())
         self.assertEqual(dict(flow.runtime_env), {})
-        self.assertIsNone(flow.adapter.prompt_input_command)
         self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
             flow.agent("01_poem_writer").compiled.final_output.schema_file,
@@ -529,14 +527,12 @@ class FlowLoaderTests(unittest.TestCase):
             f"{max_command_turns_line}"
             f"{guarded_git_repos_line}"
             f"{runtime_env_block}"
-            "  prompt_input_command: flow:setup/prompt_inputs.py\n"
             "  adapter_args:\n"
             "    model: gpt-5.4\n"
         )
         (flow_root / "flow.yaml").write_text(flow_yaml, encoding="utf-8")
         (flow_root / "setup").mkdir(parents=True)
         (flow_root / "setup" / "prepare_home.sh").write_text("#!/bin/sh\n", encoding="utf-8")
-        (flow_root / "setup" / "prompt_inputs.py").write_text("print('{}')\n", encoding="utf-8")
         (prompts_root / "AGENTS.prompt").write_text("agent ScopeLead:\n", encoding="utf-8")
         (build_root / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
         (build_root / "AGENTS.contract.json").write_text(
@@ -725,6 +721,100 @@ class FlowLoaderTests(unittest.TestCase):
               }}
             }}
             """
+        )
+
+class FlowLoaderRuntimeConfigTests(unittest.TestCase):
+    def test_load_flow_definition_rejects_removed_prompt_input_command(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_runtime_fixture_repo(repo_root=repo_root)
+
+            with self.assertRaisesRegex(RallyConfigError, "was removed"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def _write_runtime_fixture_repo(self, *, repo_root: Path) -> None:
+        flow_root = repo_root / "flows" / "demo"
+        build_root = flow_root / "build" / "agents" / "scope_lead"
+        prompts_root = flow_root / "prompts"
+        schema_root = repo_root / "stdlib" / "rally" / "schemas"
+        example_root = repo_root / "stdlib" / "rally" / "examples"
+
+        build_root.mkdir(parents=True)
+        prompts_root.mkdir(parents=True)
+        schema_root.mkdir(parents=True)
+        example_root.mkdir(parents=True)
+
+        (flow_root / "flow.yaml").write_text(
+            textwrap.dedent(
+                """\
+                name: demo
+                code: DMO
+                start_agent: 01_scope_lead
+                setup_home_script: flow:setup/prepare_home.sh
+                agents:
+                  01_scope_lead:
+                    timeout_sec: 60
+                    allowed_skills: []
+                    allowed_mcps: []
+                runtime:
+                  adapter: codex
+                  max_command_turns: 8
+                  prompt_input_command: flow:setup/prompt_inputs.py
+                  adapter_args:
+                    model: gpt-5.4
+                """
+            ),
+            encoding="utf-8",
+        )
+        (flow_root / "setup").mkdir(parents=True)
+        (flow_root / "setup" / "prepare_home.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+        (prompts_root / "AGENTS.prompt").write_text("agent ScopeLead:\n", encoding="utf-8")
+        (build_root / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
+        (build_root / "AGENTS.contract.json").write_text(
+            json.dumps(
+                {
+                    "contract_version": 1,
+                    "agent": {
+                        "name": "ScopeLead",
+                        "slug": "scope_lead",
+                        "entrypoint": "flows/demo/prompts/AGENTS.prompt",
+                    },
+                    "final_output": {
+                        "exists": True,
+                        "declaration_key": "DemoTurnResult",
+                        "declaration_name": "DemoTurnResult",
+                        "format_mode": "json_schema",
+                        "schema_profile": "OpenAIStructuredOutput",
+                        "schema_file": "stdlib:schemas/rally_turn_result.schema.json",
+                        "example_file": "stdlib:examples/rally_turn_result.example.json",
+                    },
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (schema_root / "rally_turn_result.schema.json").write_text(
+            textwrap.dedent(
+                """\
+                {
+                  "type": "object",
+                  "required": ["kind", "next_owner", "summary", "reason", "sleep_duration_seconds"],
+                  "properties": {
+                    "kind": {"type": "string", "enum": ["handoff", "done", "blocker", "sleep"]},
+                    "next_owner": {"type": ["string", "null"]},
+                    "summary": {"type": ["string", "null"]},
+                    "reason": {"type": ["string", "null"]},
+                    "sleep_duration_seconds": {"type": ["integer", "null"]}
+                  }
+                }
+                """
+            ),
+            encoding="utf-8",
+        )
+        (example_root / "rally_turn_result.example.json").write_text(
+            '{"kind":"done","next_owner":null,"summary":"ok","reason":null,"sleep_duration_seconds":null}\n',
+            encoding="utf-8",
         )
 
 

@@ -1,12 +1,73 @@
-json schema PoemReviewSchema: "Poem Review Schema"
-    profile: OpenAIStructuredOutput
-    file: "schemas/poem_review.schema.json"
+output schema PoemReviewSchema: "Poem Review Schema"
+    field verdict: "Verdict"
+        type: string
+        enum:
+            accept
+            changes_requested
+        required
+        note: "Review verdict."
+
+    field reviewed_artifact: "Reviewed Artifact"
+        type: string
+        required
+        min_length: 1
+        note: "Reviewed poem path."
+
+    field analysis_performed: "Analysis Performed"
+        type: string
+        required
+        min_length: 1
+        note: "Plain review summary."
+
+    field findings_first: "Findings First"
+        type: string
+        required
+        min_length: 1
+        note: "Main finding and next move."
+
+    field current_artifact: "Current Artifact"
+        type: string
+        optional
+        min_length: 1
+        note: "Current poem path when the draft still stands."
+
+    field next_owner: "Next Owner"
+        type: string
+        optional
+        min_length: 1
+        note: "Next owner key when more work is needed."
+
+    field failure_detail: "Failure Detail"
+        type: object
+        optional
+        note: "Rejected or blocked review details."
+
+        field blocked_gate: "Blocked Gate"
+            type: string
+            optional
+            min_length: 1
+            note: "Blocking reason when review could not start."
+
+        field failing_gates: "Failing Gates"
+            type: array
+            items: string
+            optional
+            min_items: 1
+            note: "Exact failing review gates in authored order."
+
+    example:
+        verdict: "accept"
+        reviewed_artifact: "home:artifacts/poem.md"
+        analysis_performed: "The sonnet keeps its moon focus, the images stay clear, and the draft now feels finished."
+        findings_first: "The poem is ready to keep as written."
+        current_artifact: "home:artifacts/poem.md"
+        next_owner: null
+        failure_detail: null
 
 
 output shape PoemReviewJson: "Poem Review JSON"
     kind: JsonObject
     schema: PoemReviewSchema
-    example_file: "examples/poem_review.example.json"
 
     field_notes: "Field Notes"
         "Use owner key `poem_writer` when the poem needs another draft."

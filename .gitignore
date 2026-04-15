@@ -28,5 +28,6 @@ htmlcov/
 # Local reference repos
 /for_reference_only/
 .codex
+_audit_ledger.md
 skills/**/build
 **/legacy

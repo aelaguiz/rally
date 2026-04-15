@@ -437,7 +437,7 @@ def _demo_flow(
         runtime_env=runtime_env or {},
         host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
         agents={agent.key: agent},
-        adapter=AdapterConfig(name=adapter_name, prompt_input_command=None, args={}),
+        adapter=AdapterConfig(name=adapter_name, args={}),
     )
 
 

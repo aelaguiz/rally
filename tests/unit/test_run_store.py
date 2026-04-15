@@ -163,7 +163,7 @@ def _demo_flow(*, repo_root: Path) -> FlowDefinition:
         runtime_env={},
         host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
         agents={agent.key: agent},
-        adapter=AdapterConfig(name="codex", prompt_input_command=None, args={}),
+        adapter=AdapterConfig(name="codex", args={}),
     )
 
 

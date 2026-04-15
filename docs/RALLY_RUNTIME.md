@@ -72,8 +72,8 @@ What ships today:
   `SKILL.md` and Doctrine `prompts/SKILL.prompt` both supported
 - per-agent skill views refreshed under `home/sessions/<agent>/skills/` and
   the live `home/skills/` tree activated per turn from that prebuilt view
-- flow-level `setup_home_script`, `runtime.prompt_input_command`,
-  `runtime.env`, and `runtime.guarded_git_repos`
+- flow-level `setup_home_script`, `runtime.env`, and
+  `runtime.guarded_git_repos`
 - dirty guarded-repo failures that block `handoff` or `done` loud instead of
   letting Rally claim a clean finish
 - `rally workspace sync`
@@ -153,12 +153,10 @@ The current checked-in runtime surface is:
 - `src/rally/services/flow_loader.py`
   - loads `flow.yaml`
   - validates supported adapter names and adapter args through the registry
-  - validates `runtime.max_command_turns`, prompt-input commands, `runtime.env`,
-    and guarded repo paths
+  - validates `runtime.max_command_turns`, `runtime.env`, and guarded repo paths
   - requires compiled `build/agents/*`
   - requires `AGENTS.contract.json`
-  - validates flow codes, `runtime.max_command_turns`,
-    `runtime.prompt_input_command`, `runtime.env`,
+  - validates flow codes, `runtime.max_command_turns`, `runtime.env`,
     `runtime.guarded_git_repos`, and the shared turn-result schema
   - carries the compiled slug forward as the source-of-truth agent identity after validation
 - `src/rally/services/skill_bundles.py`
@@ -251,8 +249,7 @@ The current checked-in runtime surface is:
   - writes one adapter launch proof file per turn
 - `src/rally/services/flow_env.py`
   - expands optional `runtime.env` values from `flow.yaml`
-  - applies that flow env to startup host-input checks, setup, prompt-input,
-    and adapter launches
+  - applies that flow env to startup host-input checks, setup, and adapter launches
   - lets flow env override duplicate shell env while still keeping Rally and adapter keys last
 - `src/rally/adapters/codex/session_store.py`
   - saves one session id per agent
@@ -283,9 +280,6 @@ The current checked-in runtime surface is:
   - bootstraps a blank demo repo with a seed commit on first run
   - copies the newest archived done demo repo, including `.git`, on later runs
   - creates a new `issue/<run-id>` branch for each issue
-- `flows/software_engineering_demo/setup/prompt_inputs.py`
-  - emits current branch, clean or dirty status, recent commits,
-    carry-forward source, and review-basis facts for grounding
 - `skills/demo-git/prompts/**`
   - provides one Doctrine-authored git helper skill plus a small helper script
     and runnable reference examples for the demo repo
@@ -295,7 +289,7 @@ The live smoke now proves two real paths:
 - the full `poem_loop` loop:
   `poem_writer -> poem_critic -> poem_writer -> done`
 - the full `software_engineering_demo` loop:
-  `architect -> critic -> developer -> critic -> qa_docs_tester -> critic`
+  `architect -> architect_reviewer -> developer -> developer_reviewer -> qa_docs_tester -> qa_reviewer`
 
 Both loops now run in one Rally command unless a real stop point interrupts
 them.
@@ -347,7 +341,7 @@ The current core proof set is:
 - `tests/unit/memory/test_index.py`
 - `tests/unit/memory/test_service.py`
 - `tests/unit/memory/test_events.py`
-- `tests/unit/test_software_engineering_demo_prompt_inputs.py`
+- `tests/unit/test_flow_loader.py`
 - `uv run pytest tests/unit -q`
 - one bridge smoke proof that confirmed an empty scoped refresh does not create `~/.cache/qmd/`
 - one earlier live end-to-end `poem_loop` run on Codex

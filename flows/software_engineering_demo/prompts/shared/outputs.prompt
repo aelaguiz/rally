@@ -13,7 +13,7 @@ document ArchitectIssueNoteDocument: "Architect Note"
         "Say the branch and whether the repo changed on this turn."
 
     section next_step: "Next Step"
-        "Tell Critic what to judge next."
+        "Tell ArchitectReviewer what to judge next."
 
 
 document DeveloperIssueNoteDocument: "Developer Note"
@@ -27,7 +27,7 @@ document DeveloperIssueNoteDocument: "Developer Note"
         "Give the commit hash, or say `No repo change.` when nothing changed."
 
     section next_step: "Next Step"
-        "Tell Critic what to judge next."
+        "Tell DeveloperReviewer what to judge next."
 
 
 document QaIssueNoteDocument: "QA Note"
@@ -41,7 +41,7 @@ document QaIssueNoteDocument: "QA Note"
         "Give the commit hash, or say `No repo change.` when nothing changed."
 
     section next_step: "Next Step"
-        "Tell Critic what to judge next."
+        "Tell QaReviewer what to judge next."
 
 
 output ArchitectIssueNote: "Architect Issue Note"

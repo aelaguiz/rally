@@ -30,7 +30,6 @@ def normalize_flow_code(flow_code: str) -> str:
 @dataclass(frozen=True)
 class AdapterConfig:
     name: str
-    prompt_input_command: Path | None
     args: Mapping[str, object]
 
     def __post_init__(self) -> None:

@@ -15,14 +15,17 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from rally.domain.run import ResumeRequest, RunRequest, RunStatus
+from rally.domain.flow import AdapterConfig, CompiledAgentContract, FinalOutputContract, FlowAgent, FlowDefinition, FlowHostInputs
+from rally.domain.run import ResumeRequest, RunRecord, RunRequest, RunStatus
 from rally.errors import RallyConfigError, RallyUsageError
 from rally.services.flow_build import ensure_flow_assets_built as build_flow_assets
 from rally.services.bundled_assets import ensure_workspace_builtins_synced
 from rally.services.issue_editor import IssueEditorResult
 from rally.services.issue_ledger import ORIGINAL_ISSUE_END_MARKER
+from rally.services.run_events import RunEventRecorder
 from rally.services.run_store import archive_run, find_run_dir, load_run_state, write_run_state
-from rally.services.runner import resume_run, run_flow
+from rally.services.runner import _build_agent_prompt, resume_run, run_flow
+from rally.services.workspace import workspace_context_from_root
 from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display
 
 
@@ -32,6 +35,84 @@ class RunnerTests(unittest.TestCase):
         self._build_patcher = patch("rally.services.runner.ensure_flow_assets_built", autospec=True)
         self.ensure_flow_assets_built = self._build_patcher.start()
         self.addCleanup(self._build_patcher.stop)
+
+    def test_build_agent_prompt_returns_compiled_agents_markdown_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            for directory_name in ("flows", "skills", "mcps", "stdlib", "runs"):
+                (repo_root / directory_name).mkdir(parents=True, exist_ok=True)
+            (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally-test'\n", encoding="utf-8")
+
+            run_dir = repo_root / "runs" / "active" / "DMO-1"
+            run_home = run_dir / "home"
+            agent_markdown = run_home / "agents" / "demo_agent" / "AGENTS.md"
+            agent_markdown.parent.mkdir(parents=True, exist_ok=True)
+            agent_markdown.write_text("# Demo Agent\n\nRead the ledger.\n", encoding="utf-8")
+
+            workspace = workspace_context_from_root(repo_root)
+            final_output = FinalOutputContract(
+                exists=True,
+                declaration_key="DemoTurnResult",
+                declaration_name="DemoTurnResult",
+                format_mode="json_schema",
+                schema_profile="OpenAIStructuredOutput",
+                schema_file=None,
+                example_file=None,
+            )
+            compiled = CompiledAgentContract(
+                name="DemoAgent",
+                slug="demo_agent",
+                entrypoint=repo_root / "flows" / "demo" / "prompts" / "AGENTS.prompt",
+                markdown_path=agent_markdown,
+                contract_path=run_home / "agents" / "demo_agent" / "AGENTS.contract.json",
+                contract_version=1,
+                final_output=final_output,
+            )
+            agent = FlowAgent(
+                key="01_demo_agent",
+                slug="demo_agent",
+                timeout_sec=60,
+                allowed_skills=(),
+                allowed_mcps=(),
+                compiled=compiled,
+            )
+            flow = FlowDefinition(
+                name="demo",
+                code="DMO",
+                root_dir=repo_root / "flows" / "demo",
+                flow_file=repo_root / "flows" / "demo" / "flow.yaml",
+                prompt_entrypoint=repo_root / "flows" / "demo" / "prompts" / "AGENTS.prompt",
+                build_agents_dir=repo_root / "flows" / "demo" / "build" / "agents",
+                setup_home_script=None,
+                start_agent_key="01_demo_agent",
+                max_command_turns=8,
+                guarded_git_repos=(),
+                runtime_env={},
+                host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
+                agents={"01_demo_agent": agent},
+                adapter=AdapterConfig(name="codex", args={}),
+            )
+            run_record = RunRecord(
+                id="DMO-1",
+                flow_name="demo",
+                flow_code="DMO",
+                adapter_name="codex",
+                start_agent_key="01_demo_agent",
+                created_at="2026-04-15T00:00:00Z",
+            )
+            recorder = RunEventRecorder(run_dir=run_dir, run_id="DMO-1", flow_code="DMO")
+
+            prompt = _build_agent_prompt(
+                workspace=workspace,
+                run_home=run_home,
+                flow=flow,
+                run_record=run_record,
+                agent=agent,
+                recorder=recorder,
+                turn_index=1,
+            )
+
+            self.assertEqual(prompt, "# Demo Agent\n\nRead the ledger.\n")
 
     def test_run_flow_creates_pending_run_until_issue_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -934,82 +1015,6 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue((repo_root / "skills" / "rally-memory" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
-
-    def test_resume_run_passes_workspace_dir_to_prompt_input_command(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            repo_root = Path(temp_dir).resolve()
-            self._write_demo_repo(
-                repo_root=repo_root,
-                runtime_env={
-                    "PROJECT_ROOT": "workspace:fixtures/project",
-                    "FLOW_ONLY": "from-flow",
-                },
-            )
-            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
-            flow_text = flow_path.read_text(encoding="utf-8")
-            flow_path.write_text(
-                flow_text.replace(
-                    "  adapter_args:\n",
-                    "  prompt_input_command: flow:setup/prompt_inputs.py\n  adapter_args:\n",
-                ),
-                encoding="utf-8",
-            )
-            (repo_root / "flows" / "demo" / "setup").mkdir(parents=True, exist_ok=True)
-            (repo_root / "flows" / "demo" / "setup" / "prompt_inputs.py").write_text("print('{}')\n", encoding="utf-8")
-
-            captured_env: dict[str, str] = {}
-
-            def prompt_input_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-                self.assertEqual(command[0], sys.executable)
-                self.assertIn("RALLY_WORKSPACE_DIR", kwargs["env"])
-                self.assertIn("RALLY_CLI_BIN", kwargs["env"])
-                captured_env.update(kwargs["env"])
-                return subprocess.CompletedProcess(
-                    args=command,
-                    returncode=0,
-                    stdout=json.dumps({"Env": {"workspace_dir": kwargs["env"]["RALLY_WORKSPACE_DIR"]}}),
-                    stderr="",
-                )
-
-            run_dir = self._create_pending_run(repo_root=repo_root)
-            self._write_issue(run_dir=run_dir)
-            fake_run = _FakeCodexRun(
-                [
-                    {
-                        "thread_id": "session-1",
-                        "last_message": {
-                            "kind": "done",
-                            "next_owner": None,
-                            "summary": "done",
-                            "reason": None,
-                            "sleep_duration_seconds": None,
-                        },
-                    }
-                ]
-            )
-
-            with patch.dict(os.environ, {"FLOW_ONLY": "from-shell"}, clear=False), patch(
-                "rally.services.runner.subprocess.run",
-                side_effect=prompt_input_run,
-            ):
-                result = resume_run(
-                    repo_root=repo_root,
-                    request=ResumeRequest(run_id="DMO-1"),
-                    subprocess_run=fake_run,
-                )
-
-            prompt_text = fake_run.calls[0]["kwargs"]["input"]
-            launch_record = json.loads(
-                (run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(result.status, RunStatus.DONE)
-            self.assertEqual(captured_env["RALLY_WORKSPACE_DIR"], str(repo_root))
-            self.assertEqual(captured_env["PROJECT_ROOT"], str(repo_root / "fixtures" / "project"))
-            self.assertEqual(captured_env["FLOW_ONLY"], "from-flow")
-            self.assertEqual(fake_run.calls[0]["kwargs"]["env"]["PROJECT_ROOT"], str(repo_root / "fixtures" / "project"))
-            self.assertEqual(fake_run.calls[0]["kwargs"]["env"]["FLOW_ONLY"], "from-flow")
-            self.assertNotIn("FLOW_ONLY", launch_record["env"])
-            self.assertIn(str(repo_root), prompt_text)
 
     def test_run_flow_passes_flow_env_to_setup_script(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

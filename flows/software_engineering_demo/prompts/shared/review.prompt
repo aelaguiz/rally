@@ -1,23 +1,78 @@
-enum ReviewMode: "Review Mode"
-    architect_review: "architect-review"
-    developer_review: "developer-review"
-    qa_review: "qa-review"
+output schema EngineeringReviewSchema: "Engineering Review Schema"
+    field verdict: "Verdict"
+        type: string
+        enum:
+            accept
+            changes_requested
+        required
+        note: "Review verdict."
+
+    field reviewed_artifact: "Reviewed Artifact"
+        type: string
+        required
+        min_length: 1
+        note: "Reviewed issue ledger path."
+
+    field analysis_performed: "Analysis Performed"
+        type: string
+        required
+        min_length: 1
+        note: "Plain review summary."
+
+    field findings_first: "Findings First"
+        type: string
+        required
+        min_length: 1
+        note: "Main finding and next move."
+
+    field current_artifact: "Current Artifact"
+        type: string
+        optional
+        min_length: 1
+        note: "Current issue ledger path when the work still stands."
+
+    field next_owner: "Next Owner"
+        type: string
+        optional
+        min_length: 1
+        note: "Next owner key when review routes."
+
+    field failure_detail: "Failure Detail"
+        type: object
+        optional
+        note: "Rejected or blocked review details."
+
+        field blocked_gate: "Blocked Gate"
+            type: string
+            optional
+            min_length: 1
+            note: "Blocking reason when review could not start."
+
+        field failing_gates: "Failing Gates"
+            type: array
+            items: string
+            optional
+            min_items: 1
+            note: "Exact failing review gates in authored order."
+
+    example:
+        verdict: "accept"
+        reviewed_artifact: "home:issue.md"
+        analysis_performed: "The architect pass names the real repo path, stays on the current branch, and gives Developer one clear next step."
+        findings_first: "The architect pass is ready for development."
+        current_artifact: "home:issue.md"
+        next_owner: "developer"
+        failure_detail: null
 
 
-json schema CriticReviewSchema: "Critic Review Schema"
-    profile: OpenAIStructuredOutput
-    file: "schemas/critic_review.schema.json"
-
-
-output shape CriticReviewJson: "Critic Review JSON"
+output shape EngineeringReviewJson: "Engineering Review JSON"
     kind: JsonObject
-    schema: CriticReviewSchema
-    example_file: "examples/critic_review.example.json"
+    schema: EngineeringReviewSchema
 
     field_notes: "Field Notes"
         "Use `architect`, `developer`, or `qa_docs_tester` for `next_owner` when the review routes."
         "Use `home:issue.md` for `reviewed_artifact` and `current_artifact`."
-        "Use `null` for `next_owner` when the review accepts the final QA pass."
+        "Use `null` for `next_owner` when the review ends the run."
         "Use `null` for `failure_detail` when the review accepts."
 
 
@@ -66,12 +121,12 @@ schema QaReviewContract: "QA Review Contract"
             "Confirm the proof is real and easy to read back."
 
         finish_ready: "Finish Ready"
-            "Confirm Critic can honestly end the run."
+            "Confirm the flow can honestly end now."
 
 
-output CriticReviewResponse: "Critic Review Response"
+output EngineeringReviewResponse: "Engineering Review Response"
     target: TurnResponse
-    shape: CriticReviewJson
+    shape: EngineeringReviewJson
     requirement: Required
 
     verdict: "Verdict"
