@@ -31,6 +31,8 @@ The final JSON still ends the turn through one shared final-response path after
 adapter execution.
 Many turns use one flat five-key object.
 Review-native turns may use control-ready Doctrine review JSON instead.
+Rally also copies that full final JSON into the matching `Rally Turn Result`
+block in `home:issue.md`.
 
 # Shipped Rules
 

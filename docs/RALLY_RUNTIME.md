@@ -226,6 +226,7 @@ The current checked-in runtime surface is:
   - reads one final JSON object from `last_message.json`
   - parses either the shared Rally turn result or review-native control-ready
     finals
+  - keeps the loaded payload ready for issue-ledger readback
 - `src/rally/adapters/base.py`
   - defines `RallyAdapter`, `AdapterSessionRecord`, `TurnArtifactPaths`, and
     `AdapterInvocation`
@@ -271,6 +272,8 @@ The current checked-in runtime surface is:
     `resume --edit` changed the issue text
   - appends Rally-owned ledger blocks with Markdown `---` dividers and turn
     labels on turn-scoped records
+  - keeps the quick summary lines on `Rally Turn Result` blocks and adds a
+    pretty JSON copy of the full final message under them
   - lets `run --step` and `resume --step` stop clean after one turn and mark
     the run as `paused`
   - keeps chaining turns after handoffs until Rally reaches `done`, `blocker`,

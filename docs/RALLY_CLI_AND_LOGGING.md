@@ -391,6 +391,8 @@ The current Rally note block format is:
 Turn-scoped runtime blocks use the same optional `- Turn:` metadata line.
 That includes `Rally Turn Result`, `Rally Done`, `Rally Blocked`, and
 `Rally Sleeping` when the block belongs to one active turn.
+`Rally Turn Result` keeps the quick summary lines and adds a fenced pretty JSON
+copy of the full final message under them.
 Non-turn blocks such as `Rally Run Started`, `Rally Archived`, and
 `user edited issue.md` stay unnumbered.
 

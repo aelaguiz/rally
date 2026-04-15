@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
 import os
 import shlex
@@ -899,6 +900,7 @@ def _execute_single_turn(
             run_id=run_record.id,
             agent=agent,
             turn_result=turn_result,
+            payload=loaded_final_response.payload,
             turn_index=turn_index,
             append_sleep_record=False,
         )
@@ -978,6 +980,7 @@ def _execute_single_turn(
         run_id=run_record.id,
         agent=agent,
         turn_result=turn_result,
+        payload=loaded_final_response.payload,
         turn_index=turn_index,
     )
 
@@ -1438,6 +1441,7 @@ def _append_issue_records_for_turn_result(
     run_id: str,
     agent: FlowAgent,
     turn_result: TurnResult,
+    payload: Mapping[str, object],
     turn_index: int,
     append_sleep_record: bool = True,
 ) -> None:
@@ -1458,6 +1462,7 @@ def _append_issue_records_for_turn_result(
         title="Rally Turn Result",
         source="rally runtime",
         detail_lines=detail_lines,
+        body=_render_turn_result_payload_markdown(payload=payload),
         turn_index=turn_index,
     )
     if isinstance(turn_result, BlockerTurnResult):
@@ -1491,6 +1496,11 @@ def _append_issue_records_for_turn_result(
             detail_lines=(f"Agent: `{agent.key}`", f"Summary: {turn_result.summary}"),
             turn_index=turn_index,
         )
+
+
+def _render_turn_result_payload_markdown(*, payload: Mapping[str, object]) -> str:
+    rendered_payload = json.dumps(payload, indent=2)
+    return f"```json\n{rendered_payload}\n```"
 
 
 def _append_review_note(

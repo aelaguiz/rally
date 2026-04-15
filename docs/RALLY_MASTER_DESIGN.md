@@ -234,7 +234,7 @@ It should:
 - begin with the operator's brief exactly as entered
 - remain append-only after that initial brief
 - add one hidden `<!-- RALLY_ORIGINAL_ISSUE_END -->` marker before the first Rally-owned block
-- hold setup notes, serialized notes, normalized final-turn response records, and runner-generated status records
+- hold setup notes, serialized notes, `Rally Turn Result` records with short summary lines plus a pretty copy of the full final JSON, and runner-generated status records
 - use one Markdown `---` divider between Rally-owned blocks after that marker
 - add `- Turn: \`N\`` on turn-scoped blocks without asking the agent to manage that line
 

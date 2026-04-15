@@ -143,6 +143,9 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
             self.assertIn("## Rally Done\n- Run ID: `DMO-1`\n- Turn: `2`", issue_text)
             self.assertIn("\n---\n\n## Rally Turn Result", issue_text)
+            self.assertIn("```json\n{\n  \"kind\": \"handoff\"", issue_text)
+            self.assertIn('"next_owner": "change_engineer"', issue_text)
+            self.assertIn('"summary": "verified"', issue_text)
             self.assertIn("session-1", session_text)
             self.assertIn('"code": "RUN"', events_text)
             self.assertIn('"code": "SESSION"', agent_log_text)
@@ -743,6 +746,8 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("- Source: `rally runtime review`", issue_text)
             self.assertIn("### Findings First", issue_text)
             self.assertIn("The poem is ready to keep as written.", issue_text)
+            self.assertIn("```json\n{\n  \"verdict\": \"accept\"", issue_text)
+            self.assertIn('"reviewed_artifact": "home:artifacts/poem.md"', issue_text)
 
     def test_resume_run_rebuilds_flow_and_stdlib_prompt_sources_before_next_turn(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1511,6 +1516,9 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("### Findings First", issue_text)
             self.assertIn("Line 3 lands. Line 2 still needs a sharper image", issue_text)
             self.assertIn("Middle line explains rather than shows the stranding.", issue_text)
+            self.assertIn("```json\n{\n  \"verdict\": \"changes_requested\"", issue_text)
+            self.assertIn('"failure_detail": {', issue_text)
+            self.assertIn('"failing_gates": [', issue_text)
 
     def test_run_flow_rebuild_failure_stops_before_creating_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2421,6 +2429,8 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
             self.assertIn("## Rally Blocked\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
             self.assertNotIn("Rally Sleeping", issue_text)
+            self.assertIn("```json\n{\n  \"kind\": \"sleep\"", issue_text)
+            self.assertIn('"sleep_duration_seconds": 60', issue_text)
             self.assertIn("SLEEP", rendered_text)
             self.assertIn("BLOCKED", rendered_text)
 

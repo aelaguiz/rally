@@ -7,7 +7,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/aelaguiz/rally/badge)](https://scorecard.dev/viewer/?uri=github.com/aelaguiz/rally)
 
 [Doctrine](https://github.com/aelaguiz/doctrine) · [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
-[Design](docs/RALLY_MASTER_DESIGN.md) · [Versioning](docs/VERSIONING.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
+[Design](docs/RALLY_MASTER_DESIGN.md) · [Porting Guide](docs/RALLY_PORTING_GUIDE.md) · [Versioning](docs/VERSIONING.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
 
 Build strong, stable coding-agent workflows from plain repo files.
 
@@ -82,6 +82,12 @@ Versioning and upgrade rules live in [docs/VERSIONING.md](docs/VERSIONING.md).
 Release history lives in [CHANGELOG.md](CHANGELOG.md).
 
 ## Use Rally In Another Repo
+
+If you are porting an existing agent system into Rally, read
+[docs/RALLY_PORTING_GUIDE.md](docs/RALLY_PORTING_GUIDE.md) first.
+It explains what should move into `flow.yaml`, `home:issue.md`, setup scripts,
+skills, and shared prompt owners, with example-driven guidance about what to
+remove, what to keep, and where Rally expects the truth to live.
 
 Your host repo is the Rally workspace. Add the fixed top-level folders:
 

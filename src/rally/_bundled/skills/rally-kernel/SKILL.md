@@ -6,7 +6,6 @@ description: "Shared Rally turn skill for leaving issue notes, adding flat struc
 # Rally Kernel
 
 Use this skill on Rally-managed turns when you need Rally's shared note and end-turn rules.
-Do not use it to repeat flow-local prompt instructions.
 Rally loads this skill on every Rally-managed turn. Flows do not need to list it by hand.
 
 ## When to use
@@ -57,10 +56,11 @@ _unordered list_
 _ordered list_
 
 1. Confirm this is a Rally-managed turn, that `RALLY_WORKSPACE_DIR` points at the active workspace root, that `RALLY_CLI_BIN` points at Rally CLI, and that `RALLY_RUN_ID` is present.
-2. Decide whether a later reader needs a short note.
-3. If yes, decide whether the note also needs flat `--field key=value` labels.
-4. Write one short markdown note through the Rally CLI.
-5. Shape the final turn result to match the declared JSON schema for this turn.
+2. Read `home:issue.md` again before you act. Do this on the first turn, after `sleep`, and after any resumed run.
+3. Decide whether a later reader needs a short note.
+4. If yes, decide whether the note also needs flat `--field key=value` labels.
+5. Write one short markdown note through the Rally CLI.
+6. Shape the final turn result to match the declared JSON schema for this turn.
 
 ## Workflow
 
@@ -68,12 +68,13 @@ _ordered list_
 
 _ordered list_
 
-1. Decide whether a note is really needed. Use a note only when later readers would lose important context that does not belong in the flow's main file or in the final turn result itself.
-2. Write the note through Rally CLI when needed.
-3. Keep the note short. Save context, decisions, exact commands, or constraints that later turns should read. Do not restate the whole file or copy the final JSON.
-4. Keep structured fields simple. Use short flat labels such as `kind`, `lane`, `artifact`, or `review_mode`. Put the human explanation in the note body, not in the field names.
-5. End the turn with strict final JSON. Many turns use the shared five-key Rally turn result. Review-native turns may use declared Doctrine review JSON instead. The skill helps you shape that result, but it does not replace the adapter return path.
-6. Keep route truth out of notes. If the turn routes, let final JSON carry `next_owner`.
+1. Read `home:issue.md` again before you act. This keeps the shared ledger current after wake and resume.
+2. Decide whether a note is really needed. Use a note only when later readers would lose important context that does not belong in the flow's main file or in the final turn result itself.
+3. Write the note through Rally CLI when needed.
+4. Keep the note short. Save context, decisions, exact commands, or constraints that later turns should read. Do not restate the whole file or copy the final JSON.
+5. Keep structured fields simple. Use short flat labels such as `kind`, `lane`, `artifact`, or `review_mode`. Put the human explanation in the note body, not in the field names.
+6. End the turn with strict final JSON. Many turns use the shared five-key Rally turn result. Review-native turns may use declared Doctrine review JSON instead. The skill helps you shape that result, but it does not replace the adapter return path.
+7. Keep route truth out of notes. If the turn routes, let final JSON carry `next_owner`.
 
 ### Preferred stdin form
 

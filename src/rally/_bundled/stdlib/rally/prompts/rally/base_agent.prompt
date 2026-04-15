@@ -79,6 +79,8 @@ outputs RallyManagedOutputs: "Outputs"
         rally.notes.RallyIssueNote
 
 
+# This shared base block is where Rally states repo-wide turn rules once.
+# Local flows can add more rules, but they should not fight this base layer.
 abstract agent RallyManagedBaseAgent:
     read_first: rally.memory.RallyReadFirst
     how_to_take_a_turn: rally.memory.RallyHowToTakeATurn
@@ -89,6 +91,8 @@ abstract agent RallyManagedBaseAgent:
         "Many Rally turns use `rally.turn_results.RallyTurnResult`."
         "Review-native turns may end with Doctrine review JSON that Rally can read."
         "Use `home:issue.md` as the shared run ledger for this run."
+        "At the start of each turn, read `home:issue.md` again before you act."
+        "Do that on the first turn, after `sleep`, and after any resumed run."
         "Leave a note only when a later reader needs context."
         "If Rally already saves the final review to `home:issue.md`, do not leave a second note unless the flow asks for one."
         "Use the shared `rally-kernel` skill for that note."

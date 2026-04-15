@@ -16,9 +16,12 @@ document RallyMemoryEntryDocument: "Rally Memory Entry"
         "Say the next action in plain steps."
 
 
+# This read-first block stays small on purpose.
+# It teaches the one shared habit every Rally agent should keep.
 workflow RallyReadFirst: "Read First"
     read_order: "Read Order"
         "Read the issue first."
+        "If this turn starts after `sleep` or a resumed run, read the issue again before you do anything else."
         "Then read this role's local rules, files, and outputs."
         "Check memory for tasks like this one."
 
