@@ -9,36 +9,36 @@ Use this skill when a later reader needs one short saved note on this run.
 
 ## Quick model
 
-Use Rally CLI for notes.
-Notes save run-local context.
+- Use Rally CLI for notes.
+- Notes save run-local context.
 
 ## When to use
 
-A later reader needs one short saved note on this run.
-The note also needs short `--field key=value` labels.
+- A later reader needs one short saved note on this run.
+- The note also needs short `--field key=value` labels.
 
 ## Hard rules
 
-Write notes with `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`.
-Do not edit `home:issue.md` directly.
-Keep `--field` labels short and flat.
-Fail loud if `RALLY_CLI_BIN`, `RALLY_WORKSPACE_DIR`, or `RALLY_RUN_ID` is missing instead of guessing the active run or CLI path.
-If Rally already saves a review result to `home:issue.md`, do not add a second note unless the flow asks for one.
+- Write notes with `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`.
+- Do not edit `home:issue.md` directly.
+- Keep `--field` labels short and flat.
+- Fail loud if `RALLY_CLI_BIN`, `RALLY_WORKSPACE_DIR`, or `RALLY_RUN_ID` is missing instead of guessing the active run or CLI path.
+- If Rally already saves a review result to `home:issue.md`, do not add a second note unless the flow asks for one.
 
 ## First move
 
-Confirm `RALLY_CLI_BIN`, `RALLY_RUN_ID`, and the active Rally workspace are present.
-Read `home:issue.md` again before you act.
-Decide whether a later reader needs one short saved note.
+1. Confirm `RALLY_CLI_BIN`, `RALLY_RUN_ID`, and the active Rally workspace are present.
+2. Read `home:issue.md` again before you act.
+3. Decide whether a later reader needs one short saved note.
 
 ## Workflow
 
-Read `home:issue.md` again before you act.
-Use a note only when later readers would lose context that does not belong in the main file.
-Write the note through Rally CLI when needed.
-Keep the note short. Save context, exact commands, or constraints.
-Keep `--field` labels simple. Put the human explanation in the note body, not in the field names.
-After the note, end the turn with the normal declared output.
+1. Read `home:issue.md` again before you act.
+2. Use a note only when later readers would lose context that does not belong in the main file.
+3. Write the note through Rally CLI when needed.
+4. Keep the note short. Save context, exact commands, or constraints.
+5. Keep `--field` labels simple. Put the human explanation in the note body, not in the field names.
+6. After the note, end the turn with the normal declared output.
 
 ## Preferred stdin form
 
@@ -69,17 +69,17 @@ EOF
 
 ## Short forms
 
-Use `--text` when a one-line note is clearer than stdin.
-Use `--file` when the note already exists in a small prepared file.
-Read `references/note_examples.md` when you need the exact alternate note forms.
+- Use `--text` when a one-line note is clearer than stdin.
+- Use `--file` when the note already exists in a small prepared file.
+- Read `references/note_examples.md` when you need the exact alternate note forms.
 
 ## Output expectations
 
-When no saved context is needed, do not write a note.
-When saved context is needed, write one note only.
-This skill is for note work only. It does not replace the turn's declared output.
+- When no saved context is needed, do not write a note.
+- When saved context is needed, write one note only.
+- This skill is for note work only. It does not replace the turn's declared output.
 
 ## Reference map
 
-Use `references/note_examples.md` for the exact note command forms.
-No extra `references/` or `scripts/` should ship in v1 unless review or repeated execution failures prove they are needed.
+- Use `references/note_examples.md` for the exact note command forms.
+- No extra `references/` or `scripts/` should ship in v1 unless review or repeated execution failures prove they are needed.

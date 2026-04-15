@@ -9,37 +9,37 @@ Use this skill when past work could help on this turn.
 
 ## Quick model
 
-Memory keeps cross-run lessons.
-Memory does not replace run-local notes.
+- Memory keeps cross-run lessons.
+- Memory does not replace run-local notes.
 
 ## When to use
 
-Past work like this could help.
-You found a memory that clearly fits this role and issue.
-You had to fix your own work and learned a short lesson worth keeping.
-The memory index needs a refresh from the markdown source files.
+- Past work like this could help.
+- You found a memory that clearly fits this role and issue.
+- You had to fix your own work and learned a short lesson worth keeping.
+- The memory index needs a refresh from the markdown source files.
 
 ## Hard rules
 
-Use Rally CLI for memory actions.
-Use a memory only when it clearly fits this issue and role.
-Save only short reusable lessons.
-Do not use memory to replace run-local notes.
-Do not edit memory files or QMD state directly.
-Fail loud if `RALLY_CLI_BIN`, `RALLY_RUN_ID`, or `RALLY_AGENT_SLUG` is missing.
+- Use Rally CLI for memory actions.
+- Use a memory only when it clearly fits this issue and role.
+- Save only short reusable lessons.
+- Do not use memory to replace run-local notes.
+- Do not edit memory files or QMD state directly.
+- Fail loud if `RALLY_CLI_BIN`, `RALLY_RUN_ID`, or `RALLY_AGENT_SLUG` is missing.
 
 ## First move
 
-Decide whether past work could help or whether you just learned a lesson worth keeping.
-Choose `search`, `use`, `save`, or `refresh` through Rally CLI.
+1. Decide whether past work could help or whether you just learned a lesson worth keeping.
+2. Choose `search`, `use`, `save`, or `refresh` through Rally CLI.
 
 ## Workflow
 
-For tasks like this one, start with `search`.
-Use `use` only after you pick one memory that clearly fits.
-If you had to fix your own work, use `save` to keep the general lesson.
-Use `refresh` when the index needs to rebuild from markdown files.
-Keep the issue and local repo state primary. Memory is support context.
+- For tasks like this one, start with `search`.
+- Use `use` only after you pick one memory that clearly fits.
+- If you had to fix your own work, use `save` to keep the general lesson.
+- Use `refresh` when the index needs to rebuild from markdown files.
+- Keep the issue and local repo state primary. Memory is support context.
 
 ## Search Example
 
@@ -88,6 +88,6 @@ _Advisory · code · bash_
 
 ## Output expectations
 
-Use `search` for discovery only.
-`use` and `save` should become visible Rally records.
-This skill is for memory work only. It does not replace the turn's declared output.
+- Use `search` for discovery only.
+- `use` and `save` should become visible Rally records.
+- This skill is for memory work only. It does not replace the turn's declared output.

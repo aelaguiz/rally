@@ -2,8 +2,9 @@ skill RallyMemorySkill: "rally-memory"
     purpose: "Use the shared Rally memory skill when an older lesson could help on this turn or when you learned one worth keeping."
 
     use_when: "Use When"
-        "Past work like this could help."
-        "You learned a short lesson worth keeping."
+        bullets cases:
+            "Past work like this could help."
+            "You learned a short lesson worth keeping."
 
 document RallyMemoryEntryDocument: "Rally Memory Entry"
     section lesson: "Lesson"

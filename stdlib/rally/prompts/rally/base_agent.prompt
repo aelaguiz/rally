@@ -49,7 +49,6 @@ skill RallyKernelSkill: "rally-kernel"
 # This read-first block stays small on purpose.
 # It teaches the one shared habit every Rally agent should keep.
 workflow RallyReadFirst: "Read First"
-    # This will create a numbered list in place using markdown formatting
     sequence steps:
         "Read `home:issue.md` first."
         "Then read this role's local rules, files, and outputs."
@@ -57,8 +56,7 @@ workflow RallyReadFirst: "Read First"
 
 
 workflow RallyHowToTakeATurn: "Shared Rules"
-    # This will create a numbered list in place using markdown formatting
-    sequence steps:
+    bullets rules:
         "Use `home:issue.md` as the shared ledger for this run."
         "Leave one short saved note through `Saved Run Note` only when later readers need it."
         "Keep notes run-local. Use `rally-memory` for cross-run lessons."

@@ -46,11 +46,12 @@ output shape RallyTurnResultJson: "Rally Turn Result JSON"
     schema: RallyTurnResultSchema
 
     field_notes: "Field Notes"
-        "Always send all five keys."
-        "Use `null` for fields that do not apply."
-        "`kind` tells Rally what to do next."
-        "Use `handoff` with `next_owner`, `done` with `summary`, `blocker` with `reason`, and `sleep` with `reason` plus `sleep_duration_seconds`."
-        "If you set `next_owner`, use the flow owner key, not the display name."
+        bullets rules:
+            "Always send all five keys."
+            "Use `null` for fields that do not apply."
+            "`kind` tells Rally what to do next."
+            "Use `handoff` with `next_owner`, `done` with `summary`, `blocker` with `reason`, and `sleep` with `reason` plus `sleep_duration_seconds`."
+            "If you set `next_owner`, use the flow owner key, not the display name."
 
 
 output RallyTurnResult: "Rally Turn Result"
