@@ -40,11 +40,10 @@ input RallyAgentSlug: "Rally Agent Slug"
 
 
 skill RallyKernelSkill: "rally-kernel"
-    purpose: "Use the shared Rally kernel skill when you need one saved note or the final JSON for this turn."
+    purpose: "Use the shared Rally kernel skill when you need one saved note on this turn."
 
     use_when: "Use When"
         "A later reader needs one short saved note."
-        "The turn needs Rally's final JSON rules."
 
 
 # This read-first block stays small on purpose.
@@ -103,7 +102,7 @@ outputs RallyManagedOutputs: "Outputs"
 # Local flows can add more rules, but they should not fight this base layer.
 abstract agent RallyManagedBaseAgent:
     rally_contract: "Rally Context"
-        "Rally runs this flow. Read `home:issue.md` first, use it as the shared ledger for this run, leave one short note only when later readers need it, and end the turn with the final JSON this role declares."
+        "Rally runs this flow. Use the shared rules below with this role's local rules."
 
     read_first: RallyReadFirst
     how_to_take_a_turn: RallyHowToTakeATurn

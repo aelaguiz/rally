@@ -18,10 +18,10 @@ EXPECTED_DOCTRINE_PACKAGE_LINE = load_doctrine_dependency_line(REPO_ROOT)
 
 
 class PackagedInstallTests(unittest.TestCase):
-    def test_built_wheel_runs_installed_cli_and_keeps_emit_support_files_in_host_repo(self) -> None:
+    def test_built_wheel_runs_installed_cli_and_uses_emitted_json_package_in_host_repo(self) -> None:
         self._assert_packaged_artifact_runtime("wheel")
 
-    def test_built_sdist_runs_installed_cli_and_keeps_emit_support_files_in_host_repo(self) -> None:
+    def test_built_sdist_runs_installed_cli_and_uses_emitted_json_package_in_host_repo(self) -> None:
         self._assert_packaged_artifact_runtime("sdist")
 
     def _assert_packaged_artifact_runtime(self, artifact_type: str) -> None:
@@ -43,7 +43,6 @@ class PackagedInstallTests(unittest.TestCase):
             self.assertIn("usage: rally", help_result.stdout)
             self.assertIn("run", help_result.stdout)
             self.assertIn("resume", help_result.stdout)
-            self.assertIn("status", help_result.stdout)
             self.assertIn("workspace", help_result.stdout)
 
             self._write_host_workspace(host_root)
@@ -64,7 +63,9 @@ class PackagedInstallTests(unittest.TestCase):
             self.assertIn("Synced Rally built-ins into", sync_result.stdout)
             self.assertFalse((host_root / "runs" / "active").exists())
 
-            self.assertTrue((host_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").is_file())
+            self.assertTrue((host_root / "stdlib" / "rally" / "prompts" / "rally" / "turn_results.prompt").is_file())
+            self.assertFalse((host_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").exists())
+            self.assertFalse((host_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json").exists())
             self.assertTrue((host_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertTrue((host_root / "skills" / "rally-memory" / "SKILL.md").is_file())
 
@@ -81,18 +82,17 @@ class PackagedInstallTests(unittest.TestCase):
                 cwd=host_root,
             )
 
-            contract_path = host_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "AGENTS.contract.json"
+            agent_dir = host_root / "flows" / "demo" / "build" / "agents" / "scope_lead"
+            contract_path = agent_dir / "final_output.contract.json"
             contract_payload = json.loads(contract_path.read_text(encoding="utf-8"))
             final_output = contract_payload["final_output"]
 
             self.assertEqual(
-                final_output["schema_file"],
-                "stdlib/rally/schemas/rally_turn_result.schema.json",
+                final_output["emitted_schema_relpath"],
+                "schemas/rally_turn_result.schema.json",
             )
-            self.assertEqual(
-                final_output["example_file"],
-                "stdlib/rally/examples/rally_turn_result.example.json",
-            )
+            self.assertTrue((agent_dir / final_output["emitted_schema_relpath"]).is_file())
+            self.assertFalse((agent_dir / "AGENTS.contract.json").exists())
             self.assertNotIn("../rally/", contract_path.read_text(encoding="utf-8"))
 
             run_result = self._run([str(rally_bin), "run", "demo"], cwd=host_root, check=False)

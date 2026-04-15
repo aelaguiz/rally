@@ -50,16 +50,20 @@ block in `home:issue.md`.
 # Shipped Surfaces
 
 - `stdlib/rally/prompts/rally/base_agent.prompt`
-  - shared Rally rules
+  - shared read-first and turn rules
   - required env vars
   - required `rally-kernel` skill
   - shared advisory issue-note output
 - `stdlib/rally/prompts/rally/notes.prompt`
   - one shared note output that shells through the Rally CLI
+- `stdlib/rally/prompts/rally/memory.prompt`
+  - shared memory skill meaning and memory entry shape
 - `stdlib/rally/prompts/rally/turn_results.prompt`
   - the classic shared final JSON contract
 - `skills/rally-kernel/SKILL.md`
-  - teaches when to leave a note, when to add flat note fields, and how to end a turn with the declared final JSON
+  - teaches note procedure and note examples
+- `skills/rally-memory/SKILL.md`
+  - teaches memory procedure for `search`, `use`, `save`, and `refresh`
 - `src/rally/cli.py`
   - ships `rally issue note`, including repeatable `--field key=value`
 - `src/rally/services/issue_ledger.py`

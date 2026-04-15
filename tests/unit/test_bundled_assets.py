@@ -15,6 +15,12 @@ class BundledAssetsTests(unittest.TestCase):
             workspace_root.mkdir(parents=True)
             pyproject_path = workspace_root / "pyproject.toml"
             pyproject_path.write_text("[project]\nname = 'demo-workspace'\n", encoding="utf-8")
+            stale_schema = workspace_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json"
+            stale_example = workspace_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json"
+            stale_schema.parent.mkdir(parents=True)
+            stale_example.parent.mkdir(parents=True)
+            stale_schema.write_text("stale\n", encoding="utf-8")
+            stale_example.write_text("stale\n", encoding="utf-8")
 
             copied = ensure_workspace_builtins_synced(
                 workspace_root=workspace_root,
@@ -29,7 +35,11 @@ class BundledAssetsTests(unittest.TestCase):
                     "skills/rally-memory",
                 ],
             )
-            self.assertTrue((workspace_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").is_file())
+            self.assertTrue(
+                (workspace_root / "stdlib" / "rally" / "prompts" / "rally" / "turn_results.prompt").is_file()
+            )
+            self.assertFalse(stale_schema.exists())
+            self.assertFalse(stale_example.exists())
             self.assertTrue((workspace_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertTrue((workspace_root / "skills" / "rally-memory" / "SKILL.md").is_file())
 

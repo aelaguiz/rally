@@ -5,6 +5,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+import json
 from pathlib import Path
 
 from rally.errors import RallyConfigError
@@ -21,6 +22,8 @@ class FlowBuildTests(unittest.TestCase):
             self._write_flow_file(repo_root=repo_root, allowed_skills=())
             self._write_markdown_skill(repo_root=repo_root, skill_name="rally-kernel")
             self._write_markdown_skill(repo_root=repo_root, skill_name="rally-memory")
+            stale_contract = repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "AGENTS.contract.json"
+            stale_contract.write_text("stale\n", encoding="utf-8")
             calls: list[dict[str, object]] = []
 
             def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -50,6 +53,7 @@ class FlowBuildTests(unittest.TestCase):
             self.assertTrue(calls[0]["kwargs"]["capture_output"])
             self.assertTrue(calls[0]["kwargs"]["text"])
             self.assertFalse(calls[0]["kwargs"]["check"])
+            self.assertFalse(stale_contract.exists())
 
     def test_ensure_flow_assets_built_runs_doctrine_emit_skill_for_doctrine_skills(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -167,7 +171,8 @@ class FlowBuildTests(unittest.TestCase):
             self.assertEqual(calls[0]["command"][2], "doctrine.emit_docs")
             self.assertTrue((repo_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertTrue((repo_root / "skills" / "rally-memory" / "SKILL.md").is_file())
-            self.assertTrue((repo_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").is_file())
+            self.assertTrue((repo_root / "stdlib" / "rally" / "prompts" / "rally" / "turn_results.prompt").is_file())
+            self.assertFalse((repo_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").exists())
 
     def test_ensure_flow_assets_built_rejects_missing_workspace_pyproject(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -341,6 +346,55 @@ class FlowBuildTests(unittest.TestCase):
                     model: gpt-5.4
                 """
             ),
+            encoding="utf-8",
+        )
+        self._write_emitted_agent_package(repo_root=repo_root, flow_root=flow_root)
+
+    def _write_emitted_agent_package(self, *, repo_root: Path, flow_root: Path) -> None:
+        del repo_root
+        agent_dir = flow_root / "build" / "agents" / "scope_lead"
+        schema_dir = agent_dir / "schemas"
+        schema_dir.mkdir(parents=True, exist_ok=True)
+        (agent_dir / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
+        (schema_dir / "rally_turn_result.schema.json").write_text(
+            textwrap.dedent(
+                """\
+                {
+                  "type": "object",
+                  "required": ["kind", "next_owner", "summary", "reason", "sleep_duration_seconds"],
+                  "properties": {
+                    "kind": {"type": "string", "enum": ["handoff", "done", "blocker", "sleep"]},
+                    "next_owner": {"type": ["string", "null"]},
+                    "summary": {"type": ["string", "null"]},
+                    "reason": {"type": ["string", "null"]},
+                    "sleep_duration_seconds": {"type": ["integer", "null"]}
+                  }
+                }
+                """
+            ),
+            encoding="utf-8",
+        )
+        (agent_dir / "final_output.contract.json").write_text(
+            json.dumps(
+                {
+                    "contract_version": 1,
+                    "agent": {
+                        "name": "ScopeLead",
+                        "slug": "scope_lead",
+                        "entrypoint": "flows/demo/prompts/AGENTS.prompt",
+                    },
+                    "final_output": {
+                        "exists": True,
+                        "declaration_key": "DemoTurnResult",
+                        "declaration_name": "DemoTurnResult",
+                        "format_mode": "json_object",
+                        "schema_profile": "OpenAIStructuredOutput",
+                        "emitted_schema_relpath": "schemas/rally_turn_result.schema.json",
+                    },
+                },
+                indent=2,
+            )
+            + "\n",
             encoding="utf-8",
         )
 

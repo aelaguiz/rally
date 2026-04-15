@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import tempfile
 import textwrap
 import unittest
@@ -71,12 +70,12 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(dict(flow.runtime_env), {})
         self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
-            flow.agent("01_poem_writer").compiled.final_output.schema_file,
-            repo_root / "stdlib/rally/schemas/rally_turn_result.schema.json",
+            flow.agent("01_poem_writer").compiled.final_output.generated_schema_file,
+            repo_root / "flows/poem_loop/build/agents/poem_writer/schemas/rally_turn_result.schema.json",
         )
         self.assertEqual(
-            flow.agent("02_poem_critic").compiled.final_output.schema_file,
-            repo_root / "flows/poem_loop/schemas/poem_review.schema.json",
+            flow.agent("02_poem_critic").compiled.final_output.generated_schema_file,
+            repo_root / "flows/poem_loop/build/agents/poem_critic/schemas/poem_review_response.schema.json",
         )
         self.assertIsNotNone(flow.agent("02_poem_critic").compiled.review)
         self.assertEqual(flow.agent("02_poem_critic").compiled.review.final_response.mode, "carrier")
@@ -102,12 +101,12 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(dict(flow.runtime_env), {})
         self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
-            flow.agent("01_poem_writer").compiled.final_output.schema_file,
-            repo_root / "stdlib/rally/schemas/rally_turn_result.schema.json",
+            flow.agent("01_poem_writer").compiled.final_output.generated_schema_file,
+            repo_root / "flows/poem_loop/build/agents/poem_writer/schemas/rally_turn_result.schema.json",
         )
         self.assertEqual(
-            flow.agent("02_poem_critic").compiled.final_output.schema_file,
-            repo_root / "flows/poem_loop/schemas/poem_review.schema.json",
+            flow.agent("02_poem_critic").compiled.final_output.generated_schema_file,
+            repo_root / "flows/poem_loop/build/agents/poem_critic/schemas/poem_review_response.schema.json",
         )
 
     def test_load_flow_definition_loads_guarded_git_repos(self) -> None:
@@ -237,17 +236,12 @@ class FlowLoaderTests(unittest.TestCase):
             with self.assertRaisesRegex(RallyConfigError, "no longer configurable"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
-    def test_load_flow_definition_rejects_missing_workspace_stdlib(self) -> None:
+    def test_load_flow_definition_rejects_missing_emitted_schema(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve() / "workspace"
-            self._write_fixture_repo(
-                repo_root=repo_root,
-                schema_file="stdlib:schemas/rally_turn_result.schema.json",
-                example_file="stdlib:examples/rally_turn_result.example.json",
-            )
-            shutil.rmtree(repo_root / "stdlib")
+            self._write_fixture_repo(repo_root=repo_root, write_schema=False)
 
-            with self.assertRaisesRegex(RallyConfigError, "workspace/stdlib/rally/schemas/rally_turn_result.schema.json"):
+            with self.assertRaisesRegex(RallyConfigError, "schemas/rally_turn_result.schema.json"):
                 load_flow_definition(
                     repo_root=repo_root,
                     flow_name="demo",
@@ -340,10 +334,9 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertNotIn("### Turn Sequence", writer_readback)
         self.assertIn("Artistic Rationale", writer_readback)
         self.assertIn("### Rally Turn Result", writer_readback)
-        self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', writer_readback)
+        self.assertIn('"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"', writer_readback)
         self.assertIn(
-            "Rally runs this flow. Read `home:issue.md` first, use it as the shared ledger for this run, "
-            "leave one short note only when later readers need it, and end the turn with the final JSON this role declares.",
+            "Rally runs this flow. Use the shared rules below with this role's local rules.",
             writer_readback,
         )
         self.assertIn("Use `home:issue.md` as the shared ledger for this run.", writer_readback)
@@ -379,7 +372,7 @@ class FlowLoaderTests(unittest.TestCase):
             repo_root = Path(temp_dir).resolve()
             self._write_fixture_repo(repo_root=repo_root, contract_version=99)
 
-            with self.assertRaisesRegex(RallyConfigError, "Unsupported compiled agent contract version"):
+            with self.assertRaisesRegex(RallyConfigError, "Unsupported final-output contract version"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
     def test_load_flow_definition_rejects_handoff_schema_without_next_owner(self) -> None:
@@ -430,35 +423,37 @@ class FlowLoaderTests(unittest.TestCase):
             repo_root = Path(temp_dir).resolve()
             self._write_fixture_repo(
                 repo_root=repo_root,
-                schema_file="flow:../shared/schema.json",
-                example_file="flow:../shared/example.json",
+                emitted_schema_relpath="../shared/schema.json",
+                write_schema=False,
             )
             shared = repo_root / "shared"
             shared.mkdir(parents=True)
             (shared / "schema.json").write_text(self._schema_text(include_next_owner=True), encoding="utf-8")
-            (shared / "example.json").write_text('{"kind":"done","summary":"ok"}\n', encoding="utf-8")
 
-            with self.assertRaisesRegex(RallyConfigError, "must not escape its root"):
+            with self.assertRaisesRegex(RallyConfigError, "must not escape its compiled agent directory"):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
-    def test_load_flow_definition_accepts_internal_stdlib_rooted_support_files(self) -> None:
+    def test_load_flow_definition_accepts_emitted_schema_relpath(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
-            self._write_fixture_repo(
-                repo_root=repo_root,
-                schema_file="stdlib:schemas/rally_turn_result.schema.json",
-                example_file="stdlib:examples/rally_turn_result.example.json",
-            )
+            self._write_fixture_repo(repo_root=repo_root)
 
             flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
 
             self.assertEqual(
-                flow.agent("01_scope_lead").compiled.final_output.schema_file,
-                repo_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
+                flow.agent("01_scope_lead").compiled.final_output.generated_schema_file,
+                repo_root
+                / "flows"
+                / "demo"
+                / "build"
+                / "agents"
+                / "scope_lead"
+                / "schemas"
+                / "rally_turn_result.schema.json",
             )
             self.assertEqual(
-                flow.agent("01_scope_lead").compiled.final_output.example_file,
-                repo_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json",
+                flow.agent("01_scope_lead").compiled.final_output.metadata_file,
+                repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "final_output.contract.json",
             )
 
     def test_load_flow_definition_accepts_control_ready_review_final_output(self) -> None:
@@ -489,8 +484,8 @@ class FlowLoaderTests(unittest.TestCase):
         include_next_owner: bool = True,
         include_max_command_turns: bool = True,
         max_command_turns_yaml: str = "8",
-        schema_file: str = "stdlib/rally/schemas/rally_turn_result.schema.json",
-        example_file: str = "stdlib/rally/examples/rally_turn_result.example.json",
+        emitted_schema_relpath: str = "schemas/rally_turn_result.schema.json",
+        write_schema: bool = True,
         guarded_git_repos_yaml: str = "[]",
         host_inputs_yaml: str = "",
         runtime_env_yaml: str = "",
@@ -498,13 +493,11 @@ class FlowLoaderTests(unittest.TestCase):
         flow_root = repo_root / "flows" / "demo"
         build_root = flow_root / "build" / "agents" / "scope_lead"
         prompts_root = flow_root / "prompts"
-        schema_root = repo_root / "stdlib" / "rally" / "schemas"
-        example_root = repo_root / "stdlib" / "rally" / "examples"
+        schema_root = build_root / "schemas"
 
         build_root.mkdir(parents=True)
         prompts_root.mkdir(parents=True)
         schema_root.mkdir(parents=True)
-        example_root.mkdir(parents=True)
         max_command_turns_line = f"  max_command_turns: {max_command_turns_yaml}\n" if include_max_command_turns else ""
         guarded_git_repos_line = f"  guarded_git_repos: {guarded_git_repos_yaml}\n"
         runtime_env_block = textwrap.indent(runtime_env_yaml, "  ") if runtime_env_yaml else ""
@@ -535,7 +528,7 @@ class FlowLoaderTests(unittest.TestCase):
         (flow_root / "setup" / "prepare_home.sh").write_text("#!/bin/sh\n", encoding="utf-8")
         (prompts_root / "AGENTS.prompt").write_text("agent ScopeLead:\n", encoding="utf-8")
         (build_root / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
-        (build_root / "AGENTS.contract.json").write_text(
+        (build_root / "final_output.contract.json").write_text(
             json.dumps(
                 {
                     "contract_version": contract_version,
@@ -548,10 +541,9 @@ class FlowLoaderTests(unittest.TestCase):
                         "exists": True,
                         "declaration_key": "DemoTurnResult",
                         "declaration_name": "DemoTurnResult",
-                        "format_mode": "json_schema",
+                        "format_mode": "json_object",
                         "schema_profile": "OpenAIStructuredOutput",
-                        "schema_file": schema_file,
-                        "example_file": example_file,
+                        "emitted_schema_relpath": emitted_schema_relpath,
                     },
                 },
                 indent=2,
@@ -560,14 +552,15 @@ class FlowLoaderTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        if schema_file.startswith("stdlib:") or schema_file.startswith("stdlib/rally/"):
-            (schema_root / "rally_turn_result.schema.json").write_text(
+        schema_path = (build_root / emitted_schema_relpath).resolve()
+        try:
+            schema_path.relative_to(build_root.resolve())
+        except ValueError:
+            return
+        if write_schema:
+            schema_path.parent.mkdir(parents=True, exist_ok=True)
+            schema_path.write_text(
                 self._schema_text(include_next_owner=include_next_owner),
-                encoding="utf-8",
-            )
-        if example_file.startswith("stdlib:") or example_file.startswith("stdlib/rally/"):
-            (example_root / "rally_turn_result.example.json").write_text(
-                '{"kind":"done","summary":"ok"}\n',
                 encoding="utf-8",
             )
 
@@ -575,13 +568,11 @@ class FlowLoaderTests(unittest.TestCase):
         flow_root = repo_root / "flows" / "demo"
         build_root = flow_root / "build" / "agents" / "scope_lead"
         prompts_root = flow_root / "prompts"
-        schema_root = flow_root / "schemas"
-        example_root = flow_root / "examples"
+        schema_root = build_root / "schemas"
 
         build_root.mkdir(parents=True)
         prompts_root.mkdir(parents=True)
         schema_root.mkdir(parents=True)
-        example_root.mkdir(parents=True)
 
         (flow_root / "flow.yaml").write_text(
             textwrap.dedent(
@@ -622,11 +613,7 @@ class FlowLoaderTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        (example_root / "review_response.example.json").write_text(
-            '{"verdict":"accept","reviewed_artifact":"artifacts/demo.md","analysis_performed":"ok","findings_first":"ok"}\n',
-            encoding="utf-8",
-        )
-        (build_root / "AGENTS.contract.json").write_text(
+        (build_root / "final_output.contract.json").write_text(
             json.dumps(
                 {
                     "contract_version": 1,
@@ -639,10 +626,9 @@ class FlowLoaderTests(unittest.TestCase):
                         "exists": True,
                         "declaration_key": "ReviewResponse",
                         "declaration_name": "ReviewResponse",
-                        "format_mode": "json_schema",
+                        "format_mode": "json_object",
                         "schema_profile": "OpenAIStructuredOutput",
-                        "schema_file": "flow:schemas/review_response.schema.json",
-                        "example_file": "flow:examples/review_response.example.json",
+                        "emitted_schema_relpath": "schemas/review_response.schema.json",
                     },
                     "review": {
                         "exists": True,
@@ -723,6 +709,7 @@ class FlowLoaderTests(unittest.TestCase):
             """
         )
 
+
 class FlowLoaderRuntimeConfigTests(unittest.TestCase):
     def test_load_flow_definition_rejects_removed_prompt_input_command(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -736,13 +723,11 @@ class FlowLoaderRuntimeConfigTests(unittest.TestCase):
         flow_root = repo_root / "flows" / "demo"
         build_root = flow_root / "build" / "agents" / "scope_lead"
         prompts_root = flow_root / "prompts"
-        schema_root = repo_root / "stdlib" / "rally" / "schemas"
-        example_root = repo_root / "stdlib" / "rally" / "examples"
+        schema_root = build_root / "schemas"
 
         build_root.mkdir(parents=True)
         prompts_root.mkdir(parents=True)
         schema_root.mkdir(parents=True)
-        example_root.mkdir(parents=True)
 
         (flow_root / "flow.yaml").write_text(
             textwrap.dedent(
@@ -770,7 +755,7 @@ class FlowLoaderRuntimeConfigTests(unittest.TestCase):
         (flow_root / "setup" / "prepare_home.sh").write_text("#!/bin/sh\n", encoding="utf-8")
         (prompts_root / "AGENTS.prompt").write_text("agent ScopeLead:\n", encoding="utf-8")
         (build_root / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
-        (build_root / "AGENTS.contract.json").write_text(
+        (build_root / "final_output.contract.json").write_text(
             json.dumps(
                 {
                     "contract_version": 1,
@@ -783,10 +768,9 @@ class FlowLoaderRuntimeConfigTests(unittest.TestCase):
                         "exists": True,
                         "declaration_key": "DemoTurnResult",
                         "declaration_name": "DemoTurnResult",
-                        "format_mode": "json_schema",
+                        "format_mode": "json_object",
                         "schema_profile": "OpenAIStructuredOutput",
-                        "schema_file": "stdlib:schemas/rally_turn_result.schema.json",
-                        "example_file": "stdlib:examples/rally_turn_result.example.json",
+                        "emitted_schema_relpath": "schemas/rally_turn_result.schema.json",
                     },
                 },
                 indent=2,
@@ -810,10 +794,6 @@ class FlowLoaderRuntimeConfigTests(unittest.TestCase):
                 }
                 """
             ),
-            encoding="utf-8",
-        )
-        (example_root / "rally_turn_result.example.json").write_text(
-            '{"kind":"done","next_owner":null,"summary":"ok","reason":null,"sleep_duration_seconds":null}\n',
             encoding="utf-8",
         )
 

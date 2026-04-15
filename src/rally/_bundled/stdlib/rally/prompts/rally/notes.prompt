@@ -15,6 +15,3 @@ output RallyIssueNote: "Issue Note"
     properties saved_context: "Saved Context"
         when_to_use: "When To Use"
             "Leave one short note only when a later reader needs context."
-
-        boundary: "Boundary"
-            "Keep notes run-local. Use `rally-memory` only for cross-run lessons."

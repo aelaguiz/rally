@@ -52,19 +52,20 @@ class RunnerTests(unittest.TestCase):
             workspace = workspace_context_from_root(repo_root)
             final_output = FinalOutputContract(
                 exists=True,
+                contract_version=1,
                 declaration_key="DemoTurnResult",
                 declaration_name="DemoTurnResult",
-                format_mode="json_schema",
+                format_mode="json_object",
                 schema_profile="OpenAIStructuredOutput",
-                schema_file=None,
-                example_file=None,
+                generated_schema_file=None,
+                metadata_file=None,
             )
             compiled = CompiledAgentContract(
                 name="DemoAgent",
                 slug="demo_agent",
                 entrypoint=repo_root / "flows" / "demo" / "prompts" / "AGENTS.prompt",
                 markdown_path=agent_markdown,
-                contract_path=run_home / "agents" / "demo_agent" / "AGENTS.contract.json",
+                metadata_file=run_home / "agents" / "demo_agent" / "final_output.contract.json",
                 contract_version=1,
                 final_output=final_output,
             )
@@ -819,15 +820,14 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("### Saved Run Note", prompt_text)
             self.assertNotIn("\n### Writer Issue Note\n", prompt_text)
             self.assertIn(
-                "Rally runs this flow. Read `home:issue.md` first, use it as the shared ledger for this run, "
-                "leave one short note only when later readers need it, and end the turn with the final JSON this role declares.",
+                "Rally runs this flow. Use the shared rules below with this role's local rules.",
                 prompt_text,
             )
             self.assertIn("Use `home:issue.md` as the shared ledger for this run.", prompt_text)
             self.assertNotIn("### Read Order", prompt_text)
             self.assertNotIn("### Turn Sequence", prompt_text)
             self.assertNotIn("Use the shared `rally-kernel` skill for saved notes.", prompt_text)
-            self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', prompt_text)
+            self.assertIn('"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"', prompt_text)
             self.assertIn("Artistic Rationale", prompt_text)
             self.assertIn("### Rally Turn Result", prompt_text)
             self.assertNotIn("\n### Writer Turn Result\n", prompt_text)
@@ -921,8 +921,8 @@ class RunnerTests(unittest.TestCase):
             stdlib_prompt_marker = "Keep the shared Rally rules short and action-first."
             stdlib_prompt_path.write_text(
                 stdlib_prompt_path.read_text(encoding="utf-8").replace(
-                    '        "Rally runs this flow. Read `home:issue.md` first, use it as the shared ledger for this run, leave one short note only when later readers need it, and end the turn with the final JSON this role declares."\n',
-                    '        "Rally runs this flow. Read `home:issue.md` first, use it as the shared ledger for this run, leave one short note only when later readers need it, and end the turn with the final JSON this role declares."\n'
+                    '        "Rally runs this flow. Use the shared rules below with this role\'s local rules."\n',
+                    '        "Rally runs this flow. Use the shared rules below with this role\'s local rules."\n'
                     f'        "{stdlib_prompt_marker}"\n',
                 ),
                 encoding="utf-8",
@@ -3876,7 +3876,27 @@ class RunnerTests(unittest.TestCase):
         agent_dir = flow_root / "build" / "agents" / slug
         agent_dir.mkdir(parents=True, exist_ok=True)
         (agent_dir / "AGENTS.md").write_text(f"# {name}\n", encoding="utf-8")
-        (agent_dir / "AGENTS.contract.json").write_text(
+        schema_dir = agent_dir / "schemas"
+        schema_dir.mkdir(parents=True, exist_ok=True)
+        (schema_dir / "rally_turn_result.schema.json").write_text(
+            textwrap.dedent(
+                """\
+                {
+                  "type": "object",
+                  "required": ["kind", "next_owner", "summary", "reason", "sleep_duration_seconds"],
+                  "properties": {
+                    "kind": {"type": "string", "enum": ["handoff", "done", "blocker", "sleep"]},
+                    "next_owner": {"type": ["string", "null"]},
+                    "summary": {"type": ["string", "null"]},
+                    "reason": {"type": ["string", "null"]},
+                    "sleep_duration_seconds": {"type": ["integer", "null"]}
+                  }
+                }
+                """
+            ),
+            encoding="utf-8",
+        )
+        (agent_dir / "final_output.contract.json").write_text(
             json.dumps(
                 {
                     "contract_version": 1,
@@ -3889,10 +3909,9 @@ class RunnerTests(unittest.TestCase):
                         "exists": True,
                         "declaration_key": "DemoTurnResult",
                         "declaration_name": "DemoTurnResult",
-                        "format_mode": "json_schema",
+                        "format_mode": "json_object",
                         "schema_profile": "OpenAIStructuredOutput",
-                        "schema_file": "stdlib/rally/schemas/rally_turn_result.schema.json",
-                        "example_file": "stdlib/rally/examples/rally_turn_result.example.json",
+                        "emitted_schema_relpath": "schemas/rally_turn_result.schema.json",
                     },
                 },
                 indent=2,

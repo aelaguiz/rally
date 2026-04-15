@@ -28,7 +28,6 @@ from rally.domain.rooted_path import (
     FLOW_ROOT,
     HOME_ROOT,
     HOST_ROOT,
-    STDLIB_ROOT,
     WORKSPACE_ROOT,
     PathRoot,
     RootedPath,
@@ -38,7 +37,7 @@ from rally.domain.rooted_path import (
 )
 from rally.errors import RallyConfigError
 
-SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS = frozenset({1})
+SUPPORTED_FINAL_OUTPUT_CONTRACT_VERSIONS = frozenset({1})
 _FLOW_RUNTIME_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _FLOW_RUNTIME_ENV_ALLOWED_ROOTS = frozenset({HOME_ROOT, FLOW_ROOT, WORKSPACE_ROOT, HOST_ROOT})
 _RESERVED_FLOW_RUNTIME_ENV_KEYS = frozenset({"CODEX_HOME", "ENABLE_CLAUDEAI_MCP_SERVERS"})
@@ -76,7 +75,7 @@ def load_flow_definition(
         if compiled is None:
             raise RallyConfigError(
                 f"Compiled agent contract missing for flow agent `{agent_key}`. "
-                f"Expected `{build_agents_dir / expected_slug / 'AGENTS.contract.json'}`."
+                f"Expected `{build_agents_dir / expected_slug / 'final_output.contract.json'}`."
             )
         agents[agent_key] = FlowAgent(
             key=agent_key,
@@ -189,16 +188,16 @@ def _load_compiled_agents(
         if not agent_dir.is_dir():
             continue
         markdown_path = agent_dir / "AGENTS.md"
-        contract_path = agent_dir / "AGENTS.contract.json"
-        if not markdown_path.is_file() or not contract_path.is_file():
+        metadata_file = agent_dir / "final_output.contract.json"
+        if not markdown_path.is_file() or not metadata_file.is_file():
             raise RallyConfigError(
-                f"Compiled agent directory `{agent_dir}` must contain both `AGENTS.md` and `AGENTS.contract.json`."
+                f"Compiled agent directory `{agent_dir}` must contain both `AGENTS.md` and `final_output.contract.json`."
             )
         contract = _load_compiled_agent_contract(
             repo_root=repo_root,
             agent_dir=agent_dir,
             markdown_path=markdown_path,
-            contract_path=contract_path,
+            metadata_file=metadata_file,
         )
         if contract.slug in compiled_agents:
             raise RallyConfigError(
@@ -270,93 +269,87 @@ def _load_compiled_agent_contract(
     repo_root: Path,
     agent_dir: Path,
     markdown_path: Path,
-    contract_path: Path,
+    metadata_file: Path,
 ) -> CompiledAgentContract:
-    payload = _load_json_mapping(contract_path)
-    contract_version = _require_int(payload, "contract_version", context=str(contract_path))
-    if contract_version not in SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS:
+    payload = _load_json_mapping(metadata_file)
+    contract_version = _require_int(payload, "contract_version", context=str(metadata_file))
+    if contract_version not in SUPPORTED_FINAL_OUTPUT_CONTRACT_VERSIONS:
         raise RallyConfigError(
-            f"Unsupported compiled agent contract version `{contract_version}` in `{contract_path}`."
+            f"Unsupported final-output contract version `{contract_version}` in `{metadata_file}`."
         )
 
-    agent_payload = _require_mapping(payload, "agent", context=str(contract_path))
-    slug = _require_string(agent_payload, "slug", context=f"{contract_path} agent")
+    agent_payload = _require_mapping(payload, "agent", context=str(metadata_file))
+    slug = _require_string(agent_payload, "slug", context=f"{metadata_file} agent")
     if slug != agent_dir.name:
         raise RallyConfigError(
-            f"Compiled agent slug mismatch for `{contract_path}`: directory is `{agent_dir.name}` but contract says `{slug}`."
+            f"Compiled agent slug mismatch for `{metadata_file}`: directory is `{agent_dir.name}` but contract says `{slug}`."
         )
 
-    final_output_payload = _require_mapping(payload, "final_output", context=str(contract_path))
+    final_output_payload = _require_mapping(payload, "final_output", context=str(metadata_file))
     if not final_output_payload.get("exists"):
         raise RallyConfigError(
-            f"Compiled agent `{slug}` does not declare a final output in `{contract_path}`."
+            f"Compiled agent `{slug}` does not declare a final output in `{metadata_file}`."
         )
 
-    schema_file = _resolve_rooted_existing_file(
-        raw_value=_require_string(final_output_payload, "schema_file", context=f"{contract_path} final_output"),
-        repo_root=repo_root,
-        flow_root=agent_dir.parents[2],
-        context=f"{contract_path} final_output.schema_file",
-        allowed_roots={FLOW_ROOT, STDLIB_ROOT},
-        example="flow:schemas/review.schema.json",
-    )
-    example_file = _resolve_rooted_existing_file(
-        raw_value=_require_string(final_output_payload, "example_file", context=f"{contract_path} final_output"),
-        repo_root=repo_root,
-        flow_root=agent_dir.parents[2],
-        context=f"{contract_path} final_output.example_file",
-        allowed_roots={FLOW_ROOT, STDLIB_ROOT},
-        example="flow:examples/review.example.json",
+    generated_schema_file = _resolve_agent_relative_existing_file(
+        agent_dir=agent_dir,
+        raw_value=_require_string(
+            final_output_payload,
+            "emitted_schema_relpath",
+            context=f"{metadata_file} final_output",
+        ),
+        context=f"{metadata_file} final_output.emitted_schema_relpath",
     )
 
-    format_mode = _require_string(final_output_payload, "format_mode", context=f"{contract_path} final_output")
-    if format_mode != "json_schema":
+    format_mode = _require_string(final_output_payload, "format_mode", context=f"{metadata_file} final_output")
+    if format_mode != "json_object":
         raise RallyConfigError(
-            f"Compiled agent `{slug}` must use `json_schema` final output mode, found `{format_mode}`."
+            f"Compiled agent `{slug}` must use `json_object` final output mode, found `{format_mode}`."
         )
 
     final_output = FinalOutputContract(
         exists=True,
+        contract_version=contract_version,
         declaration_key=_require_string(
             final_output_payload,
             "declaration_key",
-            context=f"{contract_path} final_output",
+            context=f"{metadata_file} final_output",
         ),
         declaration_name=_require_string(
             final_output_payload,
             "declaration_name",
-            context=f"{contract_path} final_output",
+            context=f"{metadata_file} final_output",
         ),
         format_mode=format_mode,
         schema_profile=_require_string(
             final_output_payload,
             "schema_profile",
-            context=f"{contract_path} final_output",
+            context=f"{metadata_file} final_output",
         ),
-        schema_file=schema_file,
-        example_file=example_file,
+        generated_schema_file=generated_schema_file,
+        metadata_file=metadata_file,
     )
-    review = _load_review_contract(payload=payload, contract_path=contract_path)
+    review = _load_review_contract(payload=payload, contract_path=metadata_file)
     if review is None:
-        _validate_turn_result_schema(schema_file)
+        _validate_turn_result_schema(generated_schema_file)
     else:
         _validate_review_native_contract(
             slug=slug,
-            contract_path=contract_path,
+            contract_path=metadata_file,
             final_output=final_output,
             review=review,
         )
 
     return CompiledAgentContract(
-        name=_require_string(agent_payload, "name", context=f"{contract_path} agent"),
+        name=_require_string(agent_payload, "name", context=f"{metadata_file} agent"),
         slug=slug,
         entrypoint=_resolve_repo_relative_file(
             repo_root=repo_root,
-            relative_path=_require_string(agent_payload, "entrypoint", context=f"{contract_path} agent"),
-            context=f"{contract_path} agent.entrypoint",
+            relative_path=_require_string(agent_payload, "entrypoint", context=f"{metadata_file} agent"),
+            context=f"{metadata_file} agent.entrypoint",
         ),
         markdown_path=markdown_path,
-        contract_path=contract_path,
+        metadata_file=metadata_file,
         contract_version=contract_version,
         final_output=final_output,
         review=review,
@@ -546,6 +539,20 @@ def _load_json_mapping(path: Path) -> Mapping[str, Any]:
     if not isinstance(payload, Mapping):
         raise RallyConfigError(f"`{path}` must contain a top-level object.")
     return payload
+
+
+def _resolve_agent_relative_existing_file(*, agent_dir: Path, raw_value: str, context: str) -> Path:
+    raw_path = Path(raw_value)
+    if raw_path.is_absolute():
+        raise RallyConfigError(f"{context} must be relative to the compiled agent directory: `{raw_value}`.")
+    candidate = (agent_dir / raw_path).resolve()
+    try:
+        candidate.relative_to(agent_dir.resolve())
+    except ValueError as exc:
+        raise RallyConfigError(f"{context} must not escape its compiled agent directory: `{raw_value}`.") from exc
+    if not candidate.is_file():
+        raise RallyConfigError(f"{context} does not exist: `{candidate}`.")
+    return candidate
 
 
 def _resolve_repo_relative_file(*, repo_root: Path, relative_path: str, context: str) -> Path:

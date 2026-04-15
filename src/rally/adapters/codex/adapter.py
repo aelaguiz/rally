@@ -227,7 +227,7 @@ class CodexAdapter(RallyAdapter):
             "-C",
             str(run_home),
             "--output-schema",
-            str(agent.compiled.final_output.schema_file),
+            str(agent.compiled.final_output.generated_schema_file),
             "-o",
             str(artifacts.last_message_file),
             "-c",

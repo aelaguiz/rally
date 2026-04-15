@@ -39,12 +39,13 @@ class AdapterConfig:
 @dataclass(frozen=True)
 class FinalOutputContract:
     exists: bool
+    contract_version: int
     declaration_key: str | None
     declaration_name: str | None
     format_mode: str | None
     schema_profile: str | None
-    schema_file: Path | None
-    example_file: Path | None
+    generated_schema_file: Path | None
+    metadata_file: Path | None
 
 
 @dataclass(frozen=True)
@@ -91,7 +92,7 @@ class CompiledAgentContract:
     slug: str
     entrypoint: Path
     markdown_path: Path
-    contract_path: Path
+    metadata_file: Path
     contract_version: int
     final_output: FinalOutputContract
     review: ReviewContract | None = None

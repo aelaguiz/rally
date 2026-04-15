@@ -30,7 +30,15 @@ class WorkspaceSyncTests(unittest.TestCase):
                 ),
             )
             self.assertIn("Synced Rally built-ins into", result.message)
-            self.assertTrue((workspace_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").is_file())
+            self.assertTrue(
+                (workspace_root / "stdlib" / "rally" / "prompts" / "rally" / "turn_results.prompt").is_file()
+            )
+            self.assertFalse(
+                (workspace_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").exists()
+            )
+            self.assertFalse(
+                (workspace_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json").exists()
+            )
             self.assertTrue((workspace_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertTrue((workspace_root / "skills" / "rally-memory" / "SKILL.md").is_file())
 

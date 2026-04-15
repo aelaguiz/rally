@@ -14,10 +14,10 @@ from rally._release_flow.parsing import (
     expected_package_metadata_version,
     find_release_section,
     load_changelog_sections,
-    load_compiled_contract_version,
     load_current_public_release_version,
     load_doctrine_floor,
     load_doctrine_package_line,
+    load_final_output_contract_version,
     load_package_metadata_version,
     load_workspace_version,
     require_matching_package_metadata_version,
@@ -48,7 +48,7 @@ def prepare_release(
     current_package_version = load_package_metadata_version(repo_root)
     requested_package_version = expected_package_metadata_version(requested_tag)
     current_workspace_version = load_workspace_version(repo_root)
-    current_compiled_contract_version = load_compiled_contract_version(repo_root)
+    current_final_output_contract_version = load_final_output_contract_version(repo_root)
     current_doctrine_floor = load_doctrine_floor(repo_root)
     current_doctrine_package_line = load_doctrine_package_line(repo_root)
     tags = load_release_tags(repo_root)
@@ -93,7 +93,7 @@ def prepare_release(
         requested_package_version=requested_package_version,
         package_version_status=package_version_status,
         current_workspace_version=current_workspace_version,
-        current_compiled_contract_version=current_compiled_contract_version,
+        current_final_output_contract_version=current_final_output_contract_version,
         current_doctrine_floor=current_doctrine_floor,
         current_doctrine_package_line=current_doctrine_package_line,
         previous_stable_tag=previous_stable_tag,
@@ -150,7 +150,7 @@ def render_release_worksheet(plan: ReleasePlan) -> str:
         f"Requested package metadata version: {plan.requested_package_version}",
         f"Package metadata status: {plan.package_version_status}",
         f"Current workspace manifest version: {plan.current_workspace_version}",
-        f"Current compiled contract version: {plan.current_compiled_contract_version}",
+        f"Current final-output contract version: {plan.current_final_output_contract_version}",
         f"Current minimum Doctrine release: {plan.current_doctrine_floor}",
         f"Current supported Doctrine package line: {plan.current_doctrine_package_line}",
         f"Changelog entry status: {plan.changelog_status}",

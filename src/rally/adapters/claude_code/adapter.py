@@ -216,7 +216,7 @@ class ClaudeCodeAdapter(RallyAdapter):
             "--allowedTools",
             ",".join(_ALLOWED_BUILTIN_TOOLS),
             "--json-schema",
-            agent.compiled.final_output.schema_file.read_text(encoding="utf-8"),
+            agent.compiled.final_output.generated_schema_file.read_text(encoding="utf-8"),
         ]
         model = flow.adapter.args.get("model")
         if isinstance(model, str) and model.strip():

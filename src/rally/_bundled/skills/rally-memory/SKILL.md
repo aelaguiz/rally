@@ -6,13 +6,11 @@ description: "Shared Rally memory skill for searching, using, saving, and refres
 # Rally Memory
 
 Use this skill when past work could help on this turn.
-Rally loads this skill on every Rally-managed turn.
 
 ## Quick model
 
-Read the issue and local repo state first.
-Memory is cross-run context, not a run-local note.
-Final JSON still controls the turn.
+Memory keeps cross-run lessons.
+Memory does not replace run-local notes.
 
 ## When to use
 
@@ -27,13 +25,11 @@ Use Rally CLI for memory actions.
 Use a memory only when it clearly fits this issue and role.
 Save only short reusable lessons.
 Do not use memory to replace run-local notes.
-Do not use memory to pass routing, `done`, `blocker`, or `sleep` truth.
 Do not edit memory files or QMD state directly.
 Fail loud if `RALLY_CLI_BIN`, `RALLY_RUN_ID`, or `RALLY_AGENT_SLUG` is missing.
 
 ## First move
 
-Read the issue and this role's local rules first.
 Decide whether past work could help or whether you just learned a lesson worth keeping.
 Choose `search`, `use`, `save`, or `refresh` through Rally CLI.
 
@@ -94,4 +90,4 @@ _Advisory · code · bash_
 
 Use `search` for discovery only.
 `use` and `save` should become visible Rally records.
-This skill never creates a second turn-ending path.
+This skill is for memory work only. It does not replace the turn's declared output.

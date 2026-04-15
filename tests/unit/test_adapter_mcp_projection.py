@@ -397,15 +397,21 @@ def _demo_flow(
     flow_root = workspace_root / "flows" / "demo"
     prompt_path = flow_root / "prompts" / "AGENTS.prompt"
     markdown_path = flow_root / "build" / "agents" / "scope_lead" / "AGENTS.md"
-    contract_path = flow_root / "build" / "agents" / "scope_lead" / "AGENTS.contract.json"
+    metadata_file = flow_root / "build" / "agents" / "scope_lead" / "final_output.contract.json"
     final_output = FinalOutputContract(
         exists=True,
+        contract_version=1,
         declaration_key="DemoTurnResult",
         declaration_name="DemoTurnResult",
-        format_mode="json_schema",
+        format_mode="json_object",
         schema_profile="OpenAIStructuredOutput",
-        schema_file=workspace_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
-        example_file=workspace_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json",
+        generated_schema_file=flow_root
+        / "build"
+        / "agents"
+        / "scope_lead"
+        / "schemas"
+        / "rally_turn_result.schema.json",
+        metadata_file=metadata_file,
     )
     agent = FlowAgent(
         key="01_scope_lead",
@@ -418,7 +424,7 @@ def _demo_flow(
             slug="scope_lead",
             entrypoint=prompt_path,
             markdown_path=markdown_path,
-            contract_path=contract_path,
+            metadata_file=metadata_file,
             contract_version=1,
             final_output=final_output,
         ),

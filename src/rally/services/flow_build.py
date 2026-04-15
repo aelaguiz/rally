@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -78,7 +79,9 @@ def ensure_flow_assets_built(
         target_names=(flow_name,),
         failure_label=f"flow `{flow_name}`",
     )
+    _prune_retired_compiled_agent_sidecars(repo_root / "flows" / flow_name / "build" / "agents")
     _sync_role_soul_sidecars(workspace=workspace_context, flow_name=flow_name)
+    _validate_emitted_agent_packages(repo_root / "flows" / flow_name / "build" / "agents")
 
     if not doctrine_skill_targets:
         return
@@ -173,6 +176,58 @@ def _run_doctrine_emit(
     raise RallyConfigError(f"Failed to rebuild {failure_label} with `{module_name}`: {detail}")
 
 
+def _prune_retired_compiled_agent_sidecars(build_agents_root: Path) -> None:
+    if not build_agents_root.is_dir():
+        return
+    for old_sidecar in build_agents_root.glob("*/AGENTS.contract.json"):
+        old_sidecar.unlink()
+
+
+def _validate_emitted_agent_packages(build_agents_root: Path) -> None:
+    if not build_agents_root.is_dir():
+        raise RallyConfigError(f"Doctrine emit did not create compiled agents under `{build_agents_root}`.")
+
+    agent_dirs = [path for path in sorted(build_agents_root.iterdir()) if path.is_dir()]
+    if not agent_dirs:
+        raise RallyConfigError(f"Doctrine emit did not create any compiled agents under `{build_agents_root}`.")
+
+    for agent_dir in agent_dirs:
+        markdown_path = agent_dir / "AGENTS.md"
+        metadata_file = agent_dir / "final_output.contract.json"
+        if not markdown_path.is_file() or not metadata_file.is_file():
+            raise RallyConfigError(
+                f"Compiled agent directory `{agent_dir}` must contain `AGENTS.md` and `final_output.contract.json`."
+            )
+        payload = _load_final_output_metadata(metadata_file)
+        final_output = payload.get("final_output")
+        if not isinstance(final_output, dict) or final_output.get("exists") is not True:
+            raise RallyConfigError(f"`{metadata_file}` must declare an existing final output.")
+        emitted_schema_relpath = final_output.get("emitted_schema_relpath")
+        if not isinstance(emitted_schema_relpath, str) or not emitted_schema_relpath:
+            raise RallyConfigError(f"`{metadata_file}` must declare `final_output.emitted_schema_relpath`.")
+        schema_path = (agent_dir / emitted_schema_relpath).resolve()
+        try:
+            schema_path.relative_to(agent_dir.resolve())
+        except ValueError as exc:
+            raise RallyConfigError(
+                f"`{metadata_file}` final_output.emitted_schema_relpath must stay inside `{agent_dir}`."
+            ) from exc
+        if not schema_path.is_file():
+            raise RallyConfigError(
+                f"`{metadata_file}` points at missing emitted schema `{schema_path}`."
+            )
+
+
+def _load_final_output_metadata(metadata_file: Path) -> dict[str, object]:
+    try:
+        payload = json.loads(metadata_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RallyConfigError(f"`{metadata_file}` must contain valid JSON.") from exc
+    if not isinstance(payload, dict):
+        raise RallyConfigError(f"`{metadata_file}` must contain a top-level object.")
+    return payload
+
+
 def _sync_role_soul_sidecars(*, workspace: WorkspaceContext, flow_name: str) -> None:
     roles_root = workspace.workspace_root / "flows" / flow_name / "prompts" / "roles"
     build_agents_root = workspace.workspace_root / "flows" / flow_name / "build" / "agents"
@@ -205,6 +260,8 @@ def _sync_role_soul_sidecars(*, workspace: WorkspaceContext, flow_name: str) -> 
             sidecar_path = agent_dir / sidecar_name
             if sidecar_path.is_file():
                 sidecar_path.unlink()
+        if not any(agent_dir.iterdir()):
+            agent_dir.rmdir()
 
 
 def _render_sidecar_prompt(
@@ -216,7 +273,6 @@ def _render_sidecar_prompt(
     try:
         from doctrine.compiler import CompilationSession
         from doctrine.diagnostics import DoctrineError
-        from doctrine.emit_common import root_concrete_agents
         from doctrine.parser import parse_file
         from doctrine.project_config import load_project_config
         from doctrine.renderer import render_markdown
@@ -227,13 +283,17 @@ def _render_sidecar_prompt(
 
     try:
         prompt_file = parse_file(prompt_path)
-        agent_names = root_concrete_agents(prompt_file)
+        project_config = load_project_config(project_config_path)
+        session = CompilationSession(prompt_file, project_config=project_config)
+        agent_names = tuple(
+            agent_name
+            for agent_name, agent in session.root_unit.agents_by_name.items()
+            if not agent.abstract
+        )
         if len(agent_names) != 1:
             raise RallyConfigError(
                 f"Role sidecar `{prompt_path}` must compile exactly one concrete agent, found {len(agent_names)}."
             )
-        project_config = load_project_config(project_config_path)
-        session = CompilationSession(prompt_file, project_config=project_config)
         compiled_agents = session.compile_agents(agent_names)
     except DoctrineError as exc:
         raise RallyConfigError(f"Failed to compile role sidecar `{prompt_path}`: {exc}") from exc
