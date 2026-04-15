@@ -1,4 +1,5 @@
 import rally.issue_ledger
+import rally.notes
 
 
 document ArchitectIssueNoteDocument: "Architect Note"
@@ -45,32 +46,23 @@ document QaIssueNoteDocument: "QA Note"
 
 output ArchitectIssueNote: "Architect Issue Note"
     target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: "\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\""
+        append_with: rally.notes.RallyIssueNote:target.append_with
     shape: MarkdownDocument
     structure: ArchitectIssueNoteDocument
     requirement: Required
 
-    standalone_read: "Standalone Read"
-        "This note should stand on its own for Critic."
-
 
 output DeveloperIssueNote: "Developer Issue Note"
     target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: "\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\""
+        append_with: rally.notes.RallyIssueNote:target.append_with
     shape: MarkdownDocument
     structure: DeveloperIssueNoteDocument
     requirement: Required
 
-    standalone_read: "Standalone Read"
-        "This note should stand on its own for Critic."
-
 
 output QaIssueNote: "QA Issue Note"
     target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: "\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\""
+        append_with: rally.notes.RallyIssueNote:target.append_with
     shape: MarkdownDocument
     structure: QaIssueNoteDocument
     requirement: Required
-
-    standalone_read: "Standalone Read"
-        "This note should stand on its own for Critic."

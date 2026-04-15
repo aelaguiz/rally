@@ -41,7 +41,7 @@ agent PoemWriter[PoemLoopRole]:
     quality_bar: roles.poem_writer.PoemWriterQualityBar
     inputs: PoemLoopInputs
     outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
-        override issue_note: "Issue Note"
+        override issue_note: "Saved Run Note"
             shared.outputs.WriterIssueNote
 
         poem_draft: "Poem Draft"

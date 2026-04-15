@@ -162,7 +162,7 @@ agent Architect[SoftwareEngineeringRole]:
     quality_bar: roles.architect.ArchitectQualityBar
     inputs: SoftwareEngineeringDemoInputs
     outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
-        override issue_note: "Issue Note"
+        override issue_note: "Saved Run Note"
             shared.outputs.ArchitectIssueNote
 
         turn_result: "Turn Result"
@@ -203,7 +203,7 @@ agent Developer[SoftwareEngineeringRole]:
     quality_bar: roles.developer.DeveloperQualityBar
     inputs: SoftwareEngineeringDemoInputs
     outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
-        override issue_note: "Issue Note"
+        override issue_note: "Saved Run Note"
             shared.outputs.DeveloperIssueNote
 
         turn_result: "Turn Result"
@@ -225,7 +225,7 @@ agent QaDocsTester[SoftwareEngineeringRole]:
     quality_bar: roles.qa_docs_tester.QaDocsTesterQualityBar
     inputs: SoftwareEngineeringDemoInputs
     outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
-        override issue_note: "Issue Note"
+        override issue_note: "Saved Run Note"
             shared.outputs.QaIssueNote
 
         turn_result: "Turn Result"

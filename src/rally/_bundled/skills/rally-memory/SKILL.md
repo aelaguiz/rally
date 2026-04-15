@@ -1,40 +1,40 @@
 ---
 name: "rally-memory"
-description: "Shared Rally memory skill for searching, using, saving, and refreshing cross-run memory through Rally CLI. Use it for tasks like past work or when you had to fix your own work and learned a lesson worth keeping."
+description: "Shared Rally memory skill for searching, using, saving, and refreshing cross-run memory through Rally CLI."
 ---
 
 # Rally Memory
 
-Use this skill on Rally-managed turns when cross-run memory could help.
-Do not use it to replace the issue, notes, or final JSON.
-Rally loads this skill on every Rally-managed turn. Flows do not need to list it by hand.
+Use this skill when past work could help on this turn.
+Rally loads this skill on every Rally-managed turn.
+
+## Quick model
+
+_unordered list_
+
+- Read the issue and local repo state first.
+- Memory is cross-run context, not a run-local note.
+- Final JSON still controls the turn.
 
 ## When to use
 
 _unordered list_
 
-- Check memory for tasks like this one.
+- Past work like this could help.
 - You found a memory that clearly fits this role and issue.
-- If you had to fix your own work, save the general lesson for later.
+- You had to fix your own work and learned a short lesson worth keeping.
 - The memory index needs a refresh from the markdown source files.
 
-## When not to use
-
-_unordered list_
-
-- Do not search memory before you understand the current issue.
-- Do not use memory to replace run-local notes.
-- Do not use memory to pass routing, `done`, `blocker`, or `sleep` truth.
-- Do not edit memory files or QMD state directly.
-
-## Non-negotiables
+## Hard rules
 
 _unordered list_
 
 - Use Rally CLI for memory actions.
-- Rally scopes memory by flow and agent.
-- Memory is context only. Final JSON still controls the turn.
+- Use a memory only when it clearly fits this issue and role.
 - Save only short reusable lessons.
+- Do not use memory to replace run-local notes.
+- Do not use memory to pass routing, `done`, `blocker`, or `sleep` truth.
+- Do not edit memory files or QMD state directly.
 - Fail loud if `RALLY_CLI_BIN`, `RALLY_RUN_ID`, or `RALLY_AGENT_SLUG` is missing.
 
 ## First move
@@ -42,7 +42,7 @@ _unordered list_
 _ordered list_
 
 1. Read the issue and this role's local rules first.
-2. Decide whether this task looks like past work or whether you just learned a lesson worth keeping.
+2. Decide whether past work could help or whether you just learned a lesson worth keeping.
 3. Choose `search`, `use`, `save`, or `refresh` through Rally CLI.
 
 ## Workflow

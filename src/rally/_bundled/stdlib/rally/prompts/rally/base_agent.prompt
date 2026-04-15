@@ -40,11 +40,11 @@ input RallyAgentSlug: "Rally Agent Slug"
 
 
 skill RallyKernelSkill: "rally-kernel"
-    purpose: "Use the shared Rally kernel skill to leave notes when needed and end the turn with the declared final JSON."
+    purpose: "Use the shared Rally kernel skill when you need one saved run note or the final JSON for this turn."
 
     use_when: "Use When"
-        "Use this when a later reader needs a note."
-        "Use this when the turn needs Rally's shared final JSON rules."
+        "Use this when a later reader needs one short saved note."
+        "Use this when the turn needs Rally's final JSON rules."
 
 
 inputs RallyManagedInputs: "Inputs"
@@ -60,7 +60,7 @@ inputs RallyManagedInputs: "Inputs"
     rally_agent_slug: "Rally Agent Slug"
         RallyAgentSlug
 
-    issue_ledger: "Issue Ledger"
+    issue_ledger: "Shared Ledger File"
         rally.issue_ledger.RallyIssueLedger
 
 
@@ -75,34 +75,23 @@ skills RallyManagedSkills: "Skills"
 
 
 outputs RallyManagedOutputs: "Outputs"
-    issue_note: "Issue Note"
+    issue_note: "Saved Run Note"
         rally.notes.RallyIssueNote
 
 
 # This shared base block is where Rally states repo-wide turn rules once.
 # Local flows can add more rules, but they should not fight this base layer.
 abstract agent RallyManagedBaseAgent:
-    read_first: rally.memory.RallyReadFirst
-    how_to_take_a_turn: rally.memory.RallyHowToTakeATurn
-
-    rally_contract: "Rally Rules"
-        "Rally owns the run home, the note path, and the final JSON for this turn."
-        "End the turn with the final JSON shape this turn declares."
-        "Many Rally turns use `rally.turn_results.RallyTurnResult`."
-        "Review-native turns may end with Doctrine review JSON that Rally can read."
-        "Use `home:issue.md` as the shared run ledger for this run."
-        "At the start of each turn, read `home:issue.md` again before you act."
-        "Do that on the first turn, after `sleep`, and after any resumed run."
-        "Leave a note only when a later reader needs context."
-        "If Rally already saves the final review to `home:issue.md`, do not leave a second note unless the flow asks for one."
-        "Use the shared `rally-kernel` skill for that note."
+    rally_contract: "Rally Context"
+        "Rally owns the run home, the shared ledger, and the final JSON for this turn."
+        "The shared ledger file is `home:issue.md`."
         "For this turn, read skills from `home:skills/`."
         "On Codex turns, that same folder is `$CODEX_HOME/skills/`."
-        "Do not use `~/.agents/skills` or other machine-global skill folders for this run."
-        "Do not edit `home:issue.md` directly."
-        "Use the shared `rally-memory` skill only when a past lesson could help or this turn learns a short lesson worth keeping."
         "Read run identity from `RALLY_WORKSPACE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_AGENT_SLUG`."
         "Use `RALLY_CLI_BIN` when a flow tells you to call the Rally CLI."
+
+    read_first: rally.memory.RallyReadFirst
+    how_to_take_a_turn: rally.memory.RallyHowToTakeATurn
 
     inputs: RallyManagedInputs
     skills: RallyManagedSkills

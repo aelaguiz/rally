@@ -70,13 +70,13 @@ output CloseoutTurnResult: "Closeout Turn Result"
 
 agent PlanAuthor[rally.base_agent.RallyManagedBaseAgent]:
     role: "Write the repair plan and either pass the smoke test forward or finish it."
+    inherit rally_contract
     inherit read_first
     inherit how_to_take_a_turn
     workflow: "Plan"
         "Write `home:artifacts/repair_plan.md`."
         "Pass the smoke test to RouteRepair only when it needs one more step."
         "Otherwise finish the smoke test here."
-    inherit rally_contract
     inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
         inherit rally_workspace_dir
         inherit rally_run_id
@@ -107,11 +107,11 @@ agent PlanAuthor[rally.base_agent.RallyManagedBaseAgent]:
 
 agent RouteRepair[rally.base_agent.RallyManagedBaseAgent]:
     role: "Pick the next smoke-test owner from the emitted route choice."
+    inherit rally_contract
     inherit read_first
     inherit how_to_take_a_turn
     workflow: "Route Repair"
         "Choose whether the smoke test should close out now or loop back for one more pass."
-    inherit rally_contract
     outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         inherit issue_note
 
@@ -132,11 +132,11 @@ agent RouteRepair[rally.base_agent.RallyManagedBaseAgent]:
 
 agent Closeout[rally.base_agent.RallyManagedBaseAgent]:
     role: "End the smoke test with a final `done` result."
+    inherit rally_contract
     inherit read_first
     inherit how_to_take_a_turn
     workflow: "Closeout"
         "End the smoke test with one final `done` result."
-    inherit rally_contract
     outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         inherit issue_note
 

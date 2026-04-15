@@ -1,4 +1,5 @@
 import rally.issue_ledger
+import rally.notes
 
 
 document PoemDraftDocument: "Poem Draft"
@@ -40,10 +41,7 @@ output PoemDraft: "Poem Draft"
 
 output WriterIssueNote: "Writer Issue Note"
     target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: "\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\""
+        append_with: rally.notes.RallyIssueNote:target.append_with
     shape: MarkdownDocument
     structure: WriterIssueNoteDocument
     requirement: Required
-
-    standalone_read: "Standalone Read"
-        "This note should stand on its own for the critic."
