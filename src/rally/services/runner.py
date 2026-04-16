@@ -6,14 +6,14 @@ import os
 import shlex
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable, Sequence
 
 from rally.adapters.base import AdapterInvocation, AdapterReadinessFailure
 from rally.adapters.registry import get_adapter
-from rally.domain.flow import FlowAgent, FlowDefinition
+from rally.domain.flow import AdapterConfig, FlowAgent, FlowDefinition
 from rally.domain.run import ResumeRequest, RunRecord, RunRequest, RunState, RunStatus
 from rally.domain.turn_result import (
     BlockerTurnResult,
@@ -44,6 +44,7 @@ from rally.services.run_store import (
     flow_lock,
     load_run_record,
     load_run_state,
+    write_run_record,
     write_run_state,
 )
 from rally.services.workspace import WorkspaceContext, workspace_context_from_root
@@ -73,6 +74,18 @@ class _TurnExecutionOutcome:
     command_result: RunCommandResult | None
 
 
+@dataclass(frozen=True)
+class _AdapterOverrides:
+    model_override: str | None = None
+    reasoning_effort_override: str | None = None
+
+
+@dataclass(frozen=True)
+class _ResolvedFlowConfig:
+    flow: FlowDefinition
+    overrides: _AdapterOverrides
+
+
 def run_flow(
     *,
     workspace: WorkspaceContext | None = None,
@@ -88,6 +101,12 @@ def run_flow(
     with flow_lock(repo_root=repo_root, flow_code=flow_code):
         ensure_flow_assets_built(workspace=workspace_context, flow_name=request.flow_name)
         flow = load_flow_definition(repo_root=repo_root, flow_name=request.flow_name)
+        resolved_flow = _resolve_effective_flow(
+            flow=flow,
+            model_override=request.model_override,
+            reasoning_effort_override=request.reasoning_effort_override,
+        )
+        flow = resolved_flow.flow
         issue_seed = _load_issue_seed(
             issue_seed_path=request.issue_seed_path,
         )
@@ -99,6 +118,8 @@ def run_flow(
         run_record = create_run(
             repo_root=repo_root,
             flow=flow,
+            model_override=resolved_flow.overrides.model_override,
+            reasoning_effort_override=resolved_flow.overrides.reasoning_effort_override,
         )
         result = _execute_new_run(
             workspace=workspace_context,
@@ -152,6 +173,18 @@ def resume_run(
     with flow_lock(repo_root=repo_root, flow_code=run_record.flow_code):
         ensure_flow_assets_built(workspace=workspace_context, flow_name=run_record.flow_name)
         flow = load_flow_definition(repo_root=repo_root, flow_name=run_record.flow_name)
+        resolved_flow = _resolve_effective_flow(
+            flow=flow,
+            model_override=request.model_override,
+            reasoning_effort_override=request.reasoning_effort_override,
+            saved_model_override=run_record.model_override,
+            saved_reasoning_effort_override=run_record.reasoning_effort_override,
+        )
+        flow = resolved_flow.flow
+        updated_run_record = _run_record_with_overrides(run_record=run_record, overrides=resolved_flow.overrides)
+        if updated_run_record != run_record:
+            write_run_record(run_dir=run_dir, record=updated_run_record)
+            run_record = updated_run_record
         if request.restart:
             return _restart_run(
                 workspace=workspace_context,
@@ -286,7 +319,12 @@ def _restart_run(
     )
     archive_run(repo_root=repo_root, run_id=run_record.id)
 
-    new_run = create_run(repo_root=repo_root, flow=flow)
+    new_run = create_run(
+        repo_root=repo_root,
+        flow=flow,
+        model_override=run_record.model_override,
+        reasoning_effort_override=run_record.reasoning_effort_override,
+    )
     restarted_result = _execute_new_run(
         workspace=workspace,
         repo_root=repo_root,
@@ -312,6 +350,50 @@ def _restart_run(
         status=restarted_result.status,
         current_agent_key=restarted_result.current_agent_key,
         message=f"Restarted run `{run_record.id}` as `{new_run.id}`.\n{restarted_result.message}",
+    )
+
+
+def _resolve_effective_flow(
+    *,
+    flow: FlowDefinition,
+    model_override: str | None = None,
+    reasoning_effort_override: str | None = None,
+    saved_model_override: str | None = None,
+    saved_reasoning_effort_override: str | None = None,
+) -> _ResolvedFlowConfig:
+    overrides = _AdapterOverrides(
+        model_override=_select_override(command_value=model_override, saved_value=saved_model_override),
+        reasoning_effort_override=_select_override(
+            command_value=reasoning_effort_override,
+            saved_value=saved_reasoning_effort_override,
+        ),
+    )
+    adapter_args = dict(flow.adapter.args)
+    if overrides.model_override is not None:
+        adapter_args["model"] = overrides.model_override
+    if overrides.reasoning_effort_override is not None:
+        adapter_args["reasoning_effort"] = overrides.reasoning_effort_override
+    get_adapter(flow.adapter.name).validate_args(args=adapter_args)
+    return _ResolvedFlowConfig(
+        flow=replace(
+            flow,
+            adapter=AdapterConfig(name=flow.adapter.name, args=adapter_args),
+        ),
+        overrides=overrides,
+    )
+
+
+def _select_override(*, command_value: str | None, saved_value: str | None) -> str | None:
+    if command_value is None:
+        return saved_value
+    return command_value.strip()
+
+
+def _run_record_with_overrides(*, run_record: RunRecord, overrides: _AdapterOverrides) -> RunRecord:
+    return replace(
+        run_record,
+        model_override=overrides.model_override,
+        reasoning_effort_override=overrides.reasoning_effort_override,
     )
 
 
@@ -866,6 +948,13 @@ def _execute_single_turn(
         compiled_agent=agent.compiled,
         last_message_file=artifacts.last_message_file,
     )
+    recorder.emit_final_json(
+        payload=loaded_final_response.payload,
+        payload_file=artifacts.last_message_file,
+        turn_index=turn_index,
+        agent_key=agent.key,
+        agent_slug=agent.slug,
+    )
     turn_result = loaded_final_response.turn_result
     if isinstance(turn_result, SleepTurnResult):
         blocked_state = RunState(
@@ -1228,6 +1317,7 @@ def _block_for_guarded_git_repos(
         ),
     )
 
+
 def _state_from_turn_result(
     *,
     flow: FlowDefinition,
@@ -1280,9 +1370,11 @@ def _emit_turn_result_event(
     state: RunState,
     turn_result: TurnResult,
 ) -> None:
+    event_data: dict[str, object] = {"result_kind": turn_result.kind.value}
     if isinstance(turn_result, HandoffTurnResult):
         message = f"Handed off to `{state.current_agent_key}`."
         code = "HANDOFF"
+        event_data["next_owner"] = turn_result.next_owner
     elif isinstance(turn_result, DoneTurnResult):
         message = f"Run `{run_record.id}` is done: {turn_result.summary}"
         code = "DONE"
@@ -1305,7 +1397,7 @@ def _emit_turn_result_event(
         turn_index=turn_index,
         agent_key=agent.key,
         agent_slug=agent.slug,
-        data={"result_kind": turn_result.kind.value},
+        data=event_data,
     )
 
 

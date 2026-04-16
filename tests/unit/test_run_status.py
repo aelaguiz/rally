@@ -78,6 +78,26 @@ class RunStatusTests(unittest.TestCase):
             self.assertIn("Blocker: Guarded repo is dirty.", result.message)
             self.assertIn("Next: `rally resume DMO-1 --edit` or `rally resume DMO-1 --restart`", result.message)
 
+    def test_show_status_for_one_run_lists_saved_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_run(
+                repo_root=repo_root,
+                run_id="DMO-1",
+                flow_name="demo",
+                flow_code="DMO",
+                status="paused",
+                current_agent_key="02_change_engineer",
+                turn_index=2,
+                model_override="gpt-5.4-mini",
+                reasoning_effort_override="high",
+            )
+
+            result = show_status(repo_root=repo_root, run_id="DMO-1")
+
+            self.assertIn("Model Override: `gpt-5.4-mini`", result.message)
+            self.assertIn("Thinking Override: `high`", result.message)
+
     def test_show_status_for_archived_run_marks_it_archived(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -123,12 +143,19 @@ class RunStatusTests(unittest.TestCase):
         blocker_reason: str | None = None,
         done_summary: str | None = None,
         last_turn_kind: str | None = None,
+        model_override: str | None = None,
+        reasoning_effort_override: str | None = None,
         archived: bool = False,
     ) -> None:
         parent = repo_root / "runs" / ("archive" if archived else "active") / run_id
         home_dir = parent / "home"
         home_dir.mkdir(parents=True, exist_ok=True)
         (home_dir / "issue.md").write_text("# Issue\n", encoding="utf-8")
+        override_lines: list[str] = []
+        if model_override is not None:
+            override_lines.append(f"model_override: {model_override}\n")
+        if reasoning_effort_override is not None:
+            override_lines.append(f"reasoning_effort_override: {reasoning_effort_override}\n")
         (parent / "run.yaml").write_text(
             textwrap.dedent(
                 f"""\
@@ -140,7 +167,8 @@ class RunStatusTests(unittest.TestCase):
                 created_at: "2026-04-14T00:00:00Z"
                 issue_file: home/issue.md
                 """
-            ),
+            )
+            + "".join(override_lines),
             encoding="utf-8",
         )
         current_agent_yaml = "null" if current_agent_key is None else current_agent_key

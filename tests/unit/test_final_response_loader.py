@@ -163,6 +163,40 @@ class FinalResponseLoaderTests(unittest.TestCase):
             self.assertEqual(loaded.turn_result, HandoffTurnResult(next_owner="PoemCritic"))
             self.assertIsNone(loaded.review_truth)
 
+    def test_load_agent_final_response_routes_cross_module_producer_handoff_by_target_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            last_message = Path(temp_dir) / "last_message.json"
+            last_message.write_text(
+                """{
+  "kind": "handoff",
+  "next_route": "section_dossier_engineer",
+  "summary": null,
+  "reason": null,
+  "sleep_duration_seconds": null
+}
+""",
+                encoding="utf-8",
+            )
+
+            loaded = load_agent_final_response(
+                compiled_agent=_producer_agent_contract(
+                    selector_field=("next_route",),
+                    route_members={},
+                    route_targets={
+                        "section_dossier_engineer": RouteTargetContract(
+                            key="agents.section_dossier_engineer.SectionDossierEngineer",
+                            name="SectionDossierEngineer",
+                            title="Section Dossier Engineer",
+                            module_parts=("agents", "section_dossier_engineer"),
+                        )
+                    },
+                ),
+                last_message_file=last_message,
+            )
+
+            self.assertEqual(loaded.turn_result, HandoffTurnResult(next_owner="SectionDossierEngineer"))
+            self.assertIsNone(loaded.review_truth)
+
     def test_load_agent_final_response_rejects_unknown_route_member(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             last_message = Path(temp_dir) / "last_message.json"
@@ -329,23 +363,28 @@ def _producer_agent_contract(
     *,
     selector_field: tuple[str, ...],
     route_members: dict[str, str],
+    route_targets: dict[str, RouteTargetContract] | None = None,
 ) -> CompiledAgentContract:
     branches: list[RouteBranchContract] = []
-    for member_wire, target_name in route_members.items():
+    branch_targets = route_targets or {
+        member_wire: RouteTargetContract(
+            key=target_name,
+            name=target_name,
+            title=target_name,
+            module_parts=(),
+        )
+        for member_wire, target_name in route_members.items()
+    }
+    for member_wire, target in branch_targets.items():
         branches.append(
             RouteBranchContract(
-                target=RouteTargetContract(
-                    key=target_name,
-                    name=target_name,
-                    title=target_name,
-                    module_parts=(),
-                ),
-                label=f"Route to {target_name}.",
-                summary=f"Route to {target_name}.",
+                target=target,
+                label=f"Route to {target.name}.",
+                summary=f"Route to {target.name}.",
                 choice_members=(
                     RouteChoiceMemberContract(
                         member_key=member_wire,
-                        member_title=target_name,
+                        member_title=target.name,
                         member_wire=member_wire,
                     ),
                 ),

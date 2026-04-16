@@ -156,7 +156,10 @@ def _resolve_branch_target(
         raise ValueError(
             f"Route selector `{'.'.join(selector.field_path)}` picked unknown route member `{selected_member}`."
         )
-    return branch.target.key
+    # Doctrine emits both a dotted source key and the short agent name.
+    # Rally routes on the short runtime owner name so cross-module targets
+    # resolve the same way as same-file targets.
+    return branch.target.name
 
 
 def _find_route_branch(

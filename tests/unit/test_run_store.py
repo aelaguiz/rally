@@ -29,6 +29,24 @@ class RunStoreTests(unittest.TestCase):
             run_yaml = (repo_root / "runs" / "active" / record.id / "run.yaml").read_text(encoding="utf-8")
             self.assertNotIn("brief_file", run_yaml)
             self.assertIn("issue_file: home/issue.md", run_yaml)
+            self.assertNotIn("model_override", run_yaml)
+            self.assertNotIn("reasoning_effort_override", run_yaml)
+
+    def test_create_run_round_trips_saved_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+
+            record = create_run(
+                repo_root=repo_root,
+                flow=flow,
+                model_override="gpt-5.4-mini",
+                reasoning_effort_override="high",
+            )
+            loaded = load_run_record(run_dir=repo_root / "runs" / "active" / record.id)
+
+            self.assertEqual(loaded.model_override, "gpt-5.4-mini")
+            self.assertEqual(loaded.reasoning_effort_override, "high")
 
     def test_load_run_record_tolerates_legacy_brief_field(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

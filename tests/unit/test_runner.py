@@ -24,16 +24,22 @@ from rally.domain.flow import (
     FlowHostInputs,
     IoContract,
     PreviousTurnInputContract,
+    RouteBranchContract,
+    RouteChoiceMemberContract,
+    RouteContract,
+    RouteSelectorContract,
+    RouteTargetContract,
 )
 from rally.domain.run import ResumeRequest, RunRecord, RunRequest, RunStatus
 from rally.errors import RallyConfigError, RallyUsageError
+from rally.services.final_response_loader import load_agent_final_response
 from rally.services.flow_build import ensure_flow_assets_built as build_flow_assets
 from rally.services.flow_loader import _load_compiled_agent_contract
 from rally.services.issue_editor import IssueEditorResult
 from rally.services.issue_ledger import ORIGINAL_ISSUE_END_MARKER
 from rally.services.run_events import RunEventRecorder
 from rally.services.run_store import archive_run, find_run_dir, load_run_state, write_run_state
-from rally.services.runner import _build_agent_prompt, resume_run, run_flow
+from rally.services.runner import _build_agent_prompt, _resolve_next_agent, resume_run, run_flow
 from rally.services.workspace import workspace_context_from_root
 from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display
 
@@ -299,6 +305,139 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("## Previous Turn Inputs", appendix)
             self.assertIn('"summary": "ready"', appendix)
 
+    def test_resolve_next_agent_accepts_cross_module_route_target_name_from_loaded_response(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            last_message = repo_root / "last_message.json"
+            last_message.write_text(
+                """{
+  "kind": "handoff",
+  "next_route": "section_dossier_engineer",
+  "summary": null,
+  "reason": null,
+  "sleep_duration_seconds": null
+}
+""",
+                encoding="utf-8",
+            )
+
+            routed_agent = CompiledAgentContract(
+                name="ProjectLead",
+                slug="project_lead",
+                entrypoint=repo_root / "flows" / "demo" / "prompts" / "AGENTS.prompt",
+                markdown_path=repo_root / "flows" / "demo" / "build" / "agents" / "project_lead" / "AGENTS.md",
+                metadata_file=repo_root
+                / "flows"
+                / "demo"
+                / "build"
+                / "agents"
+                / "project_lead"
+                / "final_output.contract.json",
+                contract_version=1,
+                final_output=FinalOutputContract(
+                    exists=True,
+                    contract_version=1,
+                    declaration_key="ProjectLeadTurnResult",
+                    declaration_name="ProjectLeadTurnResult",
+                    format_mode="json_object",
+                    schema_profile="OpenAIStructuredOutput",
+                    generated_schema_file=repo_root / "schema.json",
+                    metadata_file=repo_root / "final_output.contract.json",
+                ),
+                route=RouteContract(
+                    exists=True,
+                    behavior="conditional",
+                    has_unrouted_branch=True,
+                    unrouted_review_verdicts=(),
+                    selector=RouteSelectorContract(
+                        surface="final_output",
+                        field_path=("next_route",),
+                        null_behavior="no_route",
+                    ),
+                    branches=(
+                        RouteBranchContract(
+                            target=RouteTargetContract(
+                                key="agents.section_dossier_engineer.SectionDossierEngineer",
+                                name="SectionDossierEngineer",
+                                title="Section Dossier Engineer",
+                                module_parts=("agents", "section_dossier_engineer"),
+                            ),
+                            label="Route to Section Dossier Engineer.",
+                            summary="Route to Section Dossier Engineer.",
+                            choice_members=(
+                                RouteChoiceMemberContract(
+                                    member_key="section_dossier_engineer",
+                                    member_title="Section Dossier Engineer",
+                                    member_wire="section_dossier_engineer",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            downstream_agent = FlowAgent(
+                key="01_section_dossier_engineer",
+                slug="section_dossier_engineer",
+                timeout_sec=60,
+                allowed_skills=(),
+                allowed_mcps=(),
+                compiled=CompiledAgentContract(
+                    name="SectionDossierEngineer",
+                    slug="section_dossier_engineer",
+                    entrypoint=repo_root / "flows" / "demo" / "prompts" / "section_dossier_engineer.prompt",
+                    markdown_path=repo_root
+                    / "flows"
+                    / "demo"
+                    / "build"
+                    / "agents"
+                    / "section_dossier_engineer"
+                    / "AGENTS.md",
+                    metadata_file=repo_root
+                    / "flows"
+                    / "demo"
+                    / "build"
+                    / "agents"
+                    / "section_dossier_engineer"
+                    / "final_output.contract.json",
+                    contract_version=1,
+                    final_output=FinalOutputContract(
+                        exists=True,
+                        contract_version=1,
+                        declaration_key="SectionDossierEngineerTurnResult",
+                        declaration_name="SectionDossierEngineerTurnResult",
+                        format_mode="json_object",
+                        schema_profile="OpenAIStructuredOutput",
+                        generated_schema_file=repo_root / "schema.json",
+                        metadata_file=repo_root / "final_output.contract.json",
+                    ),
+                ),
+            )
+            flow = FlowDefinition(
+                name="demo",
+                code="DMO",
+                root_dir=repo_root / "flows" / "demo",
+                flow_file=repo_root / "flows" / "demo" / "flow.yaml",
+                build_agents_dir=repo_root / "flows" / "demo" / "build" / "agents",
+                setup_home_script=None,
+                start_agent_key=downstream_agent.key,
+                max_command_turns=8,
+                guarded_git_repos=(),
+                runtime_env={},
+                host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
+                agents={downstream_agent.key: downstream_agent},
+                adapter=AdapterConfig(name="codex", args={}),
+            )
+
+            loaded = load_agent_final_response(
+                compiled_agent=routed_agent,
+                last_message_file=last_message,
+            )
+
+            resolved = _resolve_next_agent(flow=flow, next_owner=loaded.turn_result.next_owner)
+
+            self.assertEqual(loaded.turn_result.next_owner, "SectionDossierEngineer")
+            self.assertIs(resolved, downstream_agent)
+
     def test_build_agent_prompt_injects_previous_json_for_stdlib_smoke_route_repair(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
 
@@ -444,6 +583,78 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("Prepared run home shell", rendered_text)
             self.assertIn("waiting for `home/issue.md`", rendered_text)
 
+    def test_run_flow_persists_overrides_and_uses_them_in_display_and_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            seed_path = repo_root / "issue.md"
+            seed_path.write_text("Fix the pagination bug.\n", encoding="utf-8")
+            fake_run = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-1",
+                        "last_message": {
+                            "kind": "done",
+                            "next_owner": None,
+                            "summary": "override run",
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+            stream = _FakeTtyStream()
+
+            def display_factory(run_record, flow):
+                return build_terminal_display(
+                    stream=stream,
+                    context=DisplayContext(
+                        run_id=run_record.id,
+                        flow_name=flow.name,
+                        flow_code=flow.code,
+                        adapter_name=flow.adapter.name,
+                        model_name=str(flow.adapter.args.get("model")),
+                        reasoning_effort=str(flow.adapter.args.get("reasoning_effort")),
+                        start_agent_key=flow.start_agent_key,
+                        agent_count=len(flow.agents),
+                        agent_identities=tuple(
+                            AgentDisplayIdentity(key=agent.key, slug=agent.slug)
+                            for agent in flow.agents.values()
+                        ),
+                    ),
+                )
+
+            result = run_flow(
+                repo_root=repo_root,
+                request=RunRequest(
+                    flow_name="demo",
+                    issue_seed_path=seed_path,
+                    model_override="gpt-5.4-mini",
+                    reasoning_effort_override="high",
+                ),
+                subprocess_run=fake_run,
+                display_factory=display_factory,
+            )
+
+            run_dir = find_run_dir(repo_root=repo_root, run_id="DMO-1")
+            run_yaml_text = (run_dir / "run.yaml").read_text(encoding="utf-8")
+            launch_record = json.loads(
+                (run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").read_text(encoding="utf-8")
+            )
+            tty_text = _strip_ansi(stream.getvalue())
+
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("model_override: gpt-5.4-mini", run_yaml_text)
+            self.assertIn("reasoning_effort_override: high", run_yaml_text)
+            self.assertIn("Model gpt-5.4-mini", tty_text)
+            self.assertIn("Thinking high", tty_text)
+            self.assertIn("-m", launch_record["command"])
+            self.assertEqual(
+                launch_record["command"][launch_record["command"].index("-m") + 1],
+                "gpt-5.4-mini",
+            )
+            self.assertIn('model_reasoning_effort="high"', launch_record["command"])
+
     def test_resume_run_after_issue_exists_hands_off_and_records_logs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -529,7 +740,16 @@ class RunnerTests(unittest.TestCase):
             self.assertIn('"summary": "verified"', issue_text)
             self.assertIn("session-1", session_text)
             self.assertIn('"code": "RUN"', events_text)
+            self.assertIn('"code": "RAWJSON"', events_text)
+            self.assertIn('"code": "FINALJSON"', events_text)
+            self.assertIn('"payload_source": "adapter_stdout"', events_text)
+            self.assertIn('"payload_source": "last_message"', events_text)
+            self.assertIn('"adapter_event_type": "thread.started"', events_text)
+            self.assertIn('"raw_payload": {"kind": "handoff", "next_owner": "change_engineer"', events_text)
+            self.assertIn('"raw_payload": {"kind": "done", "next_owner": null, "reason": null, "sleep_duration_seconds": null, "summary": "verified"}', events_text)
+            self.assertIn('"next_owner": "change_engineer"', events_text)
             self.assertIn('"code": "SESSION"', agent_log_text)
+            self.assertIn('"code": "RAWJSON"', agent_log_text)
             self.assertIn("Investigating the bug", rendered_text)
             self.assertIn("Tracing the pagination path", rendered_text)
             self.assertIn('rg -n "page" src', rendered_text)
@@ -1466,6 +1686,8 @@ class RunnerTests(unittest.TestCase):
                 (run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").read_text(encoding="utf-8")
             )
             mcp_config = json.loads((run_dir / "home" / "claude_code" / "mcp.json").read_text(encoding="utf-8"))
+            events_text = (run_dir / "logs" / "events.jsonl").read_text(encoding="utf-8")
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
 
             self.assertEqual(result.status, RunStatus.DONE)
             self.assertEqual(fake_run.calls[0]["command"][0], "claude")
@@ -1491,6 +1713,16 @@ class RunnerTests(unittest.TestCase):
                 str(Path("/tmp/fixture-repo").resolve(strict=False)),
             )
             self.assertTrue((run_dir / "home" / ".claude" / "skills").is_symlink())
+            self.assertIn('"code": "RAWJSON"', events_text)
+            self.assertIn('"code": "FINALJSON"', events_text)
+            self.assertIn('"payload_source": "adapter_stdout"', events_text)
+            self.assertIn('"payload_source": "last_message"', events_text)
+            self.assertIn('"adapter_event_type": "assistant"', events_text)
+            self.assertIn('"adapter_event_type": "result"', events_text)
+            self.assertIn('"raw_payload": {"kind": "handoff", "next_owner": "change_engineer"', events_text)
+            self.assertIn('"raw_payload": {"kind": "done", "next_owner": null, "reason": null, "sleep_duration_seconds": null, "summary": "verified"}', events_text)
+            self.assertNotIn("RAWJSON", rendered_text)
+            self.assertNotIn("FINALJSON", rendered_text)
 
     def test_resume_run_blocks_before_turn_when_required_claude_mcp_cannot_start(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3082,6 +3314,223 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(new_issue.startswith("Restart this blocked issue.\n"))
             self.assertIn("- Restarted From: `DMO-1`", new_issue)
 
+    def test_resume_run_uses_saved_overrides_when_no_new_flags_are_passed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(
+                repo_root=repo_root,
+                request=RunRequest(
+                    flow_name="demo",
+                    model_override="gpt-5.4-mini",
+                    reasoning_effort_override="high",
+                ),
+            )
+            self._write_issue(run_dir=run_dir)
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=_FakeCodexRun(
+                    [
+                        {
+                            "thread_id": "session-1",
+                            "last_message": {
+                                "kind": "done",
+                                "next_owner": None,
+                                "summary": "saved override run",
+                                "reason": None,
+                                "sleep_duration_seconds": None,
+                            },
+                        }
+                    ]
+                ),
+            )
+
+            run_yaml_text = (run_dir / "run.yaml").read_text(encoding="utf-8")
+            launch_record = json.loads(
+                (run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("model_override: gpt-5.4-mini", run_yaml_text)
+            self.assertIn("reasoning_effort_override: high", run_yaml_text)
+            self.assertEqual(
+                launch_record["command"][launch_record["command"].index("-m") + 1],
+                "gpt-5.4-mini",
+            )
+            self.assertIn('model_reasoning_effort="high"', launch_record["command"])
+
+    def test_resume_run_updates_saved_overrides_before_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(
+                    run_id="DMO-1",
+                    model_override="gpt-5.4-mini",
+                    reasoning_effort_override="low",
+                ),
+                subprocess_run=_FakeCodexRun(
+                    [
+                        {
+                            "thread_id": "session-1",
+                            "last_message": {
+                                "kind": "done",
+                                "next_owner": None,
+                                "summary": "updated override run",
+                                "reason": None,
+                                "sleep_duration_seconds": None,
+                            },
+                        }
+                    ]
+                ),
+            )
+
+            run_yaml_text = (run_dir / "run.yaml").read_text(encoding="utf-8")
+            launch_record = json.loads(
+                (run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("model_override: gpt-5.4-mini", run_yaml_text)
+            self.assertIn("reasoning_effort_override: low", run_yaml_text)
+            self.assertEqual(
+                launch_record["command"][launch_record["command"].index("-m") + 1],
+                "gpt-5.4-mini",
+            )
+            self.assertIn('model_reasoning_effort="low"', launch_record["command"])
+
+    def test_resume_run_restart_carries_saved_overrides_to_new_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(
+                repo_root=repo_root,
+                request=RunRequest(
+                    flow_name="demo",
+                    model_override="gpt-5.4-mini",
+                    reasoning_effort_override="high",
+                ),
+            )
+            self._write_issue(run_dir=run_dir, body="Restart this issue.\n")
+
+            with patch("rally.services.runner._confirm_replace_active_run", return_value=True):
+                result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1", restart=True),
+                    subprocess_run=_FakeCodexRun(
+                        [
+                            {
+                                "thread_id": "session-1",
+                                "last_message": {
+                                    "kind": "done",
+                                    "next_owner": None,
+                                    "summary": "restart with saved overrides",
+                                    "reason": None,
+                                    "sleep_duration_seconds": None,
+                                },
+                            }
+                        ]
+                    ),
+                )
+
+            archived_run_yaml = (repo_root / "runs" / "archive" / "DMO-1" / "run.yaml").read_text(encoding="utf-8")
+            new_run_yaml = (repo_root / "runs" / "active" / "DMO-2" / "run.yaml").read_text(encoding="utf-8")
+            launch_record = json.loads(
+                (
+                    repo_root
+                    / "runs"
+                    / "active"
+                    / "DMO-2"
+                    / "logs"
+                    / "adapter_launch"
+                    / "turn-001-scope_lead.json"
+                ).read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(result.run_id, "DMO-2")
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("model_override: gpt-5.4-mini", archived_run_yaml)
+            self.assertIn("reasoning_effort_override: high", archived_run_yaml)
+            self.assertIn("model_override: gpt-5.4-mini", new_run_yaml)
+            self.assertIn("reasoning_effort_override: high", new_run_yaml)
+            self.assertEqual(
+                launch_record["command"][launch_record["command"].index("-m") + 1],
+                "gpt-5.4-mini",
+            )
+            self.assertIn('model_reasoning_effort="high"', launch_record["command"])
+
+    def test_resume_run_restart_prefers_new_overrides_over_saved_ones(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(
+                repo_root=repo_root,
+                request=RunRequest(
+                    flow_name="demo",
+                    model_override="gpt-5.4-mini",
+                    reasoning_effort_override="high",
+                ),
+            )
+            self._write_issue(run_dir=run_dir, body="Restart this issue with new overrides.\n")
+
+            with patch("rally.services.runner._confirm_replace_active_run", return_value=True):
+                result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(
+                        run_id="DMO-1",
+                        restart=True,
+                        model_override="gpt-5.4-nano",
+                        reasoning_effort_override="low",
+                    ),
+                    subprocess_run=_FakeCodexRun(
+                        [
+                            {
+                                "thread_id": "session-1",
+                                "last_message": {
+                                    "kind": "done",
+                                    "next_owner": None,
+                                    "summary": "restart with new overrides",
+                                    "reason": None,
+                                    "sleep_duration_seconds": None,
+                                },
+                            }
+                        ]
+                    ),
+                )
+
+            archived_run_yaml = (repo_root / "runs" / "archive" / "DMO-1" / "run.yaml").read_text(encoding="utf-8")
+            new_run_yaml = (repo_root / "runs" / "active" / "DMO-2" / "run.yaml").read_text(encoding="utf-8")
+            launch_record = json.loads(
+                (
+                    repo_root
+                    / "runs"
+                    / "active"
+                    / "DMO-2"
+                    / "logs"
+                    / "adapter_launch"
+                    / "turn-001-scope_lead.json"
+                ).read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(result.run_id, "DMO-2")
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("model_override: gpt-5.4-nano", archived_run_yaml)
+            self.assertIn("reasoning_effort_override: low", archived_run_yaml)
+            self.assertNotIn("gpt-5.4-mini", archived_run_yaml)
+            self.assertIn("model_override: gpt-5.4-nano", new_run_yaml)
+            self.assertIn("reasoning_effort_override: low", new_run_yaml)
+            self.assertEqual(
+                launch_record["command"][launch_record["command"].index("-m") + 1],
+                "gpt-5.4-nano",
+            )
+            self.assertIn('model_reasoning_effort="low"', launch_record["command"])
+
     def test_resume_run_restart_cancels_when_replacement_not_confirmed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -4059,7 +4508,9 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("max_command_turns=1", rendered_text)
             self.assertFalse((run_dir / "logs" / "adapter_launch" / "turn-002-change_engineer.json").exists())
 
-    def _create_pending_run(self, *, repo_root: Path) -> Path:
+    def _create_pending_run(self, *, repo_root: Path, request: RunRequest | None = None) -> Path:
+        if request is None:
+            request = RunRequest(flow_name="demo")
         with patch(
             "rally.services.home_materializer.resolve_interactive_issue_editor",
             return_value=None,
@@ -4067,7 +4518,7 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaises(RallyUsageError):
                 run_flow(
                     repo_root=repo_root,
-                    request=RunRequest(flow_name="demo"),
+                    request=request,
                     subprocess_run=_FakeCodexRun([]),
                 )
         return find_run_dir(repo_root=repo_root, run_id="DMO-1")

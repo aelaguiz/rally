@@ -424,6 +424,13 @@ def _stream_claude_code_invocation(
                 if key.data == "stdout":
                     _append_text(artifacts.exec_jsonl_file, line)
                     stdout_chunks.append(line)
+                    recorder.emit_adapter_json(
+                        source="claude_code",
+                        raw_line=line,
+                        turn_index=turn_index,
+                        agent_key=agent.key,
+                        agent_slug=agent.slug,
+                    )
                     for draft in parser.consume_stdout_line(line):
                         recorder.emit_draft(draft)
                     continue
@@ -494,6 +501,13 @@ def _replay_stdout_lines(
     if append_to_file and stdout_text:
         artifacts.exec_jsonl_file.write_text(stdout_text, encoding="utf-8")
     for line in stdout_text.splitlines(keepends=True):
+        recorder.emit_adapter_json(
+            source="claude_code",
+            raw_line=line,
+            turn_index=parser.turn_index,
+            agent_key=parser.agent_key,
+            agent_slug=parser.agent_slug,
+        )
         for draft in parser.consume_stdout_line(line):
             recorder.emit_draft(draft)
 

@@ -84,11 +84,18 @@ What ships today:
 - `rally run --from-file <path>`
 - `rally run --new`
 - `rally run --step`
+- `rally run --model <name>`
+- `rally run --thinking <level>`
 - `rally resume`
 - `rally resume --edit`
 - `rally resume --restart`
 - `rally resume --step`
+- `rally resume --model <name>`
+- `rally resume --thinking <level>`
 - `rally status`
+- current-command model and thinking flags that win over saved run overrides
+- saved run overrides that win over `flow.yaml` until the operator changes them
+- restart behavior that carries saved overrides into the fresh run unless the restart command passes new ones
 - Rally resolves built-in stdlib and built-in skills during build and run
 - host workspaces do not need Rally-owned built-in copies before the first run
 - live operator stream on a TTY with plain fallback off TTY
@@ -96,6 +103,7 @@ What ships today:
 - chained multi-turn execution across handoffs
 - one-turn manual stepping that stops as `paused` instead of `blocked`
 - per-flow `runtime.max_command_turns`
+- per-run CLI model and thinking overrides saved in `run.yaml`
 - `home/issue.md` plus `issue_history/`
 - the opening brief lives in `home/issue.md`, not a shared sidecar brief file
 - `rally issue note --field key=value`
@@ -187,6 +195,8 @@ The current checked-in runtime surface is:
   - ships real `resume`
   - ships `resume --edit`
   - ships `resume --restart`
+  - lets the operator override model and thinking on `run` or `resume`
+  - keeps those overrides in `run.yaml` for later resume or restart
   - ships `issue current`
   - ships `issue note`, including repeatable `--field key=value`
   - ships `memory search`, `memory use`, `memory save`, and `memory refresh`
@@ -207,6 +217,7 @@ The current checked-in runtime surface is:
 - `src/rally/services/run_store.py`
   - allocates run ids
   - writes `run.yaml` and `state.yaml`
+  - persists optional saved model and thinking overrides in `run.yaml`
   - finds active and archived runs
   - enforces one active run per flow
   - owns flow locks
@@ -246,6 +257,11 @@ The current checked-in runtime surface is:
   - parses either the shared Rally turn result or review-native control-ready
     finals
   - keeps the loaded payload ready for issue-ledger readback
+- `src/rally/services/run_events.py`
+  - writes the stable `RunEvent` log under `logs/events.jsonl`
+  - mirrors raw adapter stdout JSON as non-rendered `RAWJSON` rows
+  - mirrors the loaded `last_message.json` payload as a non-rendered
+    `FINALJSON` row
 - `src/rally/adapters/base.py`
   - defines `RallyAdapter`, `AdapterSessionRecord`, `TurnArtifactPaths`, and
     `AdapterInvocation`

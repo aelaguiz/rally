@@ -179,6 +179,7 @@ Examples:
 - the three-hundred-forty-second run of `CDR` is `CDR-342`
 
 `run.yaml` is the stable identity record for a run.
+It may also store saved operator overrides for model and thinking.
 `state.yaml` is the compact machine-readable current summary.
 
 Rally should keep one active run per flow unless the operator asks to replace it on purpose.
@@ -423,7 +424,7 @@ These are the stable runtime surfaces the design depends on:
 | `issue_history/` | full-file ledger snapshots |
 | `runs/memory/entries/` | durable cross-run memory markdown truth |
 | `runs/memory/qmd/` | repo-local QMD index and cache root |
-| `logs/events.jsonl` | structured run telemetry |
+| `logs/events.jsonl` | structured run telemetry plus non-rendered raw and final JSON mirror rows |
 | `logs/agents/` | per-agent event mirrors |
 | `logs/rendered.log` | plain operator transcript |
 | `logs/adapter_launch/` | proof of the launch contract per turn |
@@ -439,8 +440,8 @@ The operator surface should stay small.
 Conceptually it is:
 
 ```bash
-rally run <flow> [--new] [--step] [--from-file <path>]
-rally resume <FLOW_CODE>-<n> [--edit|--restart] [--step]
+rally run <flow> [--new] [--step] [--from-file <path>] [--model <name>] [--thinking <level>]
+rally resume <FLOW_CODE>-<n> [--edit|--restart] [--step] [--model <name>] [--thinking <level>]
 rally status [<FLOW_CODE>-<n>]
 rally archive <FLOW_CODE>-<n>
 rally issue current --run-id <FLOW_CODE>-<n>
@@ -455,6 +456,9 @@ rally memory refresh --run-id <FLOW_CODE>-<n>
 a TTY and a plain text fallback when the output is not interactive. That
 startup view should show the run id, flow, flow code, model, thinking level,
 adapter, start agent, and agent count.
+When the operator passes `--model` or `--thinking`, that command should use
+the override first, then save it in `run.yaml` for later resume.
+If no new flag is passed, a saved run override should win over `flow.yaml`.
 `rally --help` should teach the happy path in plain English with a few short
 examples instead of only listing command names.
 Before either command starts the next turn, Rally should rebuild that flow's
@@ -486,11 +490,15 @@ Paused runs should resume with plain `rally resume`, and `rally resume --step`
 should take one more turn and pause again if the flow hands off.
 `rally status` should stay read-only, list active runs when no id is passed,
 and show one run summary with the likely next command when an id is passed.
+That one-run view should also show saved model and thinking overrides when
+they exist.
 `rally resume --restart` should ask before it archives the current active run,
 recover the original issue from the earliest issue snapshot when it can, start
 a fresh run with a new run id, and seed that new run's `home/issue.md` with
 only the recovered original issue. The new `Rally Run Started` block should
 use source `rally resume --restart` and include `Restarted From: <old-run-id>`.
+Saved model and thinking overrides should carry into that fresh run unless the
+restart command passes new ones.
 Done runs may restart even though they cannot resume.
 
 `rally issue current` should print the opening issue plus the newest shared

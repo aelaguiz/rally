@@ -39,9 +39,25 @@ class CliTests(unittest.TestCase):
         help_text = stdout.getvalue()
         self.assertIn("Create a Rally run shell for one flow", help_text)
         self.assertIn("--from-file", help_text)
+        self.assertIn("--model", help_text)
+        self.assertIn("--thinking", help_text)
         self.assertIn("rally run demo --from-file ./issue.md", help_text)
+        self.assertIn("rally run demo --model gpt-5.4 --thinking high", help_text)
         self.assertIn("rally run demo --step", help_text)
         self.assertIn("Next: Rally will either start the run", help_text)
+
+    def test_resume_help_includes_override_flags(self) -> None:
+        stdout = io.StringIO()
+
+        with self.assertRaises(SystemExit) as raised, redirect_stdout(stdout):
+            main(["resume", "--help"])
+
+        self.assertEqual(raised.exception.code, 0)
+        help_text = stdout.getvalue()
+        self.assertIn("Resume one Rally run by id.", help_text)
+        self.assertIn("--model", help_text)
+        self.assertIn("--thinking", help_text)
+        self.assertIn("rally resume DMO-1 --model gpt-5.4 --thinking low", help_text)
 
     def test_status_help_includes_examples(self) -> None:
         stdout = io.StringIO()
@@ -104,6 +120,23 @@ class CliTests(unittest.TestCase):
         self.assertEqual(run_flow_mock.call_args.kwargs["request"].flow_name, "demo")
         self.assertFalse(run_flow_mock.call_args.kwargs["request"].start_new)
         self.assertTrue(run_flow_mock.call_args.kwargs["request"].step)
+
+    def test_run_command_passes_model_and_thinking_overrides_to_runner(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.run_flow",
+            return_value=SimpleNamespace(message="Run `DMO-4` created."),
+        ) as run_flow_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["run", "demo", "--model", "gpt-5.4-mini", "--thinking", "high"])
+
+        self.assertEqual(exit_code, 0)
+        request = run_flow_mock.call_args.kwargs["request"]
+        self.assertEqual(request.flow_name, "demo")
+        self.assertEqual(request.model_override, "gpt-5.4-mini")
+        self.assertEqual(request.reasoning_effort_override, "high")
 
     def test_run_command_passes_from_file_to_runner_as_absolute_path(self) -> None:
         stdout = io.StringIO()
@@ -200,6 +233,23 @@ class CliTests(unittest.TestCase):
         self.assertFalse(resume_run_mock.call_args.kwargs["request"].edit_issue)
         self.assertFalse(resume_run_mock.call_args.kwargs["request"].restart)
         self.assertTrue(resume_run_mock.call_args.kwargs["request"].step)
+
+    def test_resume_command_passes_model_and_thinking_overrides_to_runner(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.resume_run",
+            return_value=SimpleNamespace(message="Run `DMO-1` resumed."),
+        ) as resume_run_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["resume", "DMO-1", "--model", "sonnet", "--thinking", "low"])
+
+        self.assertEqual(exit_code, 0)
+        request = resume_run_mock.call_args.kwargs["request"]
+        self.assertEqual(request.run_id, "DMO-1")
+        self.assertEqual(request.model_override, "sonnet")
+        self.assertEqual(request.reasoning_effort_override, "low")
 
     def test_resume_command_rejects_edit_and_restart_together(self) -> None:
         stderr = io.StringIO()

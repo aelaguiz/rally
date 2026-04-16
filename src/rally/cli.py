@@ -67,6 +67,7 @@ def _build_parser() -> argparse.ArgumentParser:
                 "rally run demo --step",
                 "rally run demo --new",
                 "rally run demo --from-file ./issue.md",
+                "rally run demo --model gpt-5.4 --thinking high",
                 "rally run demo --new --from-file ./issue.md",
             ),
         )
@@ -88,6 +89,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--from-file",
         help="Copy the starting `home/issue.md` text from this file before the run starts.",
     )
+    run_parser.add_argument(
+        "--model",
+        help="Override `runtime.adapter_args.model` for this run and save it in `run.yaml`.",
+    )
+    run_parser.add_argument(
+        "--thinking",
+        help="Override `runtime.adapter_args.reasoning_effort` for this run and save it in `run.yaml`.",
+    )
     run_parser.set_defaults(func=_run_command)
 
     resume_parser = subparsers.add_parser(
@@ -104,6 +113,7 @@ def _build_parser() -> argparse.ArgumentParser:
                 "rally resume DMO-1 --step",
                 "rally resume DMO-1 --edit",
                 "rally resume DMO-1 --restart",
+                "rally resume DMO-1 --model gpt-5.4 --thinking low",
             ),
         )
         + "\n\nNext: Use `rally status <run-id>` first if you are not sure what state the run is in.",
@@ -125,6 +135,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--step",
         action="store_true",
         help="Run one agent turn, then pause so you can resume later.",
+    )
+    resume_parser.add_argument(
+        "--model",
+        help="Update the saved `runtime.adapter_args.model` override before Rally resumes this run.",
+    )
+    resume_parser.add_argument(
+        "--thinking",
+        help="Update the saved `runtime.adapter_args.reasoning_effort` override before Rally resumes this run.",
     )
     resume_parser.set_defaults(func=_resume_command)
 
@@ -304,6 +322,8 @@ def _run_command(args: argparse.Namespace) -> int:
             start_new=args.new,
             step=args.step,
             issue_seed_path=issue_seed_path,
+            model_override=args.model,
+            reasoning_effort_override=args.thinking,
         ),
         display_factory=_build_display_factory(sys.stdout),
     )
@@ -320,6 +340,8 @@ def _resume_command(args: argparse.Namespace) -> int:
             edit_issue=args.edit,
             restart=args.restart,
             step=args.step,
+            model_override=args.model,
+            reasoning_effort_override=args.thinking,
         ),
         display_factory=_build_display_factory(sys.stdout),
     )

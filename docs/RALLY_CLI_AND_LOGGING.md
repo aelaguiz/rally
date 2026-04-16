@@ -64,6 +64,7 @@ What it does today:
 - with no `run-id`, lists active runs only
 - with `run-id`, shows one compact readable summary for either an active or archived run
 - prints the flow, status, current agent, turn, update time, issue path, and next-action hint
+- shows saved model and thinking overrides when `run.yaml` stores them
 - shows blocker reason, done summary, sleep details, and last result kind when those fields exist
 - keeps the command read-only and filesystem-first
 
@@ -77,7 +78,7 @@ Current limits:
 Current shape:
 
 ```bash
-rally run <flow_name> [--new] [--step] [--from-file <path>]
+rally run <flow_name> [--new] [--step] [--from-file <path>] [--model <name>] [--thinking <level>]
 ```
 
 What it does today:
@@ -89,6 +90,7 @@ What it does today:
 - when `--new` is passed, asks before it archives the current active run for the same flow
 - when `--step` is passed, runs one turn and then stops as `paused`
 - when `--from-file` is passed, reads that file and copies its text into the new run's `home/issue.md`
+- when `--model` or `--thinking` is passed, overlays that value onto the flow's adapter args and saves it in `run.yaml`
 - creates the run shell under `runs/active/<run-id>/home/`
 - opens the editor for a missing or blank `home/issue.md` on a real TTY when an editor is available
 - strips the starter prompt back out before saving the issue
@@ -134,7 +136,7 @@ adds one `Rally Paused` ledger block, and leaves the next agent as current.
 Current shape:
 
 ```bash
-rally resume <run-id> [--edit|--restart] [--step]
+rally resume <run-id> [--edit|--restart] [--step] [--model <name>] [--thinking <level>]
 ```
 
 What it does today:
@@ -144,6 +146,7 @@ What it does today:
 - when `--edit` is passed, opens the current `home/issue.md` in place before Rally tries the turn
 - when `--restart` is passed, asks before Rally archives the old run and starts a fresh run from the original issue
 - when `--step` is passed, runs one turn and then stops as `paused`
+- when `--model` or `--thinking` is passed, updates the saved override in `run.yaml` before Rally starts the turn
 - opens the same issue editor path as `rally run` when `home/issue.md` is missing or blank on a real TTY
 - refuses archived runs
 - refuses done runs for plain resume
@@ -176,6 +179,15 @@ confirmation on a real TTY, archives the old run, restores only the original
 issue into a fresh run with a new run id, and starts that new run from turn 0.
 If `--step` is passed and the turn hands off, Rally leaves the next agent as
 current, marks the run `paused`, and waits for the operator to resume.
+
+Model and thinking override rules today:
+
+- `--model` maps to `runtime.adapter_args.model`
+- `--thinking` maps to `runtime.adapter_args.reasoning_effort`
+- the current command flag wins first
+- otherwise `rally resume` reuses the saved override from `run.yaml`
+- otherwise Rally uses the value from `flow.yaml`
+- `rally resume --restart` carries saved overrides into the fresh run unless the restart command passes new flags
 
 ### `runtime.max_command_turns`
 
@@ -316,6 +328,9 @@ The CLI error model is already simple:
 ## Issue Ledger And Snapshots
 
 Rally writes both the issue ledger and `logs/events.jsonl`.
+`logs/events.jsonl` is still the stable `RunEvent` log, but it now also keeps
+non-rendered mirror rows for raw adapter JSON and the final payload Rally
+loaded from `last_message.json`.
 
 `src/rally/services/issue_ledger.py` enforces a narrow contract:
 
@@ -462,6 +477,7 @@ Current logging is richer, but still file-first.
 What exists today:
 
 - `run.yaml`
+  - stable run identity plus optional `model_override` and `reasoning_effort_override`
 - `state.yaml`
 - `home/issue.md`
 - `issue_history/` full snapshots after Rally-owned issue writes
@@ -499,10 +515,14 @@ That event stream now covers:
 - tool start, success, and failure summaries when an adapter exposes them
 - token-use summaries
 - stderr lines, warnings, and hard errors
+- raw adapter stdout JSON rows as `RAWJSON` debug events
+- one `FINALJSON` debug event for each payload Rally loaded from
+  `last_message.json`
 
-Unknown adapter JSON events still stay in the raw per-turn `exec.jsonl` file.
-Rally keeps them out of the live stream unless they look like warnings or
-errors.
+Those raw JSON mirror rows stay out of the live stream and
+`logs/rendered.log`.
+`home/sessions/<agent>/turn-<n>/exec.jsonl` still keeps the exact per-turn
+stdout transcript.
 
 ## Renderer Rules
 
