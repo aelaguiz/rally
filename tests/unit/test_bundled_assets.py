@@ -1,125 +1,132 @@
 from __future__ import annotations
 
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from rally.services.bundled_assets import ensure_workspace_builtins_synced, sync_bundled_assets
+from rally.errors import RallyConfigError
+from rally.services.builtin_assets import (
+    RallyBuiltinAssets,
+    reject_reserved_builtin_skill_shadow,
+    resolve_rally_builtin_assets,
+)
 
 
-class BundledAssetsTests(unittest.TestCase):
-    def test_ensure_workspace_builtins_synced_copies_builtins_into_external_workspace(self) -> None:
+class _FakeDistFile:
+    def __init__(self, relative_path: str, located: Path) -> None:
+        self._relative_path = relative_path
+        self._located = located
+
+    def as_posix(self) -> str:
+        return self._relative_path
+
+    def locate(self) -> Path:
+        return self._located
+
+
+class _FakeDistribution:
+    def __init__(self, files: tuple[_FakeDistFile, ...]) -> None:
+        self.files = files
+
+
+class BuiltinAssetsTests(unittest.TestCase):
+    def test_resolver_reads_rally_source_checkout_assets(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            workspace_root = Path(temp_dir).resolve() / "workspace"
-            workspace_root.mkdir(parents=True)
-            pyproject_path = workspace_root / "pyproject.toml"
-            pyproject_path.write_text("[project]\nname = 'demo-workspace'\n", encoding="utf-8")
-            stale_schema = workspace_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json"
-            stale_example = workspace_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json"
-            stale_schema.parent.mkdir(parents=True)
-            stale_example.parent.mkdir(parents=True)
-            stale_schema.write_text("stale\n", encoding="utf-8")
-            stale_example.write_text("stale\n", encoding="utf-8")
+            repo_root = Path(temp_dir).resolve() / "rally"
+            self._write_source_checkout(repo_root)
 
-            copied = ensure_workspace_builtins_synced(
-                workspace_root=workspace_root,
-                pyproject_path=pyproject_path,
-            )
+            assets = resolve_rally_builtin_assets(workspace_root=repo_root)
 
-            # External workspaces inherit only the one mandatory built-in skill.
-            # Optional memory stays out until a workspace ships it on purpose.
+            self.assertEqual(assets.source_kind, "source_checkout")
+            self.assertEqual(assets.source_root, repo_root)
+            self.assertEqual(assets.stdlib_prompts_root, repo_root / "stdlib" / "rally" / "prompts")
+            self.assertEqual(assets.skill_runtime_dir("rally-kernel"), repo_root / "skills" / "rally-kernel" / "build")
+
+    def test_resolver_reads_installed_distribution_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            install_root = Path(temp_dir).resolve()
+            fake_dist = self._write_distribution_assets(install_root)
+
+            with patch("rally.services.builtin_assets._resolve_source_checkout_root", return_value=None), patch(
+                "rally.services.builtin_assets.distribution",
+                return_value=fake_dist,
+            ):
+                assets = resolve_rally_builtin_assets(workspace_root=install_root / "host")
+
+            self.assertEqual(assets.source_kind, "installed_distribution")
+            self.assertEqual(assets.stdlib_prompts_root, install_root / "rally_assets" / "stdlib" / "rally" / "prompts")
             self.assertEqual(
-                copied,
-                [
-                    "stdlib/rally",
-                    "skills/rally-kernel",
-                ],
+                assets.skill_runtime_dir("rally-memory"),
+                install_root / "rally_assets" / "skills" / "rally-memory",
             )
-            self.assertTrue(
-                (workspace_root / "stdlib" / "rally" / "prompts" / "rally" / "turn_results.prompt").is_file()
-            )
-            self.assertTrue(
-                (workspace_root / "stdlib" / "rally" / "prompts" / "rally" / "review_results.prompt").is_file()
-            )
-            self.assertFalse(stale_schema.exists())
-            self.assertFalse(stale_example.exists())
-            self.assertTrue((workspace_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertFalse((workspace_root / "skills" / "rally-memory").exists())
 
-    def test_ensure_workspace_builtins_synced_skips_current_rally_source_workspace(self) -> None:
+    def test_installed_distribution_missing_required_skill_fails_loudly(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            workspace_root = Path(temp_dir).resolve() / "workspace"
-            workspace_root.mkdir(parents=True)
-            pyproject_path = workspace_root / "pyproject.toml"
-            pyproject_path.write_text("[project]\nname = 'rally-agents'\n", encoding="utf-8")
-
-            copied = ensure_workspace_builtins_synced(
-                workspace_root=workspace_root,
-                pyproject_path=pyproject_path,
-            )
-
-            self.assertEqual(copied, [])
-            self.assertFalse((workspace_root / "stdlib").exists())
-            self.assertFalse((workspace_root / "skills").exists())
-
-    def test_ensure_workspace_builtins_synced_skips_legacy_rally_source_workspace(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace_root = Path(temp_dir).resolve() / "workspace"
-            workspace_root.mkdir(parents=True)
-            pyproject_path = workspace_root / "pyproject.toml"
-            pyproject_path.write_text("[project]\nname = 'rally'\n", encoding="utf-8")
-
-            copied = ensure_workspace_builtins_synced(
-                workspace_root=workspace_root,
-                pyproject_path=pyproject_path,
-            )
-
-            self.assertEqual(copied, [])
-            self.assertFalse((workspace_root / "stdlib").exists())
-            self.assertFalse((workspace_root / "skills").exists())
-
-    def test_sync_bundled_assets_check_ignores_python_cache_files(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            repo_root = Path(temp_dir).resolve() / "repo"
-            self._write_fixture_pyproject(repo_root=repo_root)
-            shutil.copytree(Path(__file__).resolve().parents[2] / "stdlib", repo_root / "stdlib")
-            shutil.copytree(Path(__file__).resolve().parents[2] / "skills", repo_root / "skills")
-            shutil.copytree(Path(__file__).resolve().parents[2] / "src" / "rally" / "_bundled", repo_root / "src" / "rally" / "_bundled")
-
-            pycache_dir = repo_root / "src" / "rally" / "_bundled" / "__pycache__"
-            pycache_dir.mkdir(parents=True, exist_ok=True)
-            (pycache_dir / "__init__.cpython-314.pyc").write_bytes(b"compiled")
-
-            differences = sync_bundled_assets(repo_root=repo_root, check=True)
-
-            self.assertEqual(differences, [])
-
-    def _write_fixture_pyproject(self, *, repo_root: Path) -> None:
-        repo_root.mkdir(parents=True, exist_ok=True)
-        (repo_root / "pyproject.toml").write_text(
-            "\n".join(
+            install_root = Path(temp_dir).resolve()
+            base_agent = install_root / "rally_assets" / "stdlib" / "rally" / "prompts" / "rally" / "base_agent.prompt"
+            base_agent.parent.mkdir(parents=True)
+            base_agent.write_text("# Base\n", encoding="utf-8")
+            fake_dist = _FakeDistribution(
                 (
-                    "[project]",
-                    "name = 'bundle-fixture'",
-                    "version = '0.0.0'",
-                    "",
-                    "[tool.rally.workspace]",
-                    "version = 1",
-                    "",
-                    "[tool.doctrine.compile]",
-                    'additional_prompt_roots = ["stdlib/rally/prompts"]',
-                    "",
-                    "[tool.doctrine.emit]",
-                    "",
-                    "[[tool.doctrine.emit.targets]]",
-                    'name = "rally-kernel"',
-                    'entrypoint = "skills/rally-kernel/prompts/SKILL.prompt"',
-                    'output_dir = "skills/rally-kernel/build"',
+                    _FakeDistFile("rally_assets/stdlib/rally/prompts/rally/base_agent.prompt", base_agent),
                 )
-            ),
+            )
+
+            with patch("rally.services.builtin_assets._resolve_source_checkout_root", return_value=None), patch(
+                "rally.services.builtin_assets.distribution",
+                return_value=fake_dist,
+            ):
+                with self.assertRaisesRegex(RallyConfigError, "missing built-in asset"):
+                    resolve_rally_builtin_assets(workspace_root=install_root / "host")
+
+    def test_external_workspace_cannot_shadow_reserved_builtin_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir).resolve()
+            framework_root = temp_root / "framework"
+            workspace_root = temp_root / "host"
+            skill_dir = workspace_root / "skills" / "rally-kernel"
+            skill_dir.mkdir(parents=True)
+            assets = RallyBuiltinAssets(
+                stdlib_root=framework_root / "stdlib" / "rally",
+                stdlib_prompts_root=framework_root / "stdlib" / "rally" / "prompts",
+                skill_runtime_dirs={"rally-kernel": framework_root / "skills" / "rally-kernel" / "build"},
+                source_kind="source_checkout",
+                source_root=framework_root,
+            )
+
+            with self.assertRaisesRegex(RallyConfigError, "shadows Rally-owned built-in skill"):
+                reject_reserved_builtin_skill_shadow(workspace_root=workspace_root, builtins=assets)
+
+    def _write_source_checkout(self, repo_root: Path) -> None:
+        (repo_root / "pyproject.toml").parent.mkdir(parents=True)
+        (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally-agents'\n", encoding="utf-8")
+        (repo_root / "stdlib" / "rally" / "prompts" / "rally").mkdir(parents=True)
+        (repo_root / "stdlib" / "rally" / "prompts" / "rally" / "base_agent.prompt").write_text(
+            "# Base\n",
             encoding="utf-8",
         )
+        for skill_name in ("rally-kernel", "rally-memory"):
+            prompt_file = repo_root / "skills" / skill_name / "prompts" / "SKILL.prompt"
+            prompt_file.parent.mkdir(parents=True)
+            prompt_file.write_text("skill package Test\n", encoding="utf-8")
+            build_file = repo_root / "skills" / skill_name / "build" / "SKILL.md"
+            build_file.parent.mkdir(parents=True)
+            build_file.write_text("---\nname: test\ndescription: Test.\n---\n", encoding="utf-8")
+
+    def _write_distribution_assets(self, install_root: Path) -> _FakeDistribution:
+        files: list[_FakeDistFile] = []
+        paths = (
+            "rally_assets/stdlib/rally/prompts/rally/base_agent.prompt",
+            "rally_assets/skills/rally-kernel/SKILL.md",
+            "rally_assets/skills/rally-memory/SKILL.md",
+        )
+        for relative_path in paths:
+            located = install_root / relative_path
+            located.parent.mkdir(parents=True, exist_ok=True)
+            located.write_text("---\nname: test\ndescription: Test.\n---\n", encoding="utf-8")
+            files.append(_FakeDistFile(relative_path, located))
+        return _FakeDistribution(tuple(files))
 
 
 if __name__ == "__main__":

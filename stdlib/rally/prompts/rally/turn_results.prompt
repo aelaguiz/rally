@@ -38,13 +38,6 @@ output schema BaseRallyTurnResultSchema: "Base Rally Turn Result Schema"
         minimum: 1
         note: "Seconds to wait when `kind` is `sleep`."
 
-    example:
-        kind: "handoff"
-        next_owner: "change_engineer"
-        summary: null
-        reason: null
-        sleep_duration_seconds: null
-
 
 # Concrete schema: Rally's stock turn result.
 # It inherits every base field so flow-specific schemas can also inherit the
@@ -56,13 +49,6 @@ output schema RallyTurnResultSchema[BaseRallyTurnResultSchema]: "Rally Turn Resu
     inherit reason
     inherit sleep_duration_seconds
 
-    override example:
-        kind: "handoff"
-        next_owner: "change_engineer"
-        summary: null
-        reason: null
-        sleep_duration_seconds: null
-
 
 # Base shape: the JSON wrapper around the reusable schema.
 # `field_notes` explains how Rally reads the fields without changing schema
@@ -73,7 +59,7 @@ output shape BaseRallyTurnResultJson: "Base Rally Turn Result JSON"
 
     field_notes: "Field Notes"
         bullets rules:
-            "Always send all five keys."
+            "Always send all keys."
             "Use `null` for fields that do not apply."
             "`kind` tells Rally what to do next."
             "Use `handoff` with `next_owner`, `done` with `summary`, `blocker` with `reason`, and `sleep` with `reason` plus `sleep_duration_seconds`."

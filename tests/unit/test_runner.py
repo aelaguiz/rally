@@ -19,7 +19,6 @@ from rally.domain.flow import AdapterConfig, CompiledAgentContract, FinalOutputC
 from rally.domain.run import ResumeRequest, RunRecord, RunRequest, RunStatus
 from rally.errors import RallyConfigError, RallyUsageError
 from rally.services.flow_build import ensure_flow_assets_built as build_flow_assets
-from rally.services.bundled_assets import ensure_workspace_builtins_synced
 from rally.services.issue_editor import IssueEditorResult
 from rally.services.issue_ledger import ORIGINAL_ISSUE_END_MARKER
 from rally.services.run_events import RunEventRecorder
@@ -820,18 +819,14 @@ class RunnerTests(unittest.TestCase):
             self.assertNotIn("### rally-memory", prompt_text)
             self.assertIn("### Saved Run Note", prompt_text)
             self.assertNotIn("\n### Writer Issue Note\n", prompt_text)
-            self.assertIn(
-                "Rally runs this flow. Use the shared rules below with this role's local rules.",
-                prompt_text,
-            )
-            self.assertIn('"$RALLY_CLI_BIN" issue current --run-id "$RALLY_RUN_ID"', prompt_text)
+            self.assertIn("You are operating in a system called Rally", prompt_text)
             self.assertIn("Use `home:issue.md` as the shared ledger for this run.", prompt_text)
             self.assertNotIn("### Read Order", prompt_text)
             self.assertNotIn("### Turn Sequence", prompt_text)
             self.assertNotIn("Use the shared `rally-kernel` skill for saved notes.", prompt_text)
-            self.assertIn('"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"', prompt_text)
+            self.assertIn("| Delivered Via | `rally-kernel` |", prompt_text)
             self.assertIn("Artistic Rationale", prompt_text)
-            self.assertIn("### Rally Turn Result", prompt_text)
+            self.assertIn("### Poem Writer Turn Result", prompt_text)
             self.assertNotIn("\n### Writer Turn Result\n", prompt_text)
             self.assertNotIn("## Rally Note", issue_text)
             self.assertIn("Review Verdict: `accept`", issue_text)
@@ -854,7 +849,9 @@ class RunnerTests(unittest.TestCase):
                 'output_dir = "skills/rally-kernel/build"\n',
                 encoding="utf-8",
             )
-            shutil.rmtree(repo_root / "skills" / "rally-kernel")
+            if (repo_root / "skills" / "rally-kernel").exists():
+                shutil.rmtree(repo_root / "skills" / "rally-kernel")
+            self._write_framework_stdlib(framework_root=repo_root)
             self._write_framework_builtin_skills(framework_root=repo_root)
 
             flow_path = repo_root / "flows" / "poem_loop" / "flow.yaml"
@@ -918,8 +915,8 @@ class RunnerTests(unittest.TestCase):
             stdlib_prompt_marker = "Keep the shared Rally rules short and action-first."
             stdlib_prompt_path.write_text(
                 stdlib_prompt_path.read_text(encoding="utf-8").replace(
-                    '        "Rally runs this flow. Use the shared rules below with this role\'s local rules."\n',
-                    '        "Rally runs this flow. Use the shared rules below with this role\'s local rules."\n'
+                    '        "End the turn with the final JSON this turn declares."\n',
+                    '        "End the turn with the final JSON this turn declares."\n'
                     f'        "{stdlib_prompt_marker}"\n',
                 ),
                 encoding="utf-8",
@@ -968,7 +965,7 @@ class RunnerTests(unittest.TestCase):
             self.assertIn(flow_prompt_marker, run_home_readback)
             self.assertIn(stdlib_prompt_marker, run_home_readback)
 
-    def test_run_flow_syncs_builtin_skills_into_workspace_when_missing(self) -> None:
+    def test_run_flow_materializes_builtin_skills_without_workspace_copies(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_demo_repo(repo_root=repo_root, copy_framework_builtins=False)
@@ -1008,10 +1005,9 @@ class RunnerTests(unittest.TestCase):
 
             run_dir = find_run_dir(repo_root=repo_root, run_id="DMO-1")
             self.assertEqual(result.status, RunStatus.DONE)
-            # Workspace sync should only restore the required built-ins. The
-            # run home must match that same contract on the first turn.
-            self.assertTrue((repo_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
+            self.assertFalse((repo_root / "skills" / "rally-kernel").exists())
             self.assertFalse((repo_root / "skills" / "rally-memory").exists())
+            self.assertFalse((repo_root / "stdlib" / "rally").exists())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertFalse((run_dir / "home" / "skills" / "rally-memory").exists())
 
@@ -3688,7 +3684,7 @@ class RunnerTests(unittest.TestCase):
         required_files: list[str] | None = None,
         required_directories: list[str] | None = None,
         runtime_env: dict[str, str] | None = None,
-        copy_framework_builtins: bool = True,
+        copy_framework_builtins: bool = False,
     ) -> None:
         source_root = Path(__file__).resolve().parents[2]
         (repo_root / "skills" / "repo-search").mkdir(parents=True)
@@ -3707,7 +3703,7 @@ class RunnerTests(unittest.TestCase):
         )
         if copy_framework_builtins:
             self._write_framework_builtin_skills(framework_root=repo_root)
-        shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
+            self._write_framework_stdlib(framework_root=repo_root)
 
         flow_root = repo_root / "flows" / "demo"
         (flow_root / "prompts").mkdir(parents=True)
@@ -3807,16 +3803,13 @@ class RunnerTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def _write_poem_repo(self, *, repo_root: Path, copy_framework_builtins: bool = True) -> None:
+    def _write_poem_repo(self, *, repo_root: Path, copy_framework_builtins: bool = False) -> None:
         source_root = Path(__file__).resolve().parents[2]
         shutil.copytree(source_root / "flows" / "poem_loop", repo_root / "flows" / "poem_loop")
-        shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
         self._write_poem_fixture_pyproject(repo_root=repo_root)
         if copy_framework_builtins:
-            ensure_workspace_builtins_synced(
-                workspace_root=repo_root,
-                pyproject_path=repo_root / "pyproject.toml",
-            )
+            self._write_framework_stdlib(framework_root=repo_root)
+            self._write_framework_builtin_skills(framework_root=repo_root)
         build_flow_assets(repo_root=repo_root, flow_name="poem_loop")
 
     def _write_poem_fixture_pyproject(self, *, repo_root: Path) -> None:
@@ -3829,9 +3822,6 @@ class RunnerTests(unittest.TestCase):
                     "",
                     "[tool.rally.workspace]",
                     "version = 1",
-                    "",
-                    "[tool.doctrine.compile]",
-                    'additional_prompt_roots = ["stdlib/rally/prompts"]',
                     "",
                     "[tool.doctrine.emit]",
                     "",
@@ -3848,6 +3838,10 @@ class RunnerTests(unittest.TestCase):
     def _write_framework_builtin_skills(self, *, framework_root: Path) -> None:
         source_root = Path(__file__).resolve().parents[2]
         self._copy_builtin_skill(source_root=source_root, framework_root=framework_root, skill_name="rally-kernel")
+
+    def _write_framework_stdlib(self, *, framework_root: Path) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        shutil.copytree(source_root / "stdlib" / "rally", framework_root / "stdlib" / "rally")
 
     def _copy_builtin_skill(self, *, source_root: Path, framework_root: Path, skill_name: str) -> None:
         skill_root = framework_root / "skills" / skill_name

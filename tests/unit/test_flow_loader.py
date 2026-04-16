@@ -71,7 +71,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
             flow.agent("01_poem_writer").compiled.final_output.generated_schema_file,
-            repo_root / "flows/poem_loop/build/agents/poem_writer/schemas/rally_turn_result.schema.json",
+            repo_root / "flows/poem_loop/build/agents/poem_writer/schemas/poem_writer_turn_result.schema.json",
         )
         self.assertEqual(
             flow.agent("02_poem_critic").compiled.final_output.generated_schema_file,
@@ -102,7 +102,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
             flow.agent("01_poem_writer").compiled.final_output.generated_schema_file,
-            repo_root / "flows/poem_loop/build/agents/poem_writer/schemas/rally_turn_result.schema.json",
+            repo_root / "flows/poem_loop/build/agents/poem_writer/schemas/poem_writer_turn_result.schema.json",
         )
         self.assertEqual(
             flow.agent("02_poem_critic").compiled.final_output.generated_schema_file,
@@ -337,7 +337,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertNotIn("### rally-memory", writer_readback)
         self.assertIn("### Saved Run Note", writer_readback)
         self.assertNotIn("\n### Writer Issue Note\n", writer_readback)
-        self.assertIn("### Shared Ledger File", writer_readback)
+        self.assertIn("### Issue Ledger", writer_readback)
         self.assertIn("### Rally Agent Slug", writer_readback)
         self.assertIn("## Rally Context", writer_readback)
         self.assertIn("## Read First", writer_readback)
@@ -345,13 +345,15 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertNotIn("### Read Order", writer_readback)
         self.assertNotIn("### Turn Sequence", writer_readback)
         self.assertIn("Artistic Rationale", writer_readback)
-        self.assertIn("### Rally Turn Result", writer_readback)
-        self.assertIn('"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"', writer_readback)
+        self.assertIn("### Poem Writer Turn Result", writer_readback)
+        self.assertIn("| Delivered Via | `rally-kernel` |", writer_readback)
+        self.assertIn("`inspiration`", writer_readback)
+        self.assertIn("Always send all six keys.", writer_readback)
         self.assertIn(
-            "Rally runs this flow. Use the shared rules below with this role's local rules.",
+            "You are operating in a system called Rally",
             writer_readback,
         )
-        self.assertIn('"$RALLY_CLI_BIN" issue current --run-id "$RALLY_RUN_ID"', writer_readback)
+        self.assertIn("Read `home:issue.md` from the top", writer_readback)
         self.assertIn("Use `home:issue.md` as the shared ledger for this run.", writer_readback)
         self.assertNotIn("For this turn, read skills from `home:skills/`.", writer_readback)
         self.assertNotIn("On Codex turns, that same folder is `$CODEX_HOME/skills/`.", writer_readback)
@@ -546,6 +548,21 @@ class FlowLoaderTests(unittest.TestCase):
                 repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "final_output.contract.json",
             )
 
+    def test_load_flow_definition_accepts_turn_result_schema_with_extra_required_field(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(repo_root=repo_root, extra_required_fields=("inspiration",))
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            schema = json.loads(
+                flow.agent("01_scope_lead").compiled.final_output.generated_schema_file.read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertIn("inspiration", schema["required"])
+            self.assertIn("inspiration", schema["properties"])
+
     def test_load_flow_definition_accepts_control_ready_review_final_output(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -579,6 +596,7 @@ class FlowLoaderTests(unittest.TestCase):
         guarded_git_repos_yaml: str = "[]",
         host_inputs_yaml: str = "",
         runtime_env_yaml: str = "",
+        extra_required_fields: tuple[str, ...] = (),
     ) -> None:
         flow_root = repo_root / "flows" / "demo"
         build_root = flow_root / "build" / "agents" / "scope_lead"
@@ -650,7 +668,10 @@ class FlowLoaderTests(unittest.TestCase):
         if write_schema:
             schema_path.parent.mkdir(parents=True, exist_ok=True)
             schema_path.write_text(
-                self._schema_text(include_next_owner=include_next_owner),
+                self._schema_text(
+                    include_next_owner=include_next_owner,
+                    extra_required_fields=extra_required_fields,
+                ),
                 encoding="utf-8",
             )
 
@@ -764,40 +785,37 @@ class FlowLoaderTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def _schema_text(self, *, include_next_owner: bool) -> str:
-        next_owner_required = '"next_owner",' if include_next_owner else ""
-        return textwrap.dedent(
-            f"""\
-            {{
-              "type": "object",
-              "required": [
-                "kind",
-                {next_owner_required}
-                "summary",
-                "reason",
-                "sleep_duration_seconds"
-              ],
-              "properties": {{
-                "kind": {{
-                  "type": "string",
-                  "enum": ["handoff", "done", "blocker", "sleep"]
-                }},
-                "next_owner": {{
-                  "type": ["string", "null"]
-                }},
-                "summary": {{
-                  "type": ["string", "null"]
-                }},
-                "reason": {{
-                  "type": ["string", "null"]
-                }},
-                "sleep_duration_seconds": {{
-                  "type": ["integer", "null"]
-                }}
-              }}
-            }}
-            """
-        )
+    def _schema_text(
+        self,
+        *,
+        include_next_owner: bool,
+        extra_required_fields: tuple[str, ...] = (),
+    ) -> str:
+        required = ["kind", "summary", "reason", "sleep_duration_seconds"]
+        if include_next_owner:
+            required.insert(1, "next_owner")
+        required.extend(extra_required_fields)
+        properties: dict[str, object] = {
+            "kind": {
+                "type": "string",
+                "enum": ["handoff", "done", "blocker", "sleep"],
+            },
+            "next_owner": {
+                "type": ["string", "null"],
+            },
+            "summary": {
+                "type": ["string", "null"],
+            },
+            "reason": {
+                "type": ["string", "null"],
+            },
+            "sleep_duration_seconds": {
+                "type": ["integer", "null"],
+            },
+        }
+        for field_name in extra_required_fields:
+            properties[field_name] = {"type": ["string", "null"]}
+        return json.dumps({"type": "object", "required": required, "properties": properties}, indent=2) + "\n"
 
 
 class FlowLoaderRuntimeConfigTests(unittest.TestCase):

@@ -11,8 +11,7 @@ related:
   - docs/RALLY_RUNTIME.md
   - docs/RALLY_CLI_AND_LOGGING.md
   - stdlib/rally/prompts/rally/base_agent.prompt
-  - stdlib/rally/prompts/rally/issue_ledger.prompt
-  - stdlib/rally/prompts/rally/notes.prompt
+  - stdlib/rally/prompts/rally/memory.prompt
   - skills/rally-kernel/prompts/SKILL.prompt
   - flows/poem_loop/prompts/shared/inputs.prompt
   - flows/software_engineering_demo/prompts/shared/inputs.prompt
@@ -20,7 +19,7 @@ related:
   - src/rally/domain/flow.py
   - src/rally/services/flow_build.py
   - src/rally/services/flow_loader.py
-  - src/rally/services/framework_assets.py
+  - src/rally/services/builtin_assets.py
   - src/rally/services/home_materializer.py
   - src/rally/services/issue_ledger.py
   - src/rally/services/run_events.py
@@ -52,7 +51,7 @@ What is shipped now:
 - shared issue-ledger input and `RALLY_AGENT_SLUG` exposure in the shared base agent
 - optional `rally-memory` skill source in `skills/rally-memory/`
 - optional skill wiring through `flow_build.py` when a flow allowlists `rally-memory`
-- default workspace sync and packaged installs ship only `stdlib/rally/` and `skills/rally-kernel/`
+- default built-in resolution materializes `rally-kernel` for every run, while `rally-memory` stays opt-in
 - repo-local markdown memory truth under `runs/memory/entries/<flow_code>/<agent_slug>/`
 - repo-local QMD state under `runs/memory/qmd/index.sqlite` and `runs/memory/qmd/cache/`
 - pinned Node bridge under `tools/qmd_bridge/` on `@tobilu/qmd` `2.1.0`
@@ -66,7 +65,7 @@ Proof already captured:
 - rebuilt `_stdlib_smoke`, `poem_loop`, and `software_engineering_demo`
 - focused test sweep covering flow build, packaged assets, flow loading, CLI, issue ledger, runner, and the optional memory contract
 - full unit suite at current head
-- `uv run pytest tests/unit -q` -> `305 passed`
+- `uv run pytest tests/unit -q` -> `301 passed`
 - `uv run pytest tests/integration/test_packaged_install.py -q` -> `2 passed`
 
 Fresh audit check:

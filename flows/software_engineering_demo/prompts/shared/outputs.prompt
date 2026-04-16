@@ -1,5 +1,4 @@
-import rally.issue_ledger
-import rally.notes
+import rally.base_agent
 
 
 document ArchitectIssueNoteDocument: "Architect Note"
@@ -45,24 +44,21 @@ document QaIssueNoteDocument: "QA Note"
 
 
 output ArchitectIssueNote: "Architect Issue Note"
-    target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: rally.notes.RallyIssueNote:target.append_with
+    target: rally.base_agent.RallyIssueNoteAppend
     shape: MarkdownDocument
     structure: ArchitectIssueNoteDocument
     requirement: Required
 
 
 output DeveloperIssueNote: "Developer Issue Note"
-    target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: rally.notes.RallyIssueNote:target.append_with
+    target: rally.base_agent.RallyIssueNoteAppend
     shape: MarkdownDocument
     structure: DeveloperIssueNoteDocument
     requirement: Required
 
 
 output QaIssueNote: "QA Issue Note"
-    target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: rally.notes.RallyIssueNote:target.append_with
+    target: rally.base_agent.RallyIssueNoteAppend
     shape: MarkdownDocument
     structure: QaIssueNoteDocument
     requirement: Required

@@ -75,7 +75,7 @@ workflow RallyHowToTakeATurn: "Shared Rules"
 # Flow inputs can inherit these fields and add local files or env vars beside
 # them, which keeps the shared run context in one owner.
 inputs RallyManagedInputs: "Inputs"
-    rally_workspace_dir: "Rally Workspace Dir"
+    rally_workspace_dir:
         RallyWorkspaceDir
 
     rally_run_id:

@@ -15,7 +15,6 @@ from rally.services.issue_ledger import append_issue_note, render_issue_current_
 from rally.services.run_status import show_status
 from rally.services.runner import resume_run, run_flow
 from rally.services.workspace import resolve_workspace
-from rally.services.workspace_sync import sync_workspace_builtins
 from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display
 
 
@@ -38,13 +37,12 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="rally",
         description=(
             "Run filesystem-first Rally workflows from the repo root.\n\n"
-            "Use `rally workspace sync` in a host repo, `rally run <flow>` to start work, "
-            "`rally status` to see what is active, and `rally resume <run-id>` to keep moving."
+            "Use `rally run <flow>` to start work, `rally status` to see what is active, "
+            "and `rally resume <run-id>` to keep moving."
         ),
         epilog=_examples(
             "Examples",
             (
-                "rally workspace sync",
                 "rally run demo",
                 "rally run demo --from-file ./issue.md",
                 "rally status",
@@ -152,35 +150,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run identifier to inspect. Leave this empty to list active runs.",
     )
     status_parser.set_defaults(func=_status_command)
-
-    workspace_parser = subparsers.add_parser(
-        "workspace",
-        help="Work with the Rally workspace.",
-        description=(
-            "Workspace-level setup commands.\n\n"
-            "Use this before the first run in a host repo or when Rally-owned built-ins need to be refreshed."
-        ),
-        formatter_class=_HelpFormatter,
-    )
-    workspace_subparsers = workspace_parser.add_subparsers(dest="workspace_command", required=True)
-
-    workspace_sync_parser = workspace_subparsers.add_parser(
-        "sync",
-        help="Sync Rally-owned built-ins into this workspace.",
-        description=(
-            "Copy Rally-owned built-ins into the current workspace.\n\n"
-            "Use this in a host repo before the first run or after upgrading Rally."
-        ),
-        epilog=_examples(
-            "Examples",
-            (
-                "rally workspace sync",
-            ),
-        )
-        + "\n\nNext: emit your flow if needed, or start work with `rally run <flow>`.",
-        formatter_class=_HelpFormatter,
-    )
-    workspace_sync_parser.set_defaults(func=_workspace_sync_command)
 
     issue_parser = subparsers.add_parser(
         "issue",
@@ -364,14 +333,6 @@ def _status_command(args: argparse.Namespace) -> int:
         repo_root=workspace.workspace_root,
         run_id=args.run_id,
     )
-    print(result.message)
-    return 0
-
-
-def _workspace_sync_command(args: argparse.Namespace) -> int:
-    del args
-    workspace = resolve_workspace()
-    result = sync_workspace_builtins(workspace=workspace)
     print(result.message)
     return 0
 

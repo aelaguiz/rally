@@ -78,7 +78,6 @@ What ships today:
   `runtime.guarded_git_repos`
 - dirty guarded-repo failures that block `handoff` or `done` loud instead of
   letting Rally claim a clean finish
-- `rally workspace sync`
 - `rally run`
 - `rally run --from-file <path>`
 - `rally run --new`
@@ -88,8 +87,8 @@ What ships today:
 - `rally resume --restart`
 - `rally resume --step`
 - `rally status`
-- workspace built-ins can sync before a manual Doctrine emit or before the
-  first run without creating run state
+- Rally resolves built-in stdlib and built-in skills during build and run
+- host workspaces do not need Rally-owned built-in copies before the first run
 - live operator stream on a TTY with plain fallback off TTY
 - CLI help with short examples and next-step hints
 - chained multi-turn execution across handoffs
@@ -136,7 +135,8 @@ What is not shipped yet:
 - Memory is context only.
 - Notes may carry flat string header fields for stable labels.
 - Final JSON is the only turn-ending control path.
-- Many turns use the shared five-key Rally turn result.
+- Many turns use the shared five-control-key Rally turn result.
+- Producer schemas may add Doctrine-owned readback keys.
 - Review-native turns may use control-ready Doctrine review JSON instead.
 - all four memory commands are visible Rally events.
 - agent-run memory commands should render as memory rows, not generic shell rows.

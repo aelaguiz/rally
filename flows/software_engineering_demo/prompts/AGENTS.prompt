@@ -1,5 +1,4 @@
 import rally.base_agent
-import rally.issue_ledger
 import rally.turn_results
 import shared.inputs
 import shared.skills
@@ -53,7 +52,7 @@ review_family EngineeringReviewFamily: "Engineering Review"
 
 
 review ArchitectReview[EngineeringReviewFamily]: "Architect Review"
-    subject: rally.issue_ledger.RallyIssueLedger
+    subject: rally.base_agent.RallyIssueLedger
     contract: shared.review.ArchitectReviewContract
     inherit fields
 
@@ -61,16 +60,16 @@ review ArchitectReview[EngineeringReviewFamily]: "Architect Review"
         accept "The architect review contract passes." when contract.passes
 
     on_accept:
-        current artifact rally.issue_ledger.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
+        current artifact rally.base_agent.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
         route "Accepted architecture goes to Developer." -> Developer
 
     on_reject:
-        current artifact rally.issue_ledger.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
+        current artifact rally.base_agent.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
         route "Architect needs another pass." -> Architect
 
 
 review DeveloperReview[EngineeringReviewFamily]: "Developer Review"
-    subject: rally.issue_ledger.RallyIssueLedger
+    subject: rally.base_agent.RallyIssueLedger
     contract: shared.review.DeveloperReviewContract
     inherit fields
 
@@ -78,16 +77,16 @@ review DeveloperReview[EngineeringReviewFamily]: "Developer Review"
         accept "The developer review contract passes." when contract.passes
 
     on_accept:
-        current artifact rally.issue_ledger.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
+        current artifact rally.base_agent.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
         route "Accepted development goes to QA." -> QaDocsTester
 
     on_reject:
-        current artifact rally.issue_ledger.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
+        current artifact rally.base_agent.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
         route "Developer needs another pass." -> Developer
 
 
 review QaReview[EngineeringReviewFamily]: "QA Review"
-    subject: rally.issue_ledger.RallyIssueLedger
+    subject: rally.base_agent.RallyIssueLedger
     contract: shared.review.QaReviewContract
     inherit fields
 
@@ -95,10 +94,10 @@ review QaReview[EngineeringReviewFamily]: "QA Review"
         accept "The QA review contract passes." when contract.passes
 
     on_accept:
-        current artifact rally.issue_ledger.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
+        current artifact rally.base_agent.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
 
     on_reject:
-        current artifact rally.issue_ledger.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
+        current artifact rally.base_agent.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
         route "QA found work that still belongs in the repo." -> Developer
 
 

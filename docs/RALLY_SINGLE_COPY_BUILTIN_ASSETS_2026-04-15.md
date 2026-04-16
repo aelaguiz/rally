@@ -31,6 +31,25 @@ Plan: Confirm this North Star, research current source/package/host paths, cut o
 
 Non-negotiables: no dual live copies, no manual sync step required for correctness, no runtime fallback, no stale bundle mirror, and no Rally-side shim for a Doctrine gap.
 
+<!-- arch_skill:block:implementation_audit:start -->
+# Implementation Audit (authoritative)
+Date: 2026-04-15
+Verdict (code): COMPLETE
+Manual QA: n/a (non-blocking)
+
+## Code blockers (why code is not done)
+- None.
+
+## Reopened phases (false-complete fixes)
+- None.
+
+## Missing items (code gaps; evidence-anchored; no tables)
+- None.
+
+## Non-blocking follow-ups (manual QA / screenshots / human verification)
+- None.
+<!-- arch_skill:block:implementation_audit:end -->
+
 <!-- arch_skill:block:planning_passes:start -->
 <!--
 arch_skill:planning_passes
@@ -536,7 +555,179 @@ Behavior-preservation signals for refactors:
 
 > Rule: systematic build, foundational first; split Section 7 into the best sequence of coherent self-contained units, optimizing for phases that are fully understood, credibly testable, compliance-complete, and safe to build on later. If two decompositions are both valid, bias toward more phases than fewer. `Work` explains the unit and is explanatory only for modern docs. `Checklist (must all be done)` is the authoritative must-do list inside the phase. `Exit criteria (all required)` names the exhaustive concrete done conditions the audit must validate. Resolve adjacent-surface dispositions and compatibility posture before writing the checklist. Before a phase is valid, run an obligation sweep and move every required promise from architecture, call-site audit, migration notes, delete lists, verification commitments, docs/comments propagation, approved bridges, and required helper follow-through into `Checklist` or `Exit criteria`. Refactors, consolidations, and shared-path extractions must preserve existing behavior with credible evidence proportional to the risk. For agent-backed systems, prefer prompt, grounding, and native-capability changes before new harnesses or scripts. No fallbacks/runtime shims - the system must work correctly or fail loudly (delete superseded paths). If a bridge is explicitly approved, timebox it and include removal work; otherwise plan either clean cutover or preservation work directly. Prefer programmatic checks per phase; defer manual/UI verification to finalization. Avoid negative-value tests and heuristic gates (deletion checks, visual constants, doc-driven gates, keyword or absence gates, repo-shape policing). Also: document new patterns/gotchas in code comments at the canonical boundary (high leverage, not comment spam).
 
-Not started. `phase-plan` owns the authoritative checklist after research and deep dive settle the owner path and Doctrine boundary.
+## Phase 1 — Built-in Asset Resolver And Package Source
+
+Status: COMPLETE
+
+Completed work:
+- Added `src/rally/services/builtin_assets.py` as the one resolver for source-checkout and installed-package built-ins, including `ProvidedPromptRoot("rally_stdlib", ...)`, reserved built-in skill names, and loud validation.
+- Switched package output from checked-in `_bundled` files to distribution `rally_assets/...` files sourced from top-level `stdlib/` and built skill output in `pyproject.toml` and `MANIFEST.in`.
+- Replaced bundle-sync unit coverage with resolver coverage for source checkout, installed distribution files, missing assets, and reserved-skill shadow rejection.
+
+* Goal:
+  * Create the one code boundary that answers where Rally built-ins come from in a source checkout or installed package.
+* Work:
+  * Replace bundle-sync thinking with a `RallyBuiltinAssets` resolver. Keep authored source under top-level `stdlib/` and `skills/`. Package installs may contain distribution files built from that source, but the source checkout must not keep a second checked-in mirror.
+* Checklist (must all be done):
+  * Add or rewrite the built-in asset module so it exposes one resolver for Rally stdlib prompt roots and Rally-owned skill runtime dirs.
+  * Make the resolver detect a real Rally source checkout by required paths, not only by `[project].name`.
+  * Make the resolver support installed distributions without reading `src/rally/_bundled`.
+  * Add `ProvidedPromptRoot("rally_stdlib", <stdlib prompts root>)` as the Doctrine boundary for Rally stdlib imports.
+  * Define reserved Rally-owned built-in skill names, starting with `rally-kernel`, in one place.
+  * Update package configuration so wheel and sdist output include the required Rally built-in files from top-level source or generated build output, without a checked-in `_bundled` tree.
+  * Add one short boundary comment at the resolver that says the source/package split lives there and fallback paths must not be added.
+* Verification (required proof):
+  * Run focused resolver/package unit tests for source-checkout mode, installed-distribution mode where practical, missing assets, and reserved skill source identity.
+* Docs/comments (propagation; only if needed):
+  * Keep comments short and only at the resolver boundary.
+* Exit criteria (all required):
+  * All code that needs Rally stdlib or built-in skill roots can ask one resolver.
+  * Source checkout mode reads top-level `stdlib/rally/prompts/**` and `skills/rally-*/build/**`.
+  * Installed package mode reads distribution files derived from the same top-level source.
+  * No resolver branch reads `src/rally/_bundled`.
+  * Missing required assets fail loudly.
+* Rollback:
+  * Revert the resolver and package config together. Do not restore `_bundled` as a bridge.
+
+## Phase 2 — Build, Skill, And Rooted-Path Runtime Cutover
+
+Status: COMPLETE
+
+Completed work:
+- Cut `ensure_flow_assets_built()` over to Doctrine's Python emit API with Rally-provided prompt roots and no workspace built-in sync.
+- Moved skill resolution, run-home skill materialization, rooted `stdlib:` expansion, and adapter MCP path expansion onto the built-in resolver boundary.
+- Added pruning for retired compiled agent directories so rebuilds delete stale generated agent packages instead of leaving them behind.
+
+* Goal:
+  * Move build and run paths to the resolver so host workspaces no longer need copied Rally built-ins.
+* Work:
+  * Replace workspace sync before build/run with provider-root compilation and resolver-backed skill materialization.
+* Checklist (must all be done):
+  * Update `ensure_flow_assets_built()` so it resolves Rally built-ins first and does not call workspace sync.
+  * Replace Doctrine subprocess emit calls with a small Doctrine Python API facade that passes Rally provider roots.
+  * Keep Doctrine emit entrypoints and output dirs inside the host project.
+  * Validate prompt-rooted paths across the flow prompt root, resolver-provided Rally stdlib root, and Doctrine skill prompt roots.
+  * Update skill resolution so workspace skills and reserved Rally built-in skills have separate source rules.
+  * Fail loudly when an external host workspace has a reserved Rally-owned skill directory that would shadow a built-in.
+  * Update run-home materialization so built-in skills come from the resolver and workspace skills come from workspace source.
+  * Update `rally run` and `rally resume` so they do not sync built-ins before build or materialization.
+  * Update `stdlib:` rooted path resolution and adapter MCP payload expansion so runtime stdlib paths use the resolver-provided root instead of assuming `workspace_root/stdlib/rally`.
+* Verification (required proof):
+  * Run focused unit tests for flow build, skill bundle resolution, rooted path resolution, home materialization, runner paths, and adapter MCP expansion.
+* Docs/comments (propagation; only if needed):
+  * Rewrite comments that still say workspace copies are the build or run preflight.
+* Exit criteria (all required):
+  * Host flow build can import Rally stdlib through `ProvidedPromptRoot`.
+  * Host workspaces do not need `stdlib/rally/**` or `skills/rally-kernel/**` for framework-managed build/run.
+  * `rally run` and `rally resume` still rebuild before launch and still materialize required built-in skills into run homes.
+  * Reserved built-in skill shadowing fails with a clear error.
+  * No runtime fallback to workspace copied Rally built-ins exists.
+* Rollback:
+  * Revert the build/runtime cutover as a unit. Do not keep both workspace sync and resolver-backed build active.
+
+## Phase 3 — Delete Legacy Mirrors And Copy Commands
+
+Status: COMPLETE
+
+Completed work:
+- Deleted `src/rally/_bundled/**`, `tools/sync_bundled_assets.py`, `src/rally/services/bundled_assets.py`, and `src/rally/services/workspace_sync.py`.
+- Removed `rally workspace sync` from the CLI and stripped bundle-sync checks from the release flow and `Makefile`.
+- Rewrote legacy tests and touched docs so Rally no longer teaches or depends on copy-for-correctness paths.
+
+* Goal:
+  * Remove the old live truth surfaces instead of keeping them for legacy.
+* Work:
+  * Delete the mirror tree, sync script, workspace sync copy command, and release proof paths that existed only to keep duplicated built-ins aligned.
+* Checklist (must all be done):
+  * Delete `src/rally/_bundled/**`.
+  * Delete `tools/sync_bundled_assets.py`.
+  * Remove `_bundled` package data and manifest entries.
+  * Remove `sync_bundled_assets()`, `ensure_workspace_builtins_synced()`, and `sync_workspace_builtins()` as copy paths.
+  * Remove or convert `rally workspace sync` so the CLI no longer offers a built-in copy workflow.
+  * Update release worksheet and `Makefile` proof steps so they no longer run bundle sync checks.
+  * Delete or rewrite tests that only compare source with `_bundled` or expect host workspace built-in copies.
+  * Remove stale comments and docs snippets that explain the deleted copy path in touched files.
+* Verification (required proof):
+  * Run focused CLI, release-flow, and legacy-path tests after deleting the old surfaces.
+* Docs/comments (propagation; only if needed):
+  * Live docs touched by this phase must say Rally resolves built-ins, not that users should sync them.
+* Exit criteria (all required):
+  * No checked-in `_bundled` mirror remains.
+  * No sync script remains.
+  * No command path copies Rally stdlib or built-in skills into host workspaces for correctness.
+  * Release proof verifies package/resolver behavior instead of mirror drift.
+  * The CLI no longer teaches `rally workspace sync` as a supported workflow.
+* Rollback:
+  * Revert the delete phase only if the resolver/build cutover is also reverted. Do not re-add legacy files as dead code.
+
+## Phase 4 — Tests And Package Proof
+
+Status: COMPLETE
+
+Completed work:
+- Updated unit and integration coverage for resolver-backed built-ins, provider-root flow builds, rooted `stdlib:` resolution, run-home materialization, CLI behavior, and packaged installs.
+- `uv run pytest tests/unit/test_flow_build.py -q` passed with `9 passed`.
+- `uv run pytest tests/unit -q` passed with `301 passed`, and `uv run pytest tests/integration/test_packaged_install.py -q` passed with `2 passed`.
+
+* Goal:
+  * Prove the single-copy model through behavior, not repo-shape policing.
+* Work:
+  * Update unit and integration tests around the new resolver, provider-root emit, run-home skill materialization, and packaged install behavior.
+* Checklist (must all be done):
+  * Rewrite `tests/unit/test_bundled_assets.py` or replace it with resolver-focused tests.
+  * Delete or rewrite `tests/unit/test_workspace_sync.py` so it no longer proves copy behavior.
+  * Update `tests/unit/test_flow_build.py` for Doctrine API facade calls with provider roots.
+  * Update `tests/unit/test_runner.py` and home materializer tests so they prove built-in skills materialize from the resolver.
+  * Update rooted-path and adapter MCP tests for resolver-provided `stdlib:` paths.
+  * Update release-flow tests for package/resolver proof instead of bundle-sync proof.
+  * Update packaged install tests so wheel and sdist installs can build and run a host flow without host `stdlib/rally` or `skills/rally-kernel` copies.
+  * Keep tests behavior-level. Do not add file-absence or stale-term policing tests.
+* Verification (required proof):
+  * Run `uv run pytest tests/unit -q`.
+  * Run the packaged install integration proof if it is present and practical in this repo state.
+* Docs/comments (propagation; only if needed):
+  * Keep test names and comments focused on resolver behavior and host build/run behavior.
+* Exit criteria (all required):
+  * Unit tests pass for changed runtime, resolver, CLI, release, and adapter paths.
+  * Packaged install proof no longer depends on workspace sync.
+  * Tests fail for the right behavior if Rally built-ins are missing, shadowed, or not passed to Doctrine.
+* Rollback:
+  * Revert tests with the implementation they prove. Do not leave tests that assert the old copy model.
+
+## Phase 5 — Live Docs, Generated Readback, And Final Proof
+
+Status: COMPLETE
+
+Completed work:
+- Rewrote the `README.md` host integration section to remove the stale sync/manual-build path and the synced-builtins gitignore guidance, and to point host projects at the Rally-managed `run`/`resume` path.
+- Rewrote the `docs/RALLY_PORTING_GUIDE.md` host workflow and verification loop so it no longer teaches `sync Rally-owned built-ins first` as the front-door host workflow.
+- Updated several live docs and prompt source to the single-copy resolver model, including the retired `workspace sync` path and the moved shared note ownership under `rally.base_agent`.
+- Rebuilt `poem_loop`, `software_engineering_demo`, and `_stdlib_smoke` readback from source; the stale `flows/software_engineering_demo/build/agents/critic` directory was pruned during rebuild.
+- `make build-dist` passed and the wheel now carries built-in files under `rally_assets/...` instead of `_bundled`.
+
+* Goal:
+  * Make surviving user-facing docs and generated outputs match the shipped single-copy model.
+* Work:
+  * Update only docs that would be false after the cutover, then rebuild generated readback that depends on changed prompt or skill source.
+* Checklist (must all be done):
+  * Update `README.md`, `docs/RALLY_CLI_AND_LOGGING.md`, `docs/RALLY_COMMUNICATION_MODEL.md`, `docs/RALLY_EXTERNAL_PROJECT_INTEGRATION_MODEL.md`, `docs/RALLY_RUNTIME.md`, `docs/RALLY_MASTER_DESIGN.md`, `docs/RALLY_MEMORY.md`, `docs/RALLY_PORTING_GUIDE.md`, and release/versioning docs where they mention bundle sync, host built-in copies, or retired shared prompt modules.
+  * Rebuild affected flow and skill outputs from source.
+  * Inspect generated readback for the affected flow or skill outputs.
+  * Update this plan and the worklog with the proof commands that actually ran.
+  * Leave broader docs consolidation and plan/worklog retirement for `arch-docs` after a clean code audit.
+* Verification (required proof):
+  * Run the smallest full proof set that covers changed code: targeted tests while developing, then `uv run pytest tests/unit -q`.
+  * Run packaged install proof if package config changed enough to affect wheel or sdist behavior.
+  * Inspect generated readback for source/readback agreement.
+* Docs/comments (propagation; only if needed):
+  * Rewrite touched docs to the new truth. Do not keep legacy copy instructions for archaeology.
+* Exit criteria (all required):
+  * Surviving docs no longer tell users to run `rally workspace sync` or vendor Rally stdlib for framework-managed builds.
+  * Generated readback is rebuilt where prompt or skill source changed.
+  * The plan and worklog name actual proof results.
+  * The code is ready for fresh `audit-implementation`.
+* Rollback:
+  * Revert docs and generated outputs with the code they describe. Do not leave docs advertising a path the code no longer supports.
 
 <!-- arch_skill:block:phase_plan:end -->
 
@@ -668,3 +859,42 @@ The implementation must touch packaging, flow build, run-home skill materializat
 Follow-ups
 
 Let the armed `auto-plan` controller continue to `phase-plan`.
+
+## 2026-04-16 - Phase plan locks hard deletion of legacy paths
+
+Context
+
+Implementation was requested with an explicit instruction to delete the old legacy copy paths instead of keeping them around.
+
+Options
+
+- Keep a compatibility command or fallback path for old host workspace copies.
+- Convert the plan into a hard cutover with resolver-backed build/run behavior and explicit deletes.
+
+Decision
+
+Use a hard cutover. Section 7 now makes `_bundled`, bundle sync, workspace built-in copying, stale release proof, and old copy-model tests delete work, not optional cleanup.
+
+Consequences
+
+Implementation must not preserve `rally workspace sync` or `_bundled` as legacy safety paths. Any host project that needs Rally stdlib should use Rally-managed build/run, which passes the stdlib prompt root into Doctrine.
+
+## 2026-04-15 - Rebuilds now prune retired compiled agent directories
+
+Context
+
+The runtime cutover removed legacy copy paths, but generated readback still kept old agent-package directories if a flow role was renamed or deleted. During source rebuild, `flows/software_engineering_demo/build/agents/critic` remained as an empty stale directory and failed package validation.
+
+Options
+
+- Keep stale generated directories and ask humans to clean them up.
+- Prune only old sidecar files and let extra agent directories break validation.
+- Treat `build/agents/*` as compiler-owned output and delete directories whose slugs no longer match the current flow.
+
+Decision
+
+Prune retired compiled agent directories during Rally-managed rebuild before validating emitted agent packages.
+
+Consequences
+
+Rebuilds now converge generated readback onto the current flow shape and delete stale legacy agent packages instead of preserving them for archaeology.

@@ -37,33 +37,18 @@ The current checked-in CLI is small and explicit.
 Help output is still plain `argparse`, but it now includes quick examples and
 short next-step hints for the main operator paths.
 
-### `rally workspace sync`
+### No `rally workspace sync`
+
+Rally no longer exposes a copy command for framework-owned stdlib or built-in
+skills.
 
 Current shape:
 
-```bash
-rally workspace sync
-```
-
-What it does today:
-
-- resolves the current Rally workspace from `pyproject.toml`
-- syncs Rally-owned built-ins into the workspace at
-  `stdlib/rally/` and `skills/rally-kernel/`
-- prints one short result line with the synced paths
-- does not create a run
-- does not create `runs/active/<run-id>/`
-- does not prepare a run home
-- does not launch an adapter
-
-Current limits:
-
-- it only syncs Rally-owned built-ins
-- it does not rebuild a flow or skill
-- it does not replace `rally run` or `rally resume`
-
-If the current workspace is the Rally source repo itself, the command is a
-no-op and says the workspace already owns those built-ins.
+- `rally run <flow>` and `rally resume <run-id>` are the front doors
+- those commands rebuild flow assets before launch
+- Rally resolves its stdlib and built-in skills from the source checkout or
+  installed package instead of copying them into the host workspace
+- missing built-ins or reserved host shadowing fail loudly before any agent turn
 
 ### `rally status`
 

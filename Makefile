@@ -44,7 +44,6 @@ verify-package: build-dist
 	$(UV_RUN) -m rally._package_release smoke --artifact-type sdist
 
 verify:
-	$(UV) run python tools/sync_bundled_assets.py --check
 	$(UV) run pytest tests/unit/test_package_release.py -q
 	$(UV) run pytest tests/unit/test_release_flow.py -q
 	$(UV) run pytest tests/unit -q

@@ -25,9 +25,8 @@ related:
 Rally can run from another repo, such as `../paperclip_agents`, without
 treating the Rally source tree as the only valid home. The host repo becomes
 the Rally workspace. Rally itself provides the runtime and built-in shared
-parts.
-`rally workspace sync` is the front door when that host repo needs
-`stdlib/rally/` or Rally's built-in skills before the first run.
+parts. Host repos should use Rally-managed build and run commands instead of a
+workspace copy step for Rally-owned built-ins.
 
 ## Problem
 
@@ -46,12 +45,12 @@ Split the current single "repo root" idea into two clear roots:
   authored flows, local skills, local MCPs, and `runs/`
 
 Then move every build-time and run-time path decision onto that workspace
-contract. Rally-owned built-ins should sync into fixed workspace paths before
-build and run so the workspace stays self-contained. Build should invoke
-Doctrine from Rally's installed environment against the workspace manifest, not
-through a sibling source checkout. The current Rally repo should keep working
-as one workspace, and an external repo should work the same way after it ports
-one flow.
+contract. Rally-owned built-ins should resolve from the source checkout or
+installed package during build and run so the workspace stays clean. Build
+should invoke Doctrine from Rally's installed environment against the workspace
+manifest, not through a sibling source checkout. The current Rally repo should
+keep working as one workspace, and an external repo should work the same way
+after it ports one flow.
 
 ## What shipped
 
@@ -78,12 +77,13 @@ Current proof keeps both paths honest:
 Operator path for host repos:
 
 1. add the Rally workspace manifest and Doctrine emit config
-2. run `rally workspace sync`
-3. run Doctrine emit from the host repo when needed
-4. run `rally run <flow>`
+2. run `rally run <flow>` or `rally resume <run-id>`
+3. let Rally rebuild flow output and pass its stdlib prompt root into Doctrine
+4. keep Rally-owned built-ins out of host source unless the host means to vendor them
 
-In most host repos, the synced `stdlib/rally/` and `skills/rally-*` trees
-should be ignored in git unless the repo chooses to vendor them on purpose.
+In most host repos, there should be no framework-managed `stdlib/rally/` or
+`skills/rally-*` copy at all. If a host repo chooses to vendor those trees,
+that vendored copy becomes host-owned source on purpose.
 
 ## Non-negotiables
 

@@ -13,21 +13,18 @@ class SharedPromptOwnershipTests(unittest.TestCase):
     def test_base_agent_owns_shared_run_rules(self) -> None:
         source = (self.repo_root / "stdlib/rally/prompts/rally/base_agent.prompt").read_text(encoding="utf-8")
 
-        self.assertIn('Use `\\"$RALLY_CLI_BIN\\" issue current --run-id \\"$RALLY_RUN_ID\\"` first.', source)
-        self.assertIn(
-            "Open `home:issue.md` only when you need older ledger history or the full block text.",
-            source,
-        )
         self.assertIn("Use `home:issue.md` as the shared ledger for this run.", source)
         self.assertIn("Leave one short saved note through `Saved Run Note` only when later readers need it.", source)
         self.assertIn("End the turn with the final JSON this turn declares.", source)
         self.assertIn("Keep routing, `done`, `blocker`, and `sleep` in final JSON, not in notes.", source)
         self.assertNotIn("rally-memory", source)
 
-    def test_notes_prompt_only_owns_note_output(self) -> None:
-        source = (self.repo_root / "stdlib/rally/prompts/rally/notes.prompt").read_text(encoding="utf-8")
+    def test_base_agent_owns_shared_note_output(self) -> None:
+        source = (self.repo_root / "stdlib/rally/prompts/rally/base_agent.prompt").read_text(encoding="utf-8")
 
-        self.assertIn('append_with: "\\"$RALLY_CLI_BIN\\" issue note --run-id \\"$RALLY_RUN_ID\\""', source)
+        self.assertIn('output target RallyIssueNoteAppend: "Rally Issue Note Append"', source)
+        self.assertIn("delivery_skill: RallyKernelSkill", source)
+        self.assertIn('output RallyIssueNote: "Issue Note"', source)
         self.assertNotIn("rally-memory", source)
 
     def test_rally_kernel_stays_note_focused(self) -> None:

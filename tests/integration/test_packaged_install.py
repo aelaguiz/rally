@@ -45,7 +45,7 @@ class PackagedInstallTests(unittest.TestCase):
             self.assertIn("usage: rally", help_result.stdout)
             self.assertIn("run", help_result.stdout)
             self.assertIn("resume", help_result.stdout)
-            self.assertIn("workspace", help_result.stdout)
+            self.assertNotIn("workspace sync", help_result.stdout)
 
             self._write_host_workspace(host_root)
 
@@ -61,29 +61,35 @@ class PackagedInstallTests(unittest.TestCase):
             )
             self.assertNotEqual(version_result.stdout.strip(), "0.0.0")
 
-            sync_result = self._run([str(rally_bin), "workspace", "sync"], cwd=host_root)
-            self.assertIn("Synced Rally built-ins into", sync_result.stdout)
+            assets_result = self._run_python(
+                python_bin=python_bin,
+                cwd=host_root,
+                source=textwrap.dedent(
+                    """\
+                    from pathlib import Path
+                    from rally.services.builtin_assets import resolve_rally_builtin_assets
+
+                    assets = resolve_rally_builtin_assets(workspace_root=Path.cwd())
+                    print(assets.source_kind)
+                    print((assets.stdlib_prompts_root / "rally" / "turn_results.prompt").is_file())
+                    print((assets.skill_runtime_dir("rally-kernel") / "SKILL.md").is_file())
+                    """
+                ),
+            )
+            self.assertEqual(assets_result.stdout.splitlines(), ["installed_distribution", "True", "True"])
             self.assertFalse((host_root / "runs" / "active").exists())
 
-            self.assertTrue((host_root / "stdlib" / "rally" / "prompts" / "rally" / "turn_results.prompt").is_file())
-            self.assertTrue((host_root / "stdlib" / "rally" / "prompts" / "rally" / "review_results.prompt").is_file())
-            self.assertFalse((host_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").exists())
-            self.assertFalse((host_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json").exists())
-            self.assertTrue((host_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
+            self.assertFalse((host_root / "stdlib" / "rally").exists())
+            self.assertFalse((host_root / "skills" / "rally-kernel").exists())
             self.assertFalse((host_root / "skills" / "rally-memory").exists())
 
-            self._run(
-                [
-                    str(python_bin),
-                    "-m",
-                    "doctrine.emit_docs",
-                    "--pyproject",
-                    str(host_root / "pyproject.toml"),
-                    "--target",
-                    "demo",
-                ],
-                cwd=host_root,
-            )
+            run_result = self._run([str(rally_bin), "run", "demo"], cwd=host_root, check=False)
+            self.assertEqual(run_result.returncode, 2)
+            self.assertIn("waiting for `", run_result.stderr)
+            self.assertIn("home/issue.md", run_result.stderr)
+            self.assertIn("rally resume DMO-1", run_result.stderr)
+            self.assertFalse((host_root / "stdlib" / "rally").exists())
+            self.assertFalse((host_root / "skills" / "rally-kernel").exists())
 
             agent_dir = host_root / "flows" / "demo" / "build" / "agents" / "scope_lead"
             contract_path = agent_dir / "final_output.contract.json"
@@ -111,12 +117,6 @@ class PackagedInstallTests(unittest.TestCase):
             self.assertEqual(review_contract_payload["review"]["final_response"]["mode"], "split")
             self.assertTrue(review_contract_payload["review"]["final_response"]["control_ready"])
             self.assertNotIn("../rally/", review_contract_path.read_text(encoding="utf-8"))
-
-            run_result = self._run([str(rally_bin), "run", "demo"], cwd=host_root, check=False)
-            self.assertEqual(run_result.returncode, 2)
-            self.assertIn("waiting for `", run_result.stderr)
-            self.assertIn("home/issue.md", run_result.stderr)
-            self.assertIn("rally resume DMO-1", run_result.stderr)
 
             run_dir = host_root / "runs" / "active" / "DMO-1"
             self.assertTrue((run_dir / "run.yaml").is_file())
@@ -417,9 +417,6 @@ class PackagedInstallTests(unittest.TestCase):
 
                 [tool.rally.workspace]
                 version = 1
-
-                [tool.doctrine.compile]
-                additional_prompt_roots = ["stdlib/rally/prompts"]
 
                 [tool.doctrine.emit]
 

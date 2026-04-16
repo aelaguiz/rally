@@ -1,4 +1,6 @@
-recursive-include src/rally/_bundled *
+recursive-include stdlib/rally/prompts *.prompt
+recursive-include skills/rally-kernel/build *
+recursive-include skills/rally-memory/build *
 include CHANGELOG.md
 include docs/VERSIONING.md
 global-exclude __pycache__ *.py[cod]

@@ -124,7 +124,6 @@ def render_release_worksheet(plan: ReleasePlan) -> str:
             ]
         )
     verify_commands = [
-        "uv run python tools/sync_bundled_assets.py --check",
         "uv run pytest tests/unit/test_package_release.py -q",
         "uv run pytest tests/unit/test_release_flow.py -q",
         "make build-dist",

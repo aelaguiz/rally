@@ -9,10 +9,10 @@ related:
   - docs/RALLY_MASTER_DESIGN.md
   - docs/RALLY_RUNTIME.md
   - stdlib/rally/prompts/rally/base_agent.prompt
-  - stdlib/rally/prompts/rally/notes.prompt
+  - stdlib/rally/prompts/rally/memory.prompt
   - stdlib/rally/prompts/rally/review_results.prompt
   - stdlib/rally/prompts/rally/turn_results.prompt
-  - skills/rally-kernel/SKILL.md
+  - skills/rally-kernel/prompts/SKILL.prompt
   - src/rally/cli.py
   - src/rally/adapters/base.py
   - src/rally/services/issue_ledger.py
@@ -30,7 +30,8 @@ There is no separate handoff artifact.
 There is no second return path.
 The final JSON still ends the turn through one shared final-response path after
 adapter execution.
-Many turns use one flat five-key object.
+Many turns use one flat object with five Rally control keys.
+Producer outputs may add Doctrine-owned readback keys to that object.
 Review-native turns may use control-ready Doctrine review JSON instead.
 Rally also copies that full final JSON into the matching `Rally Turn Result`
 block in `home:issue.md`.
@@ -43,7 +44,9 @@ block in `home:issue.md`.
 - The shared read-first path is `"$RALLY_CLI_BIN" issue current --run-id "$RALLY_RUN_ID"`.
 - Rally injects `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`.
 - A flow may also add extra startup and launch env vars through `runtime.env` in `flow.yaml`.
-- `rally.turn_results` is the classic shared five-key control JSON.
+- `rally.turn_results` is the classic shared five-control-key JSON.
+- Flow producer outputs may inherit that base JSON and add extra schema-owned
+  readback keys.
 - Review-native turns may declare a different final JSON when Doctrine emits control-ready review metadata.
 - Notes keep context only. Notes never carry `next_owner`, `done`, `blocker`, or `sleep` truth.
 - Notes may carry flat string fields such as `kind=...` or `lane=...` when later turns need stable labels.
@@ -55,9 +58,7 @@ block in `home:issue.md`.
   - shared read-first and turn rules
   - required env vars
   - required `rally-kernel` skill
-  - shared advisory issue-note output
-- `stdlib/rally/prompts/rally/notes.prompt`
-  - one shared note output that shells through the Rally CLI
+  - shared advisory issue-note output that shells through the Rally CLI
 - `stdlib/rally/prompts/rally/memory.prompt`
   - shared memory skill meaning and memory entry shape
 - `stdlib/rally/prompts/rally/turn_results.prompt`

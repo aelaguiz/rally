@@ -361,13 +361,16 @@ def _validate_turn_result_schema(schema_file: Path) -> None:
             f"Turn-result schema `{schema_file}` must declare object properties and required fields."
         )
     expected_fields = {"kind", "next_owner", "summary", "reason", "sleep_duration_seconds"}
-    if set(required) != expected_fields:
+    missing_required_fields = expected_fields - set(required)
+    if missing_required_fields:
         raise RallyConfigError(
-            f"Turn-result schema `{schema_file}` must require {sorted(expected_fields)}."
+            f"Turn-result schema `{schema_file}` must require {sorted(missing_required_fields)}."
         )
-    kind_field = properties.get("kind")
-    if not isinstance(kind_field, Mapping):
-        raise RallyConfigError(f"Turn-result schema `{schema_file}` must define `properties.kind`.")
+    missing_property_fields = sorted(field_name for field_name in expected_fields if field_name not in properties)
+    if missing_property_fields:
+        raise RallyConfigError(
+            f"Turn-result schema `{schema_file}` must define properties {missing_property_fields}."
+        )
 
 
 def _validate_review_native_contract(
@@ -714,7 +717,7 @@ def _resolve_rooted_existing_file(
     allowed_roots: set[PathRoot],
     example: str,
 ) -> Path:
-    if raw_value.startswith("flows/") or raw_value.startswith("stdlib/rally/"):
+    if raw_value.startswith("flows/"):
         return _resolve_repo_relative_file(
             repo_root=repo_root,
             relative_path=raw_value,

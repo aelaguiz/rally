@@ -17,9 +17,9 @@ from rally.services.issue_editor import edit_issue_file_in_editor, resolve_inter
 from rally.services.issue_ledger import snapshot_issue_log
 from rally.services.run_events import RunEventRecorder
 from rally.services.run_store import find_run_dir
+from rally.services.builtin_assets import RallyBuiltinAssets, resolve_rally_builtin_assets
 from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
 from rally.services.workspace import WorkspaceContext, workspace_context_from_root
-from rally.services.workspace_sync import sync_workspace_builtins
 
 _HOME_READY_MARKER = ".rally_home_ready"
 
@@ -65,11 +65,16 @@ def materialize_run_home(
         run_id=run_record.id,
         event_recorder=event_recorder,
     )
-    sync_workspace_builtins(workspace=workspace_context)
+    builtins = resolve_rally_builtin_assets(workspace=workspace_context)
     _sync_compiled_agents(run_home=run_home, flow=flow)
     # Refresh each agent's stable skill view here. The runner activates one
     # of these views into the live `home/skills/` tree right before launch.
-    _refresh_agent_skill_views(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
+    _refresh_agent_skill_views(
+        repo_root=workspace_context.workspace_root,
+        run_home=run_home,
+        flow=flow,
+        builtins=builtins,
+    )
     _copy_allowed_mcps(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
     get_adapter(flow.adapter.name).prepare_home(
         repo_root=workspace_context.workspace_root,
@@ -326,7 +331,13 @@ def activate_agent_skills(*, run_home: Path, agent: FlowAgent) -> None:
     _sync_named_directories(target_root=run_home / "skills", sources_by_name=skill_sources)
 
 
-def _refresh_agent_skill_views(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:
+def _refresh_agent_skill_views(
+    *,
+    repo_root: Path,
+    run_home: Path,
+    flow: FlowDefinition,
+    builtins: RallyBuiltinAssets,
+) -> None:
     sessions_root = run_home / "sessions"
     expected_agent_slugs = {agent.slug for agent in flow.agents.values()}
     for existing in sorted(sessions_root.iterdir()):
@@ -342,6 +353,7 @@ def _refresh_agent_skill_views(*, repo_root: Path, run_home: Path, flow: FlowDef
             sources_by_name=_resolve_skill_sources(
                 repo_root=repo_root,
                 skill_names=_agent_skill_names(agent),
+                builtins=builtins,
             ),
         )
 
@@ -360,12 +372,18 @@ def _copy_allowed_mcps(*, repo_root: Path, run_home: Path, flow: FlowDefinition)
     _sync_named_directories(target_root=run_home / "mcps", sources_by_name=mcp_sources)
 
 
-def _resolve_skill_sources(*, repo_root: Path, skill_names: tuple[str, ...]) -> dict[str, Path]:
+def _resolve_skill_sources(
+    *,
+    repo_root: Path,
+    skill_names: tuple[str, ...],
+    builtins: RallyBuiltinAssets,
+) -> dict[str, Path]:
     skill_sources: dict[str, Path] = {}
     for skill_name in skill_names:
         bundle = resolve_skill_bundle_source(
             repo_root=repo_root,
             skill_name=skill_name,
+            builtins=builtins,
         )
         skill_sources[skill_name] = bundle.runtime_source_dir()
     return skill_sources

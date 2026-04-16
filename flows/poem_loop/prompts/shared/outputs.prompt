@@ -1,5 +1,4 @@
-import rally.issue_ledger
-import rally.notes
+import rally.base_agent
 
 
 document PoemDraftDocument: "Poem Draft"
@@ -40,8 +39,7 @@ output PoemDraft: "Poem Draft"
 
 
 output WriterIssueNote: "Writer Issue Note"
-    target: rally.issue_ledger.RallyIssueNoteAppend
-        append_with: rally.notes.RallyIssueNote:target.append_with
+    target: rally.base_agent.RallyIssueNoteAppend
     shape: MarkdownDocument
     structure: WriterIssueNoteDocument
     requirement: Required

@@ -85,7 +85,7 @@ This is the canonical split between Doctrine and Rally.
 ### Rally owns
 
 - the standard library contents under `stdlib/rally/`
-- the workspace built-in sync path through `rally workspace sync`
+- the built-in asset resolver that chooses source-checkout versus installed-package assets
 - flow runtime contract under `flows/*/flow.yaml`
 - the run model, run ids, logs, sessions, and locks
 - home preparation and home materialization
@@ -257,7 +257,7 @@ They may carry flat string note fields when later turns need stable labels.
 The structured final turn result is the only turn-ending control surface.
 It tells Rally whether to route, stop, block, or ask for sleep.
 Rally copies that full final JSON into the matching `Rally Turn Result` block.
-The shared JSON always carries the same five keys:
+The classic shared JSON carries five Rally control keys:
 
 - `kind`
 - `next_owner`
@@ -266,7 +266,11 @@ The shared JSON always carries the same five keys:
 - `sleep_duration_seconds`
 
 Fields that do not apply are `null` on the classic shared shape.
-Review-native turns may use control-ready Doctrine review JSON instead of the five-key object.
+Flow-specific producer outputs may inherit that base shape and add extra
+Doctrine-owned readback keys. Rally still reads only the five control keys for
+route, done, blocker, and sleep behavior.
+Review-native turns may use control-ready Doctrine review JSON instead of the
+control-key object.
 If the result uses `kind: handoff`, that is only the label of the route-to-next-owner branch in the classic shared result.
 Rally now keeps running across handoffs inside one `run` or `resume`
 command until it reaches a real stop point.
@@ -596,7 +600,7 @@ At a high level, the runtime doc owns:
 
 - the first real `src/rally/` runtime package
 - the first real `rally` CLI entrypoint
-- the `rally workspace sync` front door for host-local built-ins
+- the resolver-backed build and run path for Rally-owned built-ins
 - the shared adapter boundary
 - one real Codex adapter path
 - one real Claude adapter path

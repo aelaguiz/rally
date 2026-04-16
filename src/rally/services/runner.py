@@ -46,7 +46,6 @@ from rally.services.run_store import (
     write_run_state,
 )
 from rally.services.workspace import WorkspaceContext, workspace_context_from_root
-from rally.services.workspace_sync import sync_workspace_builtins
 
 SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
 DisplayFactory = Callable[[RunRecord, FlowDefinition], EventConsumer]
@@ -86,7 +85,6 @@ def run_flow(
     flow_code = load_flow_code(repo_root=repo_root, flow_name=request.flow_name)
 
     with flow_lock(repo_root=repo_root, flow_code=flow_code):
-        sync_workspace_builtins(workspace=workspace_context)
         ensure_flow_assets_built(workspace=workspace_context, flow_name=request.flow_name)
         flow = load_flow_definition(repo_root=repo_root, flow_name=request.flow_name)
         issue_seed = _load_issue_seed(
@@ -151,7 +149,6 @@ def resume_run(
     run_record = load_run_record(run_dir=run_dir)
 
     with flow_lock(repo_root=repo_root, flow_code=run_record.flow_code):
-        sync_workspace_builtins(workspace=workspace_context)
         ensure_flow_assets_built(workspace=workspace_context, flow_name=run_record.flow_name)
         flow = load_flow_definition(repo_root=repo_root, flow_name=run_record.flow_name)
         if request.restart:

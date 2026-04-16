@@ -593,8 +593,7 @@ Most ports should start from this host-repo loop:
 
 ```bash
 uv sync --dev
-uv run rally workspace sync
-uv run python -m doctrine.emit_docs --pyproject pyproject.toml --target <flow>
+uv run rally run <flow>
 uv run pytest -q
 ```
 
@@ -602,8 +601,8 @@ Then run the smallest real flow proof the host repo can support.
 
 The point of this loop is simple:
 
-- sync Rally-owned built-ins first
-- emit from the host repo, not from a sibling source checkout
+- use Rally-managed build and run from the host repo
+- let Rally resolve its own stdlib and built-in skills during that path
 - prove the host repo as a Rally workspace
 
 # Source To Rally Mapping
@@ -879,11 +878,15 @@ Use the smallest proof that matches the change.
 
 For a host repo port, that usually means:
 
-1. sync built-ins
-2. emit the flow
-3. inspect generated readback
-4. run host-repo tests
-5. run one real smoke flow if the port is runnable
+1. run the flow through Rally
+2. inspect generated readback
+3. run host-repo tests
+4. run one real smoke flow if the port is runnable
+
+If you need readback before a full run, use Rally's managed build path or a
+source-repo readback rebuild that follows the same single-copy rules.
+
+Do not add a sync-first host step for Rally-owned built-ins.
 
 A useful port often has a flow-local render verifier.
 

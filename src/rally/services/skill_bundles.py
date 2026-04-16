@@ -5,10 +5,16 @@ from pathlib import Path
 from typing import Literal
 
 from rally.errors import RallyConfigError
+from rally.services.builtin_assets import (
+    RALLY_BUILTIN_SKILL_NAMES,
+    RallyBuiltinAssets,
+    reject_reserved_builtin_skill_shadow,
+    resolve_rally_builtin_assets,
+)
 
 MANDATORY_SKILL_NAMES = ("rally-kernel",)
 
-SkillSourceKind = Literal["markdown", "doctrine"]
+SkillSourceKind = Literal["markdown", "doctrine", "builtin"]
 
 
 @dataclass(frozen=True)
@@ -20,7 +26,7 @@ class SkillBundleSource:
     doctrine_entrypoint: Path | None
 
     def runtime_source_dir(self) -> Path:
-        if self.kind == "markdown":
+        if self.kind in {"markdown", "builtin"}:
             assert self.markdown_file is not None
             _validate_skill_markdown(skill_file=self.markdown_file, skill_name=self.name)
             return self.root_dir
@@ -39,7 +45,15 @@ def resolve_skill_bundle_source(
     *,
     repo_root: Path,
     skill_name: str,
+    builtins: RallyBuiltinAssets | None = None,
 ) -> SkillBundleSource:
+    if skill_name in RALLY_BUILTIN_SKILL_NAMES:
+        return _resolve_builtin_skill_source(
+            repo_root=repo_root,
+            skill_name=skill_name,
+            builtins=builtins,
+        )
+
     root_dir = repo_root / "skills" / skill_name
     if not root_dir.is_dir():
         raise RallyConfigError(f"Allowed skill does not exist: `{root_dir}`.")
@@ -72,6 +86,41 @@ def resolve_skill_bundle_source(
         root_dir=root_dir,
         markdown_file=None,
         doctrine_entrypoint=doctrine_entrypoint,
+    )
+
+
+def _resolve_builtin_skill_source(
+    *,
+    repo_root: Path,
+    skill_name: str,
+    builtins: RallyBuiltinAssets | None,
+) -> SkillBundleSource:
+    assets = builtins or resolve_rally_builtin_assets(workspace_root=repo_root)
+    repo_root = repo_root.resolve()
+    if assets.source_root is not None and repo_root == assets.source_root.resolve():
+        root_dir = repo_root / "skills" / skill_name
+        doctrine_entrypoint = root_dir / "prompts" / "SKILL.prompt"
+        if doctrine_entrypoint.is_file():
+            return SkillBundleSource(
+                name=skill_name,
+                kind="doctrine",
+                root_dir=root_dir,
+                markdown_file=None,
+                doctrine_entrypoint=doctrine_entrypoint,
+            )
+
+    reject_reserved_builtin_skill_shadow(
+        workspace_root=repo_root,
+        skill_names=(skill_name,),
+        builtins=assets,
+    )
+    runtime_dir = assets.skill_runtime_dir(skill_name)
+    return SkillBundleSource(
+        name=skill_name,
+        kind="builtin",
+        root_dir=runtime_dir,
+        markdown_file=runtime_dir / "SKILL.md",
+        doctrine_entrypoint=None,
     )
 
 

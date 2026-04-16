@@ -20,6 +20,45 @@ inputs PoemLoopInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
         shared.inputs.PoemDraftFile
 
 
+output schema PoemWriterTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Poem Writer Turn Result Schema"
+    inherit kind
+    inherit next_owner
+    inherit summary
+    inherit reason
+    inherit sleep_duration_seconds
+
+    field inspiration: "Inspiration"
+        type: string
+        optional
+        min_length: 1
+        note: "Short image, mood, or idea that shaped the draft."
+
+
+output shape PoemWriterTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Poem Writer Turn Result JSON"
+    inherit kind
+    override schema: PoemWriterTurnResultSchema
+
+    override field_notes: "Field Notes"
+        bullets rules:
+            "Always send all six keys."
+            "Use `null` for fields that do not apply."
+            "`kind` tells Rally what to do next."
+            "Use `handoff` with `next_owner`, `done` with `summary`, `blocker` with `reason`, and `sleep` with `reason` plus `sleep_duration_seconds`."
+            "If you set `next_owner`, use the flow owner key, not the display name."
+            "Set `inspiration` to one short phrase when you hand off a draft."
+            "Use `null` for `inspiration` when you block or sleep."
+
+
+output PoemWriterTurnResult[rally.turn_results.BaseRallyTurnResult]: "Poem Writer Turn Result"
+    inherit target
+    override shape: PoemWriterTurnResultJson
+    inherit requirement
+
+    inspiration: "Inspiration"
+        "Name one short image, mood, or idea that shaped the draft."
+        "Use `null` when you block or sleep."
+
+
 abstract agent PoemLoopRole[rally.base_agent.RallyManagedBaseAgent]:
     inherit rally_contract
     inherit read_first
@@ -48,9 +87,9 @@ agent PoemWriter[PoemLoopRole]:
             shared.outputs.PoemDraft
 
         turn_result: "Turn Result"
-            rally.turn_results.RallyTurnResult
+            PoemWriterTurnResult
     skills: rally.base_agent.RallyManagedSkills
-    final_output: rally.turn_results.RallyTurnResult
+    final_output: PoemWriterTurnResult
 
 
 review PoemReview: "Poem Review"

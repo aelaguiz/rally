@@ -101,14 +101,11 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-rally = ["_bundled/**/*"]
-
-[tool.setuptools.exclude-package-data]
-rally = [
-    "_bundled/**/__pycache__/*",
-    "_bundled/**/*.pyc",
-]
+[tool.setuptools.data-files]
+"rally_assets/stdlib/rally/prompts/rally" = ["stdlib/rally/prompts/rally/*.prompt"]
+"rally_assets/skills/rally-kernel" = ["skills/rally-kernel/build/SKILL.md"]
+"rally_assets/skills/rally-kernel/references" = ["skills/rally-kernel/build/references/*"]
+"rally_assets/skills/rally-memory" = ["skills/rally-memory/build/SKILL.md"]
 
 [dependency-groups]
 dev = [

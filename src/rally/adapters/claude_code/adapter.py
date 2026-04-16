@@ -29,6 +29,7 @@ from rally.domain.flow import FlowAgent, FlowDefinition
 from rally.domain.rooted_path import INTERNAL_PATH_ROOTS, expand_rooted_value
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError
+from rally.services.builtin_assets import resolve_rally_builtin_assets
 from rally.services.flow_env import build_flow_subprocess_env
 from rally.services.run_events import RunEventRecorder
 from rally.services.workspace import WorkspaceContext
@@ -653,6 +654,7 @@ def _expand_mcp_payload(
         workspace_root=workspace_root,
         flow_root=flow.root_dir,
         run_home=run_home,
+        stdlib_root=resolve_rally_builtin_assets(workspace_root=workspace_root).stdlib_root,
         allowed_roots=INTERNAL_PATH_ROOTS,
         context=context,
         example="home:repos/demo_repo",
