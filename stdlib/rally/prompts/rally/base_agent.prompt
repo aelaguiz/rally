@@ -9,6 +9,17 @@ output shape RallyEnvText: "Rally Env Text"
     kind: PlainText
 
 
+# This source is Rally-owned because it reopens one exact artifact from the
+# immediate previous turn through emitted `io` metadata.
+# Authors opt in case by case. Keep it out of `RallyManagedInputs` so the base
+# prompt does not load prior-turn data unless a flow asks for it.
+# The optional `output:` key lets a flow pick one exact previous emitted output.
+# When it is missing, Doctrine resolves the previous turn's exact final output.
+input source RallyPreviousTurnOutput: "Rally Previous Turn Output"
+    optional: "Optional Source Keys"
+        output: "Selected prior output declaration or output binding."
+
+
 input RallyWorkspaceDir: "Rally Workspace Dir"
     source: EnvVar
         env: "RALLY_WORKSPACE_DIR"

@@ -59,8 +59,9 @@ class FlowLoaderTests(unittest.TestCase):
 
         self.assertEqual(flow.name, "poem_loop")
         self.assertEqual(flow.code, "POM")
-        self.assertEqual(flow.start_agent_key, "01_poem_writer")
+        self.assertEqual(flow.start_agent_key, "00_muse")
         self.assertEqual(flow.max_command_turns, 20)
+        self.assertEqual(flow.agent("00_muse").slug, "muse")
         self.assertEqual(flow.agent("01_poem_writer").slug, "poem_writer")
         self.assertEqual(flow.agent("02_poem_critic").compiled.slug, "poem_critic")
         self.assertIsNone(flow.setup_home_script)
@@ -70,12 +71,40 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(dict(flow.runtime_env), {})
         self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
+            flow.agent("00_muse").compiled.final_output.generated_schema_file,
+            repo_root / "flows/poem_loop/build/agents/muse/schemas/muse_turn_result.schema.json",
+        )
+        self.assertEqual(
             flow.agent("01_poem_writer").compiled.final_output.generated_schema_file,
             repo_root / "flows/poem_loop/build/agents/poem_writer/schemas/poem_writer_turn_result.schema.json",
         )
         self.assertEqual(
             flow.agent("02_poem_critic").compiled.final_output.generated_schema_file,
             repo_root / "flows/poem_loop/build/agents/poem_critic/schemas/poem_review_final_response.schema.json",
+        )
+        self.assertTrue(flow.agent("00_muse").compiled.route.exists)
+        self.assertEqual(
+            flow.agent("00_muse").compiled.route.selector.field_path,
+            ("next_route",),
+        )
+        self.assertTrue(flow.agent("01_poem_writer").compiled.route.exists)
+        self.assertEqual(
+            flow.agent("01_poem_writer").compiled.route.selector.field_path,
+            ("next_route",),
+        )
+        self.assertEqual(len(flow.agent("00_muse").compiled.io.previous_turn_inputs), 1)
+        self.assertEqual(
+            flow.agent("00_muse").compiled.io.previous_turn_inputs[0].resolved_declaration_name,
+            "PoemReviewFinalResponse",
+        )
+        self.assertEqual(
+            flow.agent("00_muse").compiled.io.previous_turn_inputs[0].selector_kind,
+            "output_decl",
+        )
+        self.assertEqual(len(flow.agent("01_poem_writer").compiled.io.previous_turn_inputs), 1)
+        self.assertEqual(
+            flow.agent("01_poem_writer").compiled.io.previous_turn_inputs[0].resolved_declaration_name,
+            "MuseTurnResult",
         )
         self.assertIsNotNone(flow.agent("02_poem_critic").compiled.review)
         self.assertEqual(flow.agent("02_poem_critic").compiled.review.final_response.mode, "split")
@@ -88,10 +117,12 @@ class FlowLoaderTests(unittest.TestCase):
 
         self.assertEqual(flow.name, "poem_loop")
         self.assertEqual(flow.code, "POM")
-        self.assertEqual(flow.start_agent_key, "01_poem_writer")
+        self.assertEqual(flow.start_agent_key, "00_muse")
         self.assertEqual(flow.max_command_turns, 20)
+        self.assertEqual(flow.agent("00_muse").slug, "muse")
         self.assertEqual(flow.agent("01_poem_writer").slug, "poem_writer")
         self.assertEqual(flow.agent("02_poem_critic").slug, "poem_critic")
+        self.assertEqual(flow.agent("00_muse").allowed_skills, ())
         self.assertEqual(flow.agent("01_poem_writer").allowed_skills, ())
         self.assertEqual(flow.agent("02_poem_critic").allowed_mcps, ())
         self.assertIsNone(flow.setup_home_script)
@@ -101,6 +132,10 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertEqual(dict(flow.runtime_env), {})
         self.assertEqual(flow.guarded_git_repos, ())
         self.assertEqual(
+            flow.agent("00_muse").compiled.final_output.generated_schema_file,
+            repo_root / "flows/poem_loop/build/agents/muse/schemas/muse_turn_result.schema.json",
+        )
+        self.assertEqual(
             flow.agent("01_poem_writer").compiled.final_output.generated_schema_file,
             repo_root / "flows/poem_loop/build/agents/poem_writer/schemas/poem_writer_turn_result.schema.json",
         )
@@ -108,6 +143,101 @@ class FlowLoaderTests(unittest.TestCase):
             flow.agent("02_poem_critic").compiled.final_output.generated_schema_file,
             repo_root / "flows/poem_loop/build/agents/poem_critic/schemas/poem_review_final_response.schema.json",
         )
+
+    def test_load_flow_definition_loads_emitted_io_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                io_payload={
+                    "previous_turn_inputs": [
+                        {
+                            "input_key": "PreviousRepairPlan",
+                            "input_name": "Previous Repair Plan",
+                            "selector_kind": "output_binding",
+                            "selector_text": "scope_lead.ScopeLeadOutputs:repair_plan",
+                            "resolved_declaration_key": "RepairPlan",
+                            "resolved_declaration_name": "RepairPlan",
+                            "derived_contract_mode": "readable_text",
+                            "requirement": "Advisory",
+                            "target": {
+                                "key": "File",
+                                "title": "File",
+                                "config": {"path": "home:artifacts/repair_plan.md"},
+                            },
+                            "shape": {
+                                "name": "MarkdownDocument",
+                                "title": "Markdown Document",
+                            },
+                            "binding_path": ["repair_plan"],
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "declaration_key": "DemoTurnResult",
+                            "declaration_name": "DemoTurnResult",
+                            "title": "Demo Turn Result",
+                            "target": {
+                                "key": "TurnResponse",
+                                "title": "Turn Response",
+                                "config": {},
+                            },
+                            "derived_contract_mode": "structured_json",
+                            "readback_mode": "structured_json",
+                            "requires_final_output": True,
+                            "shape": {
+                                "name": "DemoTurnJson",
+                                "title": "Demo Turn JSON",
+                            },
+                            "schema": {
+                                "name": "DemoTurnSchema",
+                                "title": "Demo Turn Schema",
+                                "profile": "OpenAIStructuredOutput",
+                            },
+                        },
+                        {
+                            "declaration_key": "RepairPlan",
+                            "declaration_name": "RepairPlan",
+                            "title": "Repair Plan",
+                            "target": {
+                                "key": "File",
+                                "title": "File",
+                                "config": {"path": "home:artifacts/repair_plan.md"},
+                            },
+                            "derived_contract_mode": "readable_text",
+                            "readback_mode": "readable_text",
+                            "requires_final_output": False,
+                            "shape": {
+                                "name": "MarkdownDocument",
+                                "title": "Markdown Document",
+                            },
+                        },
+                    ],
+                    "output_bindings": [
+                        {
+                            "binding_path": ["turn_result"],
+                            "declaration_key": "DemoTurnResult",
+                        },
+                        {
+                            "binding_path": ["repair_plan"],
+                            "declaration_key": "RepairPlan",
+                        },
+                    ],
+                },
+            )
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            compiled = flow.agent("01_scope_lead").compiled
+            self.assertIsNotNone(compiled.io)
+            request = compiled.io.previous_turn_inputs[0]
+            self.assertEqual(request.selector_kind, "output_binding")
+            self.assertEqual(request.binding_path, ("repair_plan",))
+            self.assertEqual(request.target.key, "File")
+            self.assertEqual(request.target.config["path"], "home:artifacts/repair_plan.md")
+            self.assertEqual(compiled.io.outputs[1].declaration_key, "RepairPlan")
+            self.assertEqual(compiled.io.outputs[1].readback_mode, "readable_text")
+            self.assertEqual(compiled.io.output_bindings[1].binding_path, ("repair_plan",))
 
     def test_load_flow_definition_allows_compiler_owned_peer_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -329,14 +459,19 @@ class FlowLoaderTests(unittest.TestCase):
         repo_root = self.repo_root
 
         flow = load_flow_definition(repo_root=repo_root, flow_name="poem_loop")
+        muse_readback = flow.agent("00_muse").compiled.markdown_path.read_text(encoding="utf-8")
         writer_readback = flow.agent("01_poem_writer").compiled.markdown_path.read_text(encoding="utf-8")
         critic_readback = flow.agent("02_poem_critic").compiled.markdown_path.read_text(encoding="utf-8")
 
+        self.assertIn("### Previous Poem Review", muse_readback)
+        self.assertIn("### Muse Turn Result", muse_readback)
+        self.assertIn("one muse, one writer, one critic", muse_readback)
         self.assertIn("## Skills", writer_readback)
         self.assertIn("### rally-kernel", writer_readback)
         self.assertNotIn("### rally-memory", writer_readback)
         self.assertIn("### Saved Run Note", writer_readback)
         self.assertNotIn("\n### Writer Issue Note\n", writer_readback)
+        self.assertIn("### Previous Muse Turn", writer_readback)
         self.assertIn("### Issue Ledger", writer_readback)
         self.assertNotIn("### Rally Workspace Dir", writer_readback)
         self.assertNotIn("### Rally Run ID", writer_readback)
@@ -368,6 +503,7 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertIn("### Poem Review Response", critic_readback)
         self.assertIn("#### Review Summary", critic_readback)
         self.assertIn("#### Findings First", critic_readback)
+        self.assertIn("Use Muse when the poem needs another draft.", critic_readback)
         self.assertNotIn("### Rally Turn Result", critic_readback)
         self.assertIn("### Poem Review Final Response", critic_readback)
         self.assertIn("This final response is control-ready. A host may read it as the review outcome.", critic_readback)
@@ -395,6 +531,26 @@ class FlowLoaderTests(unittest.TestCase):
             "| `current_artifact` | string | Yes | Yes | Current artifact path when the smoke test closes out. |",
             closeout_readback,
         )
+
+    def test_stdlib_smoke_route_repair_emits_previous_turn_input_metadata(self) -> None:
+        repo_root = self.repo_root
+
+        metadata = json.loads(
+            (repo_root / "flows/_stdlib_smoke/build/agents/route_repair/final_output.contract.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        route_repair_readback = (repo_root / "flows/_stdlib_smoke/build/agents/route_repair/AGENTS.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertEqual(len(metadata["io"]["previous_turn_inputs"]), 1)
+        previous_input = metadata["io"]["previous_turn_inputs"][0]
+        self.assertEqual(previous_input["selector_kind"], "default_final_output")
+        self.assertEqual(previous_input["resolved_declaration_key"], "PlanAuthorTurnResult")
+        self.assertEqual(previous_input["derived_contract_mode"], "structured_json")
+        self.assertIn("### Previous Plan Author Turn", route_repair_readback)
+        self.assertIn("Exact previous final output", route_repair_readback)
 
     def test_stdlib_smoke_review_probe_uses_split_final_output_on_shared_review_family(self) -> None:
         repo_root = self.repo_root
@@ -478,7 +634,10 @@ class FlowLoaderTests(unittest.TestCase):
             repo_root = Path(temp_dir).resolve()
             self._write_fixture_repo(repo_root=repo_root, include_next_owner=False)
 
-            with self.assertRaisesRegex(RallyConfigError, "must require .*next_owner"):
+            with self.assertRaisesRegex(
+                RallyConfigError,
+                "route selector field `next_owner`|missing route selector field `next_owner`",
+            ):
                 load_flow_definition(repo_root=repo_root, flow_name="demo")
 
     def test_load_flow_definition_rejects_missing_max_command_turns(self) -> None:
@@ -603,6 +762,7 @@ class FlowLoaderTests(unittest.TestCase):
         host_inputs_yaml: str = "",
         runtime_env_yaml: str = "",
         extra_required_fields: tuple[str, ...] = (),
+        io_payload: dict[str, object] | None = None,
     ) -> None:
         flow_root = repo_root / "flows" / "demo"
         build_root = flow_root / "build" / "agents" / "scope_lead"
@@ -642,27 +802,56 @@ class FlowLoaderTests(unittest.TestCase):
         (flow_root / "setup" / "prepare_home.sh").write_text("#!/bin/sh\n", encoding="utf-8")
         (prompts_root / "AGENTS.prompt").write_text("agent ScopeLead:\n", encoding="utf-8")
         (build_root / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
-        (build_root / "final_output.contract.json").write_text(
-            json.dumps(
-                {
-                    "contract_version": contract_version,
-                    "agent": {
-                        "name": "ScopeLead",
-                        "slug": "scope_lead",
-                        "entrypoint": "flows/demo/prompts/AGENTS.prompt",
-                    },
-                    "final_output": {
-                        "exists": True,
-                        "declaration_key": "DemoTurnResult",
-                        "declaration_name": "DemoTurnResult",
-                        "format_mode": "json_object",
-                        "schema_profile": "OpenAIStructuredOutput",
-                        "emitted_schema_relpath": emitted_schema_relpath,
-                    },
+        contract_payload: dict[str, object] = {
+            "contract_version": contract_version,
+            "agent": {
+                "name": "ScopeLead",
+                "slug": "scope_lead",
+                "entrypoint": "flows/demo/prompts/AGENTS.prompt",
+            },
+            "final_output": {
+                "exists": True,
+                "declaration_key": "DemoTurnResult",
+                "declaration_name": "DemoTurnResult",
+                "format_mode": "json_object",
+                "schema_profile": "OpenAIStructuredOutput",
+                "emitted_schema_relpath": emitted_schema_relpath,
+            },
+            "route": {
+                "exists": True,
+                "behavior": "conditional",
+                "has_unrouted_branch": True,
+                "unrouted_review_verdicts": [],
+                "selector": {
+                    "surface": "final_output",
+                    "field_path": ["next_owner"],
+                    "null_behavior": "no_route",
                 },
-                indent=2,
-            )
-            + "\n",
+                "branches": [
+                    {
+                        "target": {
+                            "key": "change_engineer",
+                            "module_parts": [],
+                            "name": "ChangeEngineer",
+                            "title": "Change Engineer",
+                        },
+                        "label": "Send the change to ChangeEngineer.",
+                        "summary": "Send the change to ChangeEngineer. Next owner: change_engineer.",
+                        "choice_members": [
+                            {
+                                "member_key": "change_engineer",
+                                "member_title": "Change Engineer",
+                                "member_wire": "change_engineer",
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+        if io_payload is not None:
+            contract_payload["io"] = io_payload
+        (build_root / "final_output.contract.json").write_text(
+            json.dumps(contract_payload, indent=2) + "\n",
             encoding="utf-8",
         )
 

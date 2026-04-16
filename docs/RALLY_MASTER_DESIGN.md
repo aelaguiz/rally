@@ -257,21 +257,22 @@ They may carry flat string note fields when later turns need stable labels.
 The structured final turn result is the only turn-ending control surface.
 It tells Rally whether to route, stop, block, or ask for sleep.
 Rally copies that full final JSON into the matching `Rally Turn Result` block.
-The classic shared JSON carries five Rally control keys:
+The shared producer base carries four common Rally control keys:
 
 - `kind`
-- `next_owner`
 - `summary`
 - `reason`
 - `sleep_duration_seconds`
 
-Fields that do not apply are `null` on the classic shared shape.
-Flow-specific producer outputs may inherit that base shape and add extra
-Doctrine-owned readback keys. Rally still reads only the five control keys for
-route, done, blocker, and sleep behavior.
-Review-native turns may use control-ready Doctrine review JSON instead of the
-control-key object.
-If the result uses `kind: handoff`, that is only the label of the route-to-next-owner branch in the classic shared result.
+Fields that do not apply are `null` on the shared base shape.
+Flow-specific producer outputs inherit that base shape, add a typed route field
+such as `next_route`, and let Doctrine emit the real route selector metadata in
+`final_output.contract.json`.
+Rally reads producer handoffs from that emitted route metadata, not from a
+payload `next_owner` copy.
+Review-native turns still use control-ready Doctrine review JSON and may carry
+`next_owner` there because Doctrine review routing is still review-owned.
+If the result uses `kind: handoff`, that is only the routed handoff mode.
 Rally now keeps running across handoffs inside one `run` or `resume`
 command until it reaches a real stop point.
 Sleep requests are recorded, then blocked, until true sleep support lands.
@@ -668,7 +669,7 @@ These notes are still useful, but they no longer need to dominate the doc.
 - One semantic ledger plus minimal rebuildable sidecars is the right v1 center of gravity.
 - There should be no DB as source of truth in v1.
 - `home/issue.md` is the only agent-to-agent communication layer.
-- Only `AGENTS.md` is formalized as Rally's runtime instruction contract; other emitted artifacts may exist, but they are compiler-owned readback rather than Rally-authored workflow law.
+- `AGENTS.md` is the main instruction readback. When Doctrine emits previous-turn input requests, Rally also appends one generated `previous_turn_inputs.md` appendix for that turn.
 - Canonical numbered agent keys are identity, not execution order.
 - Sessions should stay per agent and per run, and resume should be delta-oriented rather than a fresh-world reinjection.
 - The renderer should be history-backed from structured logs, not just a dumb tail of stdout.

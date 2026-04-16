@@ -33,6 +33,7 @@ from rally.services.issue_editor import (
     resolve_interactive_issue_editor,
 )
 from rally.services.issue_ledger import append_issue_edit_diff, append_issue_event, load_original_issue_text
+from rally.services.previous_turn_inputs import render_previous_turn_appendix
 from rally.services.run_events import EventConsumer, RunEventRecorder
 from rally.services.run_store import (
     archive_run,
@@ -784,6 +785,7 @@ def _execute_single_turn(
         agent=agent,
         recorder=recorder,
         turn_index=turn_index,
+        previous_turn_inputs_file=artifacts.previous_turn_inputs_file,
     )
 
     invocation = adapter.invoke(
@@ -1124,11 +1126,27 @@ def _build_agent_prompt(
     agent: FlowAgent,
     recorder: RunEventRecorder,
     turn_index: int,
+    previous_turn_inputs_file: Path,
 ) -> str:
-    # Rally injects only `AGENTS.md`. Any peer files in the compiled package
-    # remain compiler-owned artifacts that authored instructions may open.
+    # Rally keeps compiler-owned prompt text as the base, then appends one
+    # deterministic previous-turn appendix when the emitted `io` contract asks
+    # for it. There is no second prompt layer and no prose summarizer here.
     compiled_markdown = (run_home / "agents" / agent.slug / "AGENTS.md").read_text(encoding="utf-8").rstrip()
-    return compiled_markdown + "\n"
+    previous_turn_appendix = render_previous_turn_appendix(
+        workspace_root=workspace.workspace_root,
+        run_home=run_home,
+        flow=flow,
+        agent=agent,
+        turn_index=turn_index,
+    ).rstrip()
+    previous_turn_inputs_file.parent.mkdir(parents=True, exist_ok=True)
+    previous_turn_inputs_file.write_text(
+        previous_turn_appendix + ("\n" if previous_turn_appendix else ""),
+        encoding="utf-8",
+    )
+    if not previous_turn_appendix:
+        return compiled_markdown + "\n"
+    return compiled_markdown + "\n\n" + previous_turn_appendix + "\n"
 
 
 @dataclass(frozen=True)
@@ -1469,12 +1487,15 @@ def _resolve_next_agent(*, flow: FlowDefinition, next_owner: str) -> FlowAgent:
     try:
         return flow.agent_by_slug(next_owner)
     except KeyError:
-        try:
-            return flow.agent(next_owner)
-        except KeyError as exc:
-            raise RallyStateError(
-                f"Turn result handed off to unknown owner `{next_owner}`."
-            ) from exc
+        pass
+    try:
+        return flow.agent(next_owner)
+    except KeyError:
+        pass
+    for agent in flow.agents.values():
+        if agent.compiled.name == next_owner:
+            return agent
+    raise RallyStateError(f"Turn result handed off to unknown owner `{next_owner}`.")
 
 
 def _render_status_message(*, run_record: RunRecord, state: RunState, turn_result: TurnResult) -> str:

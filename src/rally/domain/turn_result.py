@@ -51,10 +51,15 @@ class SleepTurnResult:
 TurnResult = HandoffTurnResult | DoneTurnResult | BlockerTurnResult | SleepTurnResult
 
 
-def parse_turn_result(payload: Mapping[str, object]) -> TurnResult:
+def parse_turn_result(
+    payload: Mapping[str, object],
+    *,
+    handoff_next_owner: str | None = None,
+) -> TurnResult:
     kind = payload.get("kind")
     if kind == TurnResultKind.HANDOFF:
-        return HandoffTurnResult(next_owner=_require_string(payload, "next_owner"))
+        next_owner = handoff_next_owner if handoff_next_owner is not None else _require_string(payload, "next_owner")
+        return HandoffTurnResult(next_owner=next_owner)
     if kind == TurnResultKind.DONE:
         return DoneTurnResult(summary=_require_string(payload, "summary"))
     if kind == TurnResultKind.BLOCKER:

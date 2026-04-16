@@ -15,10 +15,20 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from rally.domain.flow import AdapterConfig, CompiledAgentContract, FinalOutputContract, FlowAgent, FlowDefinition, FlowHostInputs
+from rally.domain.flow import (
+    AdapterConfig,
+    CompiledAgentContract,
+    FinalOutputContract,
+    FlowAgent,
+    FlowDefinition,
+    FlowHostInputs,
+    IoContract,
+    PreviousTurnInputContract,
+)
 from rally.domain.run import ResumeRequest, RunRecord, RunRequest, RunStatus
 from rally.errors import RallyConfigError, RallyUsageError
 from rally.services.flow_build import ensure_flow_assets_built as build_flow_assets
+from rally.services.flow_loader import _load_compiled_agent_contract
 from rally.services.issue_editor import IssueEditorResult
 from rally.services.issue_ledger import ORIGINAL_ISSUE_END_MARKER
 from rally.services.run_events import RunEventRecorder
@@ -110,9 +120,299 @@ class RunnerTests(unittest.TestCase):
                 agent=agent,
                 recorder=recorder,
                 turn_index=1,
+                previous_turn_inputs_file=run_home / "sessions" / "demo_agent" / "turn-001" / "previous_turn_inputs.md",
             )
 
             self.assertEqual(prompt, "# Demo Agent\n\nRead the ledger.\n")
+            self.assertEqual(
+                (run_home / "sessions" / "demo_agent" / "turn-001" / "previous_turn_inputs.md").read_text(
+                    encoding="utf-8"
+                ),
+                "",
+            )
+
+    def test_build_agent_prompt_appends_previous_turn_inputs_and_saves_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            for directory_name in ("flows", "skills", "mcps", "stdlib", "runs"):
+                (repo_root / directory_name).mkdir(parents=True, exist_ok=True)
+            (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally-test'\n", encoding="utf-8")
+
+            run_dir = repo_root / "runs" / "active" / "DMO-1"
+            run_home = run_dir / "home"
+            current_markdown = run_home / "agents" / "reader_agent" / "AGENTS.md"
+            current_markdown.parent.mkdir(parents=True, exist_ok=True)
+            current_markdown.write_text("# Reader Agent\n\nRead the ledger.\n", encoding="utf-8")
+
+            previous_turn_dir = run_home / "sessions" / "source_agent" / "turn-001"
+            previous_turn_dir.mkdir(parents=True, exist_ok=True)
+            (previous_turn_dir / "last_message.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "done",
+                        "summary": "ready",
+                        "reason": None,
+                        "sleep_duration_seconds": None,
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            workspace = workspace_context_from_root(repo_root)
+            previous_agent = FlowAgent(
+                key="01_source_agent",
+                slug="source_agent",
+                timeout_sec=60,
+                allowed_skills=(),
+                allowed_mcps=(),
+                compiled=CompiledAgentContract(
+                    name="SourceAgent",
+                    slug="source_agent",
+                    entrypoint=repo_root / "flows" / "demo" / "prompts" / "source_agent.prompt",
+                    markdown_path=run_home / "agents" / "source_agent" / "AGENTS.md",
+                    metadata_file=repo_root
+                    / "flows"
+                    / "demo"
+                    / "build"
+                    / "agents"
+                    / "source_agent"
+                    / "final_output.contract.json",
+                    contract_version=1,
+                    final_output=FinalOutputContract(
+                        exists=True,
+                        contract_version=1,
+                        declaration_key="SharedTurnResult",
+                        declaration_name="SharedTurnResult",
+                        format_mode="json_object",
+                        schema_profile="OpenAIStructuredOutput",
+                        generated_schema_file=repo_root / "flows" / "demo" / "build" / "agents" / "source_agent" / "schema.json",
+                        metadata_file=repo_root
+                        / "flows"
+                        / "demo"
+                        / "build"
+                        / "agents"
+                        / "source_agent"
+                        / "final_output.contract.json",
+                    ),
+                ),
+            )
+            current_agent = FlowAgent(
+                key="02_reader_agent",
+                slug="reader_agent",
+                timeout_sec=60,
+                allowed_skills=(),
+                allowed_mcps=(),
+                compiled=CompiledAgentContract(
+                    name="ReaderAgent",
+                    slug="reader_agent",
+                    entrypoint=repo_root / "flows" / "demo" / "prompts" / "reader_agent.prompt",
+                    markdown_path=current_markdown,
+                    metadata_file=repo_root
+                    / "flows"
+                    / "demo"
+                    / "build"
+                    / "agents"
+                    / "reader_agent"
+                    / "final_output.contract.json",
+                    contract_version=1,
+                    final_output=FinalOutputContract(
+                        exists=True,
+                        contract_version=1,
+                        declaration_key="ReaderTurnResult",
+                        declaration_name="ReaderTurnResult",
+                        format_mode="json_object",
+                        schema_profile="OpenAIStructuredOutput",
+                        generated_schema_file=repo_root / "flows" / "demo" / "build" / "agents" / "reader_agent" / "schema.json",
+                        metadata_file=repo_root
+                        / "flows"
+                        / "demo"
+                        / "build"
+                        / "agents"
+                        / "reader_agent"
+                        / "final_output.contract.json",
+                    ),
+                    io=IoContract(
+                        previous_turn_inputs=(
+                            PreviousTurnInputContract(
+                                input_key="PreviousTurnResult",
+                                input_name="Previous Turn Result",
+                                selector_kind="default_final_output",
+                                selector_text="Exact previous final output",
+                                resolved_declaration_key="SharedTurnResult",
+                                resolved_declaration_name="SharedTurnResult",
+                                derived_contract_mode="structured_json",
+                                requirement="Advisory",
+                            ),
+                        ),
+                        outputs=(),
+                        output_bindings=(),
+                    ),
+                ),
+            )
+            flow = FlowDefinition(
+                name="demo",
+                code="DMO",
+                root_dir=repo_root / "flows" / "demo",
+                flow_file=repo_root / "flows" / "demo" / "flow.yaml",
+                build_agents_dir=repo_root / "flows" / "demo" / "build" / "agents",
+                setup_home_script=None,
+                start_agent_key="01_source_agent",
+                max_command_turns=8,
+                guarded_git_repos=(),
+                runtime_env={},
+                host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
+                agents={
+                    previous_agent.key: previous_agent,
+                    current_agent.key: current_agent,
+                },
+                adapter=AdapterConfig(name="codex", args={}),
+            )
+            run_record = RunRecord(
+                id="DMO-1",
+                flow_name="demo",
+                flow_code="DMO",
+                adapter_name="codex",
+                start_agent_key="01_source_agent",
+                created_at="2026-04-15T00:00:00Z",
+            )
+            recorder = RunEventRecorder(run_dir=run_dir, run_id="DMO-1", flow_code="DMO")
+            previous_turn_inputs_file = run_home / "sessions" / "reader_agent" / "turn-002" / "previous_turn_inputs.md"
+
+            prompt = _build_agent_prompt(
+                workspace=workspace,
+                run_home=run_home,
+                flow=flow,
+                run_record=run_record,
+                agent=current_agent,
+                recorder=recorder,
+                turn_index=2,
+                previous_turn_inputs_file=previous_turn_inputs_file,
+            )
+
+            appendix = previous_turn_inputs_file.read_text(encoding="utf-8")
+            self.assertEqual(
+                prompt,
+                "# Reader Agent\n\nRead the ledger.\n\n" + appendix,
+            )
+            self.assertIn("## Previous Turn Inputs", appendix)
+            self.assertIn('"summary": "ready"', appendix)
+
+    def test_build_agent_prompt_injects_previous_json_for_stdlib_smoke_route_repair(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sandbox_root = Path(temp_dir).resolve()
+            for directory_name in ("flows", "skills", "mcps", "stdlib", "runs"):
+                (sandbox_root / directory_name).mkdir(parents=True, exist_ok=True)
+            (sandbox_root / "pyproject.toml").write_text("[project]\nname = 'rally-test'\n", encoding="utf-8")
+
+            run_dir = sandbox_root / "runs" / "active" / "DMO-1"
+            run_home = run_dir / "home"
+
+            build_root = repo_root / "flows" / "_stdlib_smoke" / "build" / "agents"
+            route_repair_dir = build_root / "route_repair"
+            plan_author_dir = build_root / "plan_author"
+
+            route_repair_markdown = run_home / "agents" / "route_repair" / "AGENTS.md"
+            route_repair_markdown.parent.mkdir(parents=True, exist_ok=True)
+            route_repair_markdown.write_text(
+                (route_repair_dir / "AGENTS.md").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+            route_repair_compiled = _load_compiled_agent_contract(
+                repo_root=repo_root,
+                agent_dir=route_repair_dir,
+                markdown_path=route_repair_dir / "AGENTS.md",
+                metadata_file=route_repair_dir / "final_output.contract.json",
+            )
+            plan_author_compiled = _load_compiled_agent_contract(
+                repo_root=repo_root,
+                agent_dir=plan_author_dir,
+                markdown_path=plan_author_dir / "AGENTS.md",
+                metadata_file=plan_author_dir / "final_output.contract.json",
+            )
+            route_repair_agent = FlowAgent(
+                key="02_route_repair",
+                slug="route_repair",
+                timeout_sec=60,
+                allowed_skills=(),
+                allowed_mcps=(),
+                compiled=replace(route_repair_compiled, markdown_path=route_repair_markdown),
+            )
+            plan_author_agent = FlowAgent(
+                key="01_plan_author",
+                slug="plan_author",
+                timeout_sec=60,
+                allowed_skills=(),
+                allowed_mcps=(),
+                compiled=plan_author_compiled,
+            )
+            flow = FlowDefinition(
+                name="_stdlib_smoke",
+                code="DMO",
+                root_dir=repo_root / "flows" / "_stdlib_smoke",
+                flow_file=repo_root / "flows" / "_stdlib_smoke" / "flow.yaml",
+                build_agents_dir=build_root,
+                setup_home_script=None,
+                start_agent_key="01_plan_author",
+                max_command_turns=8,
+                guarded_git_repos=(),
+                runtime_env={},
+                host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
+                agents={
+                    plan_author_agent.key: plan_author_agent,
+                    route_repair_agent.key: route_repair_agent,
+                },
+                adapter=AdapterConfig(name="codex", args={}),
+            )
+            previous_turn_dir = run_home / "sessions" / "plan_author" / "turn-001"
+            previous_turn_dir.mkdir(parents=True, exist_ok=True)
+            (previous_turn_dir / "last_message.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "handoff",
+                        "next_route": "route_repair",
+                        "summary": None,
+                        "reason": None,
+                        "sleep_duration_seconds": None,
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            workspace = workspace_context_from_root(sandbox_root)
+            run_record = RunRecord(
+                id="DMO-1",
+                flow_name="_stdlib_smoke",
+                flow_code="DMO",
+                adapter_name="codex",
+                start_agent_key="01_plan_author",
+                created_at="2026-04-15T00:00:00Z",
+            )
+            recorder = RunEventRecorder(run_dir=run_dir, run_id="DMO-1", flow_code="DMO")
+            previous_turn_inputs_file = run_home / "sessions" / "route_repair" / "turn-002" / "previous_turn_inputs.md"
+
+            prompt = _build_agent_prompt(
+                workspace=workspace,
+                run_home=run_home,
+                flow=flow,
+                run_record=run_record,
+                agent=route_repair_agent,
+                recorder=recorder,
+                turn_index=2,
+                previous_turn_inputs_file=previous_turn_inputs_file,
+            )
+
+            appendix = previous_turn_inputs_file.read_text(encoding="utf-8")
+            self.assertIn("### PreviousPlanAuthorTurn", appendix)
+            self.assertIn('"kind": "handoff"', appendix)
+            self.assertIn('"next_route": "route_repair"', appendix)
+            self.assertIn("## Previous Turn Inputs", prompt)
 
     def test_run_flow_creates_pending_run_until_issue_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -766,14 +1066,29 @@ class RunnerTests(unittest.TestCase):
                         "thread_id": "session-poem-1",
                         "last_message": {
                             "kind": "handoff",
-                            "next_owner": "poem_critic",
+                            "next_route": "poem_writer",
                             "summary": None,
                             "reason": None,
                             "sleep_duration_seconds": None,
+                            "poem_type": "sonnet",
+                            "subject": "moon",
+                            "creative_direction": "Make the moon feel close, tidal, and silver.",
+                            "revision_goal": "Give the draft one strong night image.",
                         },
                     },
                     {
                         "thread_id": "session-poem-2",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_route": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                            "inspiration": "silver tide",
+                        },
+                    },
+                    {
+                        "thread_id": "session-poem-3",
                         "last_message": {
                             "verdict": "accept",
                             "reviewed_artifact": "home:artifacts/poem.md",
@@ -807,7 +1122,10 @@ class RunnerTests(unittest.TestCase):
 
             run_dir = find_run_dir(repo_root=repo_root, run_id="POM-1")
             issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
-            prompt_text = fake_run.calls[0]["kwargs"]["input"]
+            prompt_text = fake_run.calls[1]["kwargs"]["input"]
+            previous_turn_inputs = (
+                run_dir / "home" / "sessions" / "poem_writer" / "turn-002" / "previous_turn_inputs.md"
+            ).read_text(encoding="utf-8")
 
             self.assertEqual(result.run_id, "POM-1")
             self.assertEqual(result.status, RunStatus.DONE)
@@ -841,6 +1159,10 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("The poem is ready to keep as written.", issue_text)
             self.assertIn("```json\n{\n  \"verdict\": \"accept\"", issue_text)
             self.assertIn('"reviewed_artifact": "home:artifacts/poem.md"', issue_text)
+            self.assertIn("## Previous Turn Inputs", prompt_text)
+            self.assertIn("### PreviousMuseTurn", prompt_text)
+            self.assertIn('"poem_type": "sonnet"', previous_turn_inputs)
+            self.assertIn('"subject": "moon"', previous_turn_inputs)
 
     def test_resume_run_rebuilds_flow_and_stdlib_prompt_sources_before_next_turn(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -873,10 +1195,14 @@ class RunnerTests(unittest.TestCase):
                         "thread_id": "session-poem-1",
                         "last_message": {
                             "kind": "handoff",
-                            "next_owner": "poem_critic",
+                            "next_route": "poem_writer",
                             "summary": None,
                             "reason": None,
                             "sleep_duration_seconds": None,
+                            "poem_type": "sonnet",
+                            "subject": "moon",
+                            "creative_direction": "Keep the moon close and tidal.",
+                            "revision_goal": "Make the imagery more vivid.",
                         },
                     }
                 ]
@@ -905,14 +1231,14 @@ class RunnerTests(unittest.TestCase):
 
             run_dir = find_run_dir(repo_root=repo_root, run_id="POM-1")
             self.assertEqual(first_result.status, RunStatus.BLOCKED)
-            self.assertEqual(first_result.current_agent_key, "02_poem_critic")
+            self.assertEqual(first_result.current_agent_key, "01_poem_writer")
 
-            flow_prompt_path = repo_root / "flows" / "poem_loop" / "prompts" / "roles" / "poem_critic.prompt"
-            flow_prompt_marker = "Call out the anchor image before the verdict."
+            flow_prompt_path = repo_root / "flows" / "poem_loop" / "prompts" / "roles" / "poem_writer.prompt"
+            flow_prompt_marker = "Keep one image line sharper than the rest."
             flow_prompt_path.write_text(
                 flow_prompt_path.read_text(encoding="utf-8").replace(
-                    '    "Accept only when you would be glad to hand the poem back as finished."\n',
-                    '    "Accept only when you would be glad to hand the poem back as finished."\n'
+                    '    "A strong draft gives the critic one clear thing to judge: the poem itself."\n',
+                    '    "A strong draft gives the critic one clear thing to judge: the poem itself."\n'
                     f'    "{flow_prompt_marker}"\n',
                 ),
                 encoding="utf-8",
@@ -934,10 +1260,12 @@ class RunnerTests(unittest.TestCase):
                     {
                         "thread_id": "session-poem-2",
                         "last_message": {
-                            "verdict": "accept",
-                            "reviewed_artifact": "home:artifacts/poem.md",
-                            "analysis_performed": "The sonnet keeps its moon focus, the images stay clear, and the draft now feels finished.",
-                            "findings_first": "The poem is ready to keep as written.",
+                            "kind": "handoff",
+                            "next_route": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                            "inspiration": "silver tide",
                         },
                     }
                 ]
@@ -958,19 +1286,21 @@ class RunnerTests(unittest.TestCase):
 
             prompt_text = second_turn.calls[0]["kwargs"]["input"]
             repo_readback = (
-                repo_root / "flows" / "poem_loop" / "build" / "agents" / "poem_critic" / "AGENTS.md"
+                repo_root / "flows" / "poem_loop" / "build" / "agents" / "poem_writer" / "AGENTS.md"
             ).read_text(encoding="utf-8")
-            run_home_readback = (run_dir / "home" / "agents" / "poem_critic" / "AGENTS.md").read_text(encoding="utf-8")
+            run_home_readback = (run_dir / "home" / "agents" / "poem_writer" / "AGENTS.md").read_text(encoding="utf-8")
 
             # Prompt source is the shipped truth. A resume must rebuild prompt
             # source edits and send that updated text on the very next turn.
-            self.assertEqual(second_result.status, RunStatus.DONE)
+            self.assertEqual(second_result.status, RunStatus.BLOCKED)
+            self.assertEqual(second_result.current_agent_key, "02_poem_critic")
             self.assertIn(flow_prompt_marker, prompt_text)
             self.assertIn(stdlib_prompt_marker, prompt_text)
             self.assertIn(flow_prompt_marker, repo_readback)
             self.assertIn(stdlib_prompt_marker, repo_readback)
             self.assertIn(flow_prompt_marker, run_home_readback)
             self.assertIn(stdlib_prompt_marker, run_home_readback)
+            self.assertIn("### PreviousMuseTurn", prompt_text)
 
     def test_run_flow_materializes_builtin_skills_without_workspace_copies(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1424,7 +1754,7 @@ class RunnerTests(unittest.TestCase):
                     "Line 3 lands. Line 2 still needs a sharper image before this poem is ready."
                 ),
                 "current_artifact": "home:artifacts/poem.md",
-                "next_owner": "poem_writer",
+                "next_owner": "muse",
                 "failure_detail": {
                     "blocked_gate": None,
                     "failing_gates": [
@@ -1438,23 +1768,38 @@ class RunnerTests(unittest.TestCase):
                         "session_id": "claude-poem-1",
                         "structured_output": {
                             "kind": "handoff",
-                            "next_owner": "poem_critic",
+                            "next_route": "poem_writer",
                             "summary": None,
                             "reason": None,
                             "sleep_duration_seconds": None,
+                            "poem_type": "haiku",
+                            "subject": "being stranded in interstellar space",
+                            "creative_direction": "Use cold emptiness and one sharp machine detail.",
+                            "revision_goal": "Make the middle line feel stranded instead of explained.",
                         },
                     },
                     {
                         "session_id": "claude-poem-2",
+                        "structured_output": {
+                            "kind": "handoff",
+                            "next_route": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                            "inspiration": "cold antenna",
+                        },
+                    },
+                    {
+                        "session_id": "claude-poem-3",
                         "stdout_lines": [
                             {
                                 "type": "system",
                                 "subtype": "init",
-                                "session_id": "claude-poem-2",
+                                "session_id": "claude-poem-3",
                             },
                             {
                                 "type": "assistant",
-                                "session_id": "claude-poem-2",
+                                "session_id": "claude-poem-3",
                                 "message": {
                                     "content": [
                                         {
@@ -1466,7 +1811,7 @@ class RunnerTests(unittest.TestCase):
                             },
                             {
                                 "type": "result",
-                                "session_id": "claude-poem-2",
+                                "session_id": "claude-poem-3",
                                 "usage": {
                                     "input_tokens": 5,
                                     "output_tokens": 13,
@@ -1481,13 +1826,37 @@ class RunnerTests(unittest.TestCase):
                         ],
                     },
                     {
-                        "session_id": "claude-poem-3",
+                        "session_id": "claude-poem-4",
                         "structured_output": {
-                            "kind": "done",
-                            "next_owner": None,
-                            "summary": "revised poem ready",
+                            "kind": "handoff",
+                            "next_route": "poem_writer",
+                            "summary": None,
                             "reason": None,
                             "sleep_duration_seconds": None,
+                            "poem_type": "haiku",
+                            "subject": "being stranded in interstellar space",
+                            "creative_direction": "Keep the last line, but make the middle line a sharper image.",
+                            "revision_goal": "Replace explanation with one concrete image of stranding.",
+                        },
+                    },
+                    {
+                        "session_id": "claude-poem-5",
+                        "structured_output": {
+                            "kind": "handoff",
+                            "next_route": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                            "inspiration": "radio frost",
+                        },
+                    },
+                    {
+                        "session_id": "claude-poem-6",
+                        "structured_output": {
+                            "verdict": "accept",
+                            "reviewed_artifact": "home:artifacts/poem.md",
+                            "analysis_performed": "The revision keeps the strong last line and the middle line now shows the stranding with a concrete image.",
+                            "findings_first": "The poem is ready to keep as written.",
                         },
                     },
                 ]
@@ -1518,26 +1887,36 @@ class RunnerTests(unittest.TestCase):
             state = load_run_state(run_dir=run_dir)
             issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
             critic_last_message = json.loads(
-                (run_dir / "home" / "sessions" / "poem_critic" / "turn-002" / "last_message.json").read_text(
+                (run_dir / "home" / "sessions" / "poem_critic" / "turn-003" / "last_message.json").read_text(
                     encoding="utf-8"
                 )
             )
+            muse_previous_inputs = (
+                run_dir / "home" / "sessions" / "muse" / "turn-004" / "previous_turn_inputs.md"
+            ).read_text(encoding="utf-8")
+            writer_previous_inputs = (
+                run_dir / "home" / "sessions" / "poem_writer" / "turn-005" / "previous_turn_inputs.md"
+            ).read_text(encoding="utf-8")
 
             self.assertEqual(result.status, RunStatus.DONE)
-            self.assertEqual(state.turn_index, 3)
+            self.assertEqual(state.turn_index, 6)
             self.assertEqual(critic_last_message["verdict"], "changes_requested")
-            self.assertEqual(critic_last_message["next_owner"], "poem_writer")
-            self.assertTrue((run_dir / "logs" / "adapter_launch" / "turn-003-poem_writer.json").is_file())
+            self.assertEqual(critic_last_message["next_owner"], "muse")
+            self.assertTrue((run_dir / "logs" / "adapter_launch" / "turn-004-muse.json").is_file())
             # The single turn-result block should keep the route visible without
             # forcing the next reader to open the JSON payload first.
             self.assertIn("Review Verdict: `changes_requested`", issue_text)
-            self.assertIn("Next Owner: `poem_writer`", issue_text)
+            self.assertIn("Next Owner: `muse`", issue_text)
             self.assertIn("Findings First: Line 3 lands. Line 2 still needs a sharper image", issue_text)
             self.assertIn("Line 3 lands. Line 2 still needs a sharper image", issue_text)
             self.assertIn("Middle line explains rather than shows the stranding.", issue_text)
             self.assertIn("```json\n{\n  \"verdict\": \"changes_requested\"", issue_text)
             self.assertIn('"failure_detail": {', issue_text)
             self.assertIn('"failing_gates": [', issue_text)
+            self.assertIn("### PreviousPoemReview", muse_previous_inputs)
+            self.assertIn('"next_owner": "muse"', muse_previous_inputs)
+            self.assertIn("### PreviousMuseTurn", writer_previous_inputs)
+            self.assertIn('"revision_goal": "Replace explanation with one concrete image of stranding."', writer_previous_inputs)
 
     def test_poem_loop_review_blocker_keeps_blocked_gate_in_turn_result_summary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1554,14 +1933,29 @@ class RunnerTests(unittest.TestCase):
                         "thread_id": "session-poem-1",
                         "last_message": {
                             "kind": "handoff",
-                            "next_owner": "poem_critic",
+                            "next_route": "poem_writer",
                             "summary": None,
                             "reason": None,
                             "sleep_duration_seconds": None,
+                            "poem_type": "sonnet",
+                            "subject": "moon",
+                            "creative_direction": "Make the moon feel close and tidal.",
+                            "revision_goal": "Give the draft one sharp image.",
                         },
                     },
                     {
                         "thread_id": "session-poem-2",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_route": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                            "inspiration": "silver tide",
+                        },
+                    },
+                    {
+                        "thread_id": "session-poem-3",
                         "last_message": {
                             "verdict": "changes_requested",
                             "reviewed_artifact": "home:artifacts/poem.md",
@@ -1605,6 +1999,7 @@ class RunnerTests(unittest.TestCase):
 
             self.assertEqual(result.status, RunStatus.BLOCKED)
             self.assertEqual(state.status, RunStatus.BLOCKED)
+            self.assertEqual(state.turn_index, 3)
             # The one runtime-owned record still needs the blocker reason in the
             # summary lines so later readers can see why work stopped at a glance.
             self.assertIn("Review Verdict: `changes_requested`", issue_text)
@@ -3971,6 +4366,36 @@ class RunnerTests(unittest.TestCase):
                         "format_mode": "json_object",
                         "schema_profile": "OpenAIStructuredOutput",
                         "emitted_schema_relpath": "schemas/rally_turn_result.schema.json",
+                    },
+                    "route": {
+                        "exists": True,
+                        "behavior": "conditional",
+                        "has_unrouted_branch": True,
+                        "unrouted_review_verdicts": [],
+                        "selector": {
+                            "surface": "final_output",
+                            "field_path": ["next_owner"],
+                            "null_behavior": "no_route",
+                        },
+                        "branches": [
+                            {
+                                "target": {
+                                    "key": "change_engineer" if slug == "scope_lead" else "scope_lead",
+                                    "module_parts": [],
+                                    "name": "ChangeEngineer" if slug == "scope_lead" else "ScopeLead",
+                                    "title": "Change Engineer" if slug == "scope_lead" else "Scope Lead",
+                                },
+                                "label": "Synthetic test route.",
+                                "summary": "Synthetic test route.",
+                                "choice_members": [
+                                    {
+                                        "member_key": "change_engineer" if slug == "scope_lead" else "scope_lead",
+                                        "member_title": "Change Engineer" if slug == "scope_lead" else "Scope Lead",
+                                        "member_wire": "change_engineer" if slug == "scope_lead" else "scope_lead",
+                                    }
+                                ],
+                            }
+                        ],
                     },
                 },
                 indent=2,

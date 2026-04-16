@@ -10,54 +10,50 @@ output schema BaseRallyReviewSchema: "Base Rally Review Schema"
         enum:
             accept
             changes_requested
-        required
         note: "Review verdict."
 
     field reviewed_artifact: "Reviewed Artifact"
         type: string
-        required
         min_length: 1
         note: "Artifact the review judged."
 
     field analysis_performed: "Analysis Performed"
         type: string
-        required
         min_length: 1
         note: "Short review summary."
 
     field findings_first: "Findings First"
         type: string
-        required
         min_length: 1
         note: "Main finding and next move."
 
     field current_artifact: "Current Artifact"
         type: string
-        optional
+        nullable
         min_length: 1
         note: "Current artifact path when the work still stands."
 
     field next_owner: "Next Owner"
         type: string
-        optional
+        nullable
         min_length: 1
         note: "Next owner key when the review routes."
 
     field failure_detail: "Failure Detail"
         type: object
-        optional
+        nullable
         note: "Blocked or rejected review details."
 
         field blocked_gate: "Blocked Gate"
             type: string
-            optional
+            nullable
             min_length: 1
             note: "Blocking reason when review could not start."
 
         field failing_gates: "Failing Gates"
             type: array
             items: string
-            optional
+            nullable
             min_items: 1
             note: "Exact failing review gates in authored order."
 

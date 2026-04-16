@@ -25,16 +25,23 @@ Rally uses one simple communication model:
 
 - notes for context
 - one final JSON result for control
+- one optional generated previous-turn appendix for readback only when the
+  compiled contract asks for prior outputs
 
 There is no separate handoff artifact.
 There is no second return path.
 The final JSON still ends the turn through one shared final-response path after
 adapter execution.
-Many turns use one flat object with five Rally control keys.
-Producer outputs may add Doctrine-owned readback keys to that object.
+Many producer turns use the shared Rally base result plus a flow-local route
+field.
+Producer routing comes from Doctrine route metadata in
+`final_output.contract.json`.
 Review-native turns may use control-ready Doctrine review JSON instead.
 Rally also copies that full final JSON into the matching `Rally Turn Result`
 block in `home:issue.md`.
+When Doctrine emits `io.previous_turn_inputs`, Rally also renders one
+`## Previous Turn Inputs` appendix from the exact prior turn artifacts and
+injects it beside `AGENTS.md`. That appendix is context only, not control.
 
 # Shipped Rules
 
@@ -44,13 +51,15 @@ block in `home:issue.md`.
 - The shared read-first path is `"$RALLY_CLI_BIN" issue current --run-id "$RALLY_RUN_ID"`.
 - Rally injects `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`.
 - A flow may also add extra startup and launch env vars through `runtime.env` in `flow.yaml`.
-- `rally.turn_results` is the classic shared five-control-key JSON.
-- Flow producer outputs may inherit that base JSON and add extra schema-owned
-  readback keys.
+- `rally.turn_results` is the shared producer base JSON.
+- Flow producer outputs may inherit that base JSON, add a route field, and let
+  Doctrine emit the route selector metadata Rally will read.
 - Review-native turns may declare a different final JSON when Doctrine emits control-ready review metadata.
 - Notes keep context only. Notes never carry `next_owner`, `done`, `blocker`, or `sleep` truth.
 - Notes may carry flat string fields such as `kind=...` or `lane=...` when later turns need stable labels.
 - Rally, not the agent, adds the turn number to in-turn note blocks.
+- Rally writes `previous_turn_inputs.md` under the current turn only when the
+  compiled contract asks for previous-turn readback.
 
 # Shipped Surfaces
 
@@ -96,6 +105,8 @@ The proof path is:
 - rebuild the affected flows with the paired Doctrine compiler into `flows/*/build/agents/*`
 - inspect emitted `AGENTS.md`, emitted schema files under `schemas/`, and
   `final_output.contract.json`
+- inspect `home/sessions/<agent>/turn-<n>/previous_turn_inputs.md` when the
+  flow uses previous-turn inputs
 - run the focused Rally unit tests for note writes, shared launch-env setup,
   flow loading, and turn-result parsing
 

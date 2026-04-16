@@ -12,11 +12,23 @@ from rally.adapters.registry import get_adapter
 from rally.domain.flow import (
     AdapterConfig,
     CompiledAgentContract,
+    EmittedOutputContract,
     FieldPath,
     FinalOutputContract,
     FlowAgent,
     FlowDefinition,
     FlowHostInputs,
+    IoContract,
+    IoSchemaContract,
+    IoShapeContract,
+    IoTargetContract,
+    OutputBindingContract,
+    PreviousTurnInputContract,
+    RouteBranchContract,
+    RouteChoiceMemberContract,
+    RouteContract,
+    RouteSelectorContract,
+    RouteTargetContract,
     ReviewContract,
     ReviewFinalResponseContract,
     ReviewOutcomeContract,
@@ -325,9 +337,11 @@ def _load_compiled_agent_contract(
         generated_schema_file=generated_schema_file,
         metadata_file=metadata_file,
     )
+    route = _load_route_contract(payload=payload, contract_path=metadata_file)
+    io = _load_io_contract(payload=payload, contract_path=metadata_file)
     review = _load_review_contract(payload=payload, contract_path=metadata_file)
     if review is None:
-        _validate_turn_result_schema(generated_schema_file)
+        _validate_turn_result_schema(schema_file=generated_schema_file, route=route, slug=slug)
     else:
         _validate_review_native_contract(
             slug=slug,
@@ -348,11 +362,13 @@ def _load_compiled_agent_contract(
         metadata_file=metadata_file,
         contract_version=contract_version,
         final_output=final_output,
+        io=io,
+        route=route,
         review=review,
     )
 
 
-def _validate_turn_result_schema(schema_file: Path) -> None:
+def _validate_turn_result_schema(*, schema_file: Path, route: RouteContract | None, slug: str) -> None:
     payload = _load_json_mapping(schema_file)
     properties = payload.get("properties")
     required = payload.get("required")
@@ -360,7 +376,7 @@ def _validate_turn_result_schema(schema_file: Path) -> None:
         raise RallyConfigError(
             f"Turn-result schema `{schema_file}` must declare object properties and required fields."
         )
-    expected_fields = {"kind", "next_owner", "summary", "reason", "sleep_duration_seconds"}
+    expected_fields = {"kind", "summary", "reason", "sleep_duration_seconds"}
     missing_required_fields = expected_fields - set(required)
     if missing_required_fields:
         raise RallyConfigError(
@@ -371,6 +387,56 @@ def _validate_turn_result_schema(schema_file: Path) -> None:
         raise RallyConfigError(
             f"Turn-result schema `{schema_file}` must define properties {missing_property_fields}."
         )
+    if route is not None and route.exists:
+        if route.selector is None:
+            raise RallyConfigError(
+                f"Compiled producer agent `{slug}` routes work but `{schema_file}` has no emitted `route.selector` truth."
+            )
+        _validate_selector_field_path(
+            schema_file=schema_file,
+            properties=properties,
+            required=required,
+            selector=route.selector,
+        )
+
+
+def _validate_selector_field_path(
+    *,
+    schema_file: Path,
+    properties: Mapping[str, Any],
+    required: list[object],
+    selector: RouteSelectorContract,
+) -> None:
+    if selector.surface != "final_output":
+        raise RallyConfigError(
+            f"Turn-result schema `{schema_file}` uses unsupported route selector surface `{selector.surface}`."
+        )
+    current_properties = properties
+    current_required = set(item for item in required if isinstance(item, str))
+    for index, part in enumerate(selector.field_path):
+        if part not in current_properties:
+            raise RallyConfigError(
+                f"Turn-result schema `{schema_file}` is missing route selector field `{'.'.join(selector.field_path)}`."
+            )
+        if part not in current_required:
+            raise RallyConfigError(
+                f"Turn-result schema `{schema_file}` must require route selector field `{'.'.join(selector.field_path)}`."
+            )
+        field_payload = current_properties[part]
+        if index == len(selector.field_path) - 1:
+            return
+        if not isinstance(field_payload, Mapping):
+            raise RallyConfigError(
+                f"Turn-result schema `{schema_file}` cannot descend into route selector field `{'.'.join(selector.field_path)}`."
+            )
+        nested_properties = field_payload.get("properties")
+        nested_required = field_payload.get("required")
+        if not isinstance(nested_properties, Mapping) or not isinstance(nested_required, list):
+            raise RallyConfigError(
+                f"Turn-result schema `{schema_file}` route selector field `{'.'.join(selector.field_path)}` must stay inside nested object properties."
+            )
+        current_properties = nested_properties
+        current_required = set(item for item in nested_required if isinstance(item, str))
 
 
 def _validate_review_native_contract(
@@ -504,6 +570,397 @@ def _iter_review_outcomes(
     return tuple(pairs)
 
 
+def _load_route_contract(
+    *,
+    payload: Mapping[str, Any],
+    contract_path: Path,
+) -> RouteContract | None:
+    raw_route = payload.get("route")
+    if raw_route is None:
+        return None
+    route_payload = _require_mapping(payload, "route", context=str(contract_path))
+    selector_payload = route_payload.get("selector")
+    selector = None
+    if selector_payload is not None:
+        selector_mapping = _require_mapping(route_payload, "selector", context=f"{contract_path} route")
+        selector = RouteSelectorContract(
+            surface=_require_string(selector_mapping, "surface", context=f"{contract_path} route.selector"),
+            field_path=_require_field_path_list(
+                selector_mapping,
+                "field_path",
+                context=f"{contract_path} route.selector",
+            ),
+            null_behavior=_require_string(
+                selector_mapping,
+                "null_behavior",
+                context=f"{contract_path} route.selector",
+            ),
+        )
+
+    return RouteContract(
+        exists=_require_bool(route_payload, "exists", context=f"{contract_path} route"),
+        behavior=_require_string(route_payload, "behavior", context=f"{contract_path} route"),
+        has_unrouted_branch=_require_bool(
+            route_payload,
+            "has_unrouted_branch",
+            context=f"{contract_path} route",
+        ),
+        unrouted_review_verdicts=_require_string_list(
+            route_payload,
+            "unrouted_review_verdicts",
+            context=f"{contract_path} route",
+        ),
+        branches=_load_route_branches(route_payload=route_payload, contract_path=contract_path),
+        selector=selector,
+    )
+
+
+def _load_io_contract(
+    *,
+    payload: Mapping[str, Any],
+    contract_path: Path,
+) -> IoContract | None:
+    raw_io = payload.get("io")
+    if raw_io is None:
+        return None
+    io_payload = _require_mapping(payload, "io", context=str(contract_path))
+    return IoContract(
+        previous_turn_inputs=_load_previous_turn_inputs(io_payload=io_payload, contract_path=contract_path),
+        outputs=_load_io_outputs(io_payload=io_payload, contract_path=contract_path),
+        output_bindings=_load_output_bindings(io_payload=io_payload, contract_path=contract_path),
+    )
+
+
+def _load_previous_turn_inputs(
+    *,
+    io_payload: Mapping[str, Any],
+    contract_path: Path,
+) -> tuple[PreviousTurnInputContract, ...]:
+    raw_inputs = io_payload.get("previous_turn_inputs")
+    if not isinstance(raw_inputs, list):
+        raise RallyConfigError(f"`previous_turn_inputs` must be a list in `{contract_path}` io.")
+    inputs: list[PreviousTurnInputContract] = []
+    for index, raw_input in enumerate(raw_inputs):
+        input_payload = _require_mapping_value(
+            raw_input,
+            context=f"{contract_path} io.previous_turn_inputs[{index}]",
+        )
+        inputs.append(
+            PreviousTurnInputContract(
+                input_key=_require_string(
+                    input_payload,
+                    "input_key",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                input_name=_require_string(
+                    input_payload,
+                    "input_name",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                selector_kind=_require_string(
+                    input_payload,
+                    "selector_kind",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                selector_text=_require_string(
+                    input_payload,
+                    "selector_text",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                resolved_declaration_key=_require_optional_string(
+                    input_payload,
+                    "resolved_declaration_key",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                resolved_declaration_name=_require_optional_string(
+                    input_payload,
+                    "resolved_declaration_name",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                derived_contract_mode=_require_string(
+                    input_payload,
+                    "derived_contract_mode",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                requirement=_require_string(
+                    input_payload,
+                    "requirement",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                target=_load_optional_io_target(
+                    payload=input_payload,
+                    key="target",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                shape=_load_optional_io_shape(
+                    payload=input_payload,
+                    key="shape",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                schema=_load_optional_io_schema(
+                    payload=input_payload,
+                    key="schema",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                binding_path=_load_optional_field_path_list(
+                    payload=input_payload,
+                    key="binding_path",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+            )
+        )
+    return tuple(inputs)
+
+
+def _load_io_outputs(
+    *,
+    io_payload: Mapping[str, Any],
+    contract_path: Path,
+) -> tuple[EmittedOutputContract, ...]:
+    raw_outputs = io_payload.get("outputs")
+    if not isinstance(raw_outputs, list):
+        raise RallyConfigError(f"`outputs` must be a list in `{contract_path}` io.")
+    outputs: list[EmittedOutputContract] = []
+    for index, raw_output in enumerate(raw_outputs):
+        output_payload = _require_mapping_value(
+            raw_output,
+            context=f"{contract_path} io.outputs[{index}]",
+        )
+        outputs.append(
+            EmittedOutputContract(
+                declaration_key=_require_string(
+                    output_payload,
+                    "declaration_key",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                declaration_name=_require_string(
+                    output_payload,
+                    "declaration_name",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                title=_require_string(
+                    output_payload,
+                    "title",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                target=_load_required_io_target(
+                    payload=output_payload,
+                    key="target",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                derived_contract_mode=_require_string(
+                    output_payload,
+                    "derived_contract_mode",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                readback_mode=_require_string(
+                    output_payload,
+                    "readback_mode",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                requires_final_output=_require_bool(
+                    output_payload,
+                    "requires_final_output",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                shape=_load_optional_io_shape(
+                    payload=output_payload,
+                    key="shape",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                schema=_load_optional_io_schema(
+                    payload=output_payload,
+                    key="schema",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+            )
+        )
+    return tuple(outputs)
+
+
+def _load_output_bindings(
+    *,
+    io_payload: Mapping[str, Any],
+    contract_path: Path,
+) -> tuple[OutputBindingContract, ...]:
+    raw_bindings = io_payload.get("output_bindings")
+    if not isinstance(raw_bindings, list):
+        raise RallyConfigError(f"`output_bindings` must be a list in `{contract_path}` io.")
+    bindings: list[OutputBindingContract] = []
+    for index, raw_binding in enumerate(raw_bindings):
+        binding_payload = _require_mapping_value(
+            raw_binding,
+            context=f"{contract_path} io.output_bindings[{index}]",
+        )
+        bindings.append(
+            OutputBindingContract(
+                binding_path=_require_field_path_list(
+                    binding_payload,
+                    "binding_path",
+                    context=f"{contract_path} io.output_bindings[{index}]",
+                ),
+                declaration_key=_require_string(
+                    binding_payload,
+                    "declaration_key",
+                    context=f"{contract_path} io.output_bindings[{index}]",
+                ),
+            )
+        )
+    return tuple(bindings)
+
+
+def _load_required_io_target(
+    *,
+    payload: Mapping[str, Any],
+    key: str,
+    context: str,
+) -> IoTargetContract:
+    target = _load_optional_io_target(payload=payload, key=key, context=context)
+    if target is None:
+        raise RallyConfigError(f"`{key}` must be a mapping in {context}.")
+    return target
+
+
+def _load_optional_io_target(
+    *,
+    payload: Mapping[str, Any],
+    key: str,
+    context: str,
+) -> IoTargetContract | None:
+    raw_target = payload.get(key)
+    if raw_target is None:
+        return None
+    target_payload = _require_mapping(payload, key, context=context)
+    config_payload = _require_mapping(target_payload, "config", context=f"{context}.{key}")
+    return IoTargetContract(
+        key=_require_string(target_payload, "key", context=f"{context}.{key}"),
+        title=_require_string(target_payload, "title", context=f"{context}.{key}"),
+        config=dict(config_payload),
+    )
+
+
+def _load_optional_io_shape(
+    *,
+    payload: Mapping[str, Any],
+    key: str,
+    context: str,
+) -> IoShapeContract | None:
+    raw_shape = payload.get(key)
+    if raw_shape is None:
+        return None
+    shape_payload = _require_mapping(payload, key, context=context)
+    return IoShapeContract(
+        name=_require_string(shape_payload, "name", context=f"{context}.{key}"),
+        title=_require_string(shape_payload, "title", context=f"{context}.{key}"),
+    )
+
+
+def _load_optional_io_schema(
+    *,
+    payload: Mapping[str, Any],
+    key: str,
+    context: str,
+) -> IoSchemaContract | None:
+    raw_schema = payload.get(key)
+    if raw_schema is None:
+        return None
+    schema_payload = _require_mapping(payload, key, context=context)
+    return IoSchemaContract(
+        name=_require_string(schema_payload, "name", context=f"{context}.{key}"),
+        title=_require_string(schema_payload, "title", context=f"{context}.{key}"),
+        profile=_require_string(schema_payload, "profile", context=f"{context}.{key}"),
+    )
+
+
+def _load_route_branches(
+    *,
+    route_payload: Mapping[str, Any],
+    contract_path: Path,
+) -> tuple[RouteBranchContract, ...]:
+    raw_branches = route_payload.get("branches")
+    if not isinstance(raw_branches, list):
+        raise RallyConfigError(f"`branches` must be a list in `{contract_path}` route.")
+    branches: list[RouteBranchContract] = []
+    for index, raw_branch in enumerate(raw_branches):
+        branch_payload = _require_mapping_value(
+            raw_branch,
+            context=f"{contract_path} route.branches[{index}]",
+        )
+        target_payload = _require_mapping(
+            branch_payload,
+            "target",
+            context=f"{contract_path} route.branches[{index}]",
+        )
+        choice_members_payload = branch_payload.get("choice_members")
+        if not isinstance(choice_members_payload, list):
+            raise RallyConfigError(
+                f"`choice_members` must be a list in `{contract_path}` route.branches[{index}]."
+            )
+        choice_members: list[RouteChoiceMemberContract] = []
+        for member_index, raw_member in enumerate(choice_members_payload):
+            member_payload = _require_mapping_value(
+                raw_member,
+                context=f"{contract_path} route.branches[{index}].choice_members[{member_index}]",
+            )
+            choice_members.append(
+                RouteChoiceMemberContract(
+                    member_key=_require_string(
+                        member_payload,
+                        "member_key",
+                        context=f"{contract_path} route.branches[{index}].choice_members[{member_index}]",
+                    ),
+                    member_title=_require_string(
+                        member_payload,
+                        "member_title",
+                        context=f"{contract_path} route.branches[{index}].choice_members[{member_index}]",
+                    ),
+                    member_wire=_require_string(
+                        member_payload,
+                        "member_wire",
+                        context=f"{contract_path} route.branches[{index}].choice_members[{member_index}]",
+                    ),
+                )
+            )
+        branches.append(
+            RouteBranchContract(
+                target=RouteTargetContract(
+                    key=_require_string(
+                        target_payload,
+                        "key",
+                        context=f"{contract_path} route.branches[{index}].target",
+                    ),
+                    name=_require_string(
+                        target_payload,
+                        "name",
+                        context=f"{contract_path} route.branches[{index}].target",
+                    ),
+                    title=_require_string(
+                        target_payload,
+                        "title",
+                        context=f"{contract_path} route.branches[{index}].target",
+                    ),
+                    module_parts=_require_string_list(
+                        target_payload,
+                        "module_parts",
+                        context=f"{contract_path} route.branches[{index}].target",
+                    ),
+                ),
+                label=_require_string(
+                    branch_payload,
+                    "label",
+                    context=f"{contract_path} route.branches[{index}]",
+                ),
+                summary=_require_string(
+                    branch_payload,
+                    "summary",
+                    context=f"{contract_path} route.branches[{index}]",
+                ),
+                choice_members=tuple(choice_members),
+            )
+        )
+    return tuple(branches)
+
+
 def _require_field_paths(
     payload: Mapping[str, Any],
     key: str,
@@ -522,6 +979,34 @@ def _require_field_paths(
             raise RallyConfigError(f"`{key}.{field_name}` in {context} must not contain empty path parts.")
         paths[field_name] = parts
     return paths
+
+
+def _require_field_path_list(
+    payload: Mapping[str, Any],
+    key: str,
+    *,
+    context: str,
+) -> FieldPath:
+    value = payload.get(key)
+    if not isinstance(value, list) or not value:
+        raise RallyConfigError(f"`{key}` must be a non-empty string list in {context}.")
+    parts: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item:
+            raise RallyConfigError(f"`{key}[{index}]` must be a non-empty string in {context}.")
+        parts.append(item)
+    return tuple(parts)
+
+
+def _load_optional_field_path_list(
+    *,
+    payload: Mapping[str, Any],
+    key: str,
+    context: str,
+) -> FieldPath | None:
+    if payload.get(key) is None:
+        return None
+    return _require_field_path_list(payload, key, context=context)
 
 
 def _load_yaml_mapping(path: Path) -> Mapping[str, Any]:

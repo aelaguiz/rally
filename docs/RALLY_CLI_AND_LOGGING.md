@@ -431,6 +431,8 @@ claude -p \
 The runtime also:
 
 - injects the refreshed run-home `AGENTS.md` readback directly on stdin
+- appends the generated previous-turn appendix on stdin when the compiled
+  contract asks for prior outputs
 - merges optional flow `runtime.env` values before startup host-input checks,
   setup, and adapter launch
 - keeps Codex project-doc discovery off inside the adapter
@@ -474,6 +476,8 @@ What exists today:
 - `home/sessions/<agent>/turn-<n>/exec.jsonl`
 - `home/sessions/<agent>/turn-<n>/stderr.log`
 - `home/sessions/<agent>/turn-<n>/last_message.json`
+- `home/sessions/<agent>/turn-<n>/previous_turn_inputs.md` when the turn used
+  previous-turn readback
 
 What does not exist yet:
 

@@ -56,14 +56,16 @@ What ships today:
   compiled agent packages
 - flow loading plus compiled agent-package checks:
   the required runtime pair `AGENTS.md` plus `final_output.contract.json`,
-  plus emitted schema files referenced by that contract
+  plus emitted schema files and additive `io` metadata referenced by that
+  contract
 - one shared adapter boundary under `src/rally/adapters/base.py` and
   `src/rally/adapters/registry.py`
 - supported adapters: `codex` and `claude_code`
 - one active run per flow with a flow lock
 - shared issue-first home prep plus adapter-owned bootstrap refresh on every
   start or resume
-- one shared prompt path
+- one shared prompt assembly path: `AGENTS.md` plus an optional generated
+  previous-turn appendix when the compiled contract asks for it
 - one shared final JSON path at `last_message.json`
 - shared session-artifact paths under `home/sessions/<agent>/`
 - shared launch proof under `logs/adapter_launch/`
@@ -140,7 +142,10 @@ What is not shipped yet:
 - Review-native turns may use control-ready Doctrine review JSON instead.
 - all four memory commands are visible Rally events.
 - agent-run memory commands should render as memory rows, not generic shell rows.
-- `AGENTS.md` is injected instruction readback only.
+- `AGENTS.md` is the main injected instruction readback.
+- When the compiled contract emits `io.previous_turn_inputs`, Rally also injects
+  one generated `## Previous Turn Inputs` appendix built from exact prior turn
+  artifacts.
 - `final_output.contract.json` is the compiler-owned metadata file Rally loads.
 - Emitted schema files under `schemas/` are the payload wire contract.
 - Other files in the compiled package stay compiler-owned peer artifacts.
@@ -164,9 +169,15 @@ The current checked-in runtime surface is:
   - treats each `build/agents/<slug>/` directory as one compiled agent package
   - requires `AGENTS.md`, emitted schema files, and
     `final_output.contract.json`
+  - loads emitted route selector metadata and emitted `io.previous_turn_inputs`
   - validates flow codes, `runtime.max_command_turns`, `runtime.env`,
     `runtime.guarded_git_repos`, and the shared turn-result schema
   - carries the compiled slug forward as the source-of-truth agent identity after validation
+- `src/rally/services/previous_turn_inputs.py`
+  - resolves exact previous-turn inputs from emitted `io` metadata plus the
+    prior turn artifacts
+  - keeps structured previous outputs as JSON and readable outputs as text
+  - fails loud on unsupported note-backed reopen or contract mismatches
 - `src/rally/services/skill_bundles.py`
   - resolves markdown skill roots from `SKILL.md`
   - resolves Doctrine skill roots from `prompts/SKILL.prompt`
@@ -269,6 +280,8 @@ The current checked-in runtime surface is:
   agents
   - wires run creation, resume, adapter launch, guarded-repo checks, result handling, state writes, and
     issue/event logging
+  - appends the generated previous-turn appendix to the prompt when the
+    compiled contract asks for prior outputs
   - validates `run --from-file` before archive or run creation, then copies
     that text into the new run's `home/issue.md`
   - lets a blocked run retry after `resume --edit` saves a non-empty issue
@@ -297,7 +310,7 @@ The current checked-in runtime surface is:
 The live smoke now proves two real paths:
 
 - the full `poem_loop` loop:
-  `poem_writer -> poem_critic -> poem_writer -> done`
+  `muse -> poem_writer -> poem_critic -> muse -> poem_writer -> poem_critic -> done`
 - the full `software_engineering_demo` loop:
   `architect -> architect_reviewer -> developer -> developer_reviewer -> qa_docs_tester -> qa_reviewer`
 

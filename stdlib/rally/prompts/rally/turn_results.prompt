@@ -1,8 +1,10 @@
 # Keep the shared control core in one base family so flows can extend it
 # without cloning field meaning.
 
-# Base schema: the fields Rally reads to control the next turn.
-# Flows inherit from this when they need the same control JSON plus local fields.
+# Base schema: the shared producer control fields Rally reads on every turn.
+# A flow that can hand off must add its own `route field` and bind it with
+# `final_output.route:`. That keeps route member names flow-owned and lets
+# Rally route from Doctrine's emitted contract instead of a copied payload key.
 output schema BaseRallyTurnResultSchema: "Base Rally Turn Result Schema"
     field kind: "Kind"
         type: string
@@ -11,30 +13,23 @@ output schema BaseRallyTurnResultSchema: "Base Rally Turn Result Schema"
             done
             blocker
             sleep
-        required
         note: "Turn result kind."
-
-    field next_owner: "Next Owner"
-        type: string
-        optional
-        min_length: 1
-        note: "Flow owner key when `kind` is `handoff`."
 
     field summary: "Summary"
         type: string
-        optional
+        nullable
         min_length: 1
         note: "Short summary when `kind` is `done`."
 
     field reason: "Reason"
         type: string
-        optional
+        nullable
         min_length: 1
         note: "Reason when `kind` is `blocker` or `sleep`."
 
     field sleep_duration_seconds: "Sleep Duration Seconds"
         type: integer
-        optional
+        nullable
         minimum: 1
         note: "Seconds to wait when `kind` is `sleep`."
 
@@ -44,7 +39,6 @@ output schema BaseRallyTurnResultSchema: "Base Rally Turn Result Schema"
 # same base and override only the parts they own.
 output schema RallyTurnResultSchema[BaseRallyTurnResultSchema]: "Rally Turn Result Schema"
     inherit kind
-    inherit next_owner
     inherit summary
     inherit reason
     inherit sleep_duration_seconds
@@ -62,8 +56,10 @@ output shape BaseRallyTurnResultJson: "Base Rally Turn Result JSON"
             "Always send every field in this schema."
             "Use `null` for fields that do not apply."
             "`kind` tells Rally what to do next."
-            "Use `handoff` with `next_owner`, `done` with `summary`, `blocker` with `reason`, and `sleep` with `reason` plus `sleep_duration_seconds`."
-            "If you set `next_owner`, use the flow owner key, not the display name."
+            "Use `done` with `summary`, `blocker` with `reason`, and `sleep` with `reason` plus `sleep_duration_seconds`."
+            "If this flow can hand off, add a flow-owned `route field` on the concrete schema."
+            "Bind that route field with `final_output.route:` on the agent."
+            "Use `handoff` only when that flow-owned route field selects a branch."
 
 
 # Concrete shape: same JSON kind and notes, with the concrete schema swapped in.

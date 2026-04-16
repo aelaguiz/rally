@@ -1,7 +1,11 @@
 name: poem_loop
 code: POM
-start_agent: 01_poem_writer
+start_agent: 00_muse
 agents:
+  00_muse:
+    timeout_sec: 1200
+    allowed_skills: []
+    allowed_mcps: []
   01_poem_writer:
     timeout_sec: 1200
     allowed_skills: []

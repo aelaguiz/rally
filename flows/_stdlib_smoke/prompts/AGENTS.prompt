@@ -3,11 +3,6 @@ import rally.review_results
 import rally.turn_results
 
 
-enum SmokeRoute: "Smoke Route"
-    closeout: "Closeout"
-    retry: "Retry"
-
-
 input WorkBrief: "Work Brief"
     source: Prompt
     shape: MarkdownDocument
@@ -20,6 +15,12 @@ input RoutingFacts: "Routing Facts"
     shape: JsonObject
     requirement: Required
     "Use the routing facts that say whether the smoke test needs one more step."
+
+
+input PreviousPlanAuthorTurn: "Previous Plan Author Turn"
+    source: rally.base_agent.RallyPreviousTurnOutput
+    requirement: Advisory
+    "Use the exact previous PlanAuthor turn JSON when RouteRepair receives a handoff."
 
 
 input RepairPlanReviewFile: "Repair Plan Review File"
@@ -39,52 +40,97 @@ output RepairPlan: "Repair Plan"
     "Write the repair plan to `home:artifacts/repair_plan.md`."
 
 
-output PlanAuthorTurnResult: "Plan Author Turn Result"
-    target: TurnResponse
-    shape: rally.turn_results.RallyTurnResultJson
-    requirement: Required
+output schema PlanAuthorTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Plan Author Turn Result Schema"
+    route field next_route: "Next Route"
+        route_repair: "Send the smoke test to RouteRepair." -> RouteRepair
+        nullable
+        note: "Use null when PlanAuthor can finish the smoke test here."
 
-    kind: "handoff" when route.exists
-    next_owner: route.next_owner.key when route.exists
-
-    kind: "done" when route.exists == false
-    summary: "Write one short closeout summary." when route.exists == false
-
-
-output RouteRepairDecision: "Route Repair Decision"
-    target: TurnResponse
-    shape: Comment
-    requirement: Required
-
-    route_choice: "Route Choice"
-        "Use `closeout` to finish the smoke test and `retry` to send it back for one more pass."
+    inherit kind
+    inherit summary
+    inherit reason
+    inherit sleep_duration_seconds
 
 
-output RouteRepairTurnResult: "Route Repair Turn Result"
-    target: TurnResponse
-    shape: rally.turn_results.RallyTurnResultJson
-    requirement: Required
+output shape PlanAuthorTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Plan Author Turn Result JSON"
+    inherit kind
+    override schema: PlanAuthorTurnResultSchema
 
-    kind: "handoff"
-    next_owner: route.next_owner.key
+    override field_notes: "Field Notes"
+        bullets rules:
+            "Always send every field in this schema."
+            "Use `null` for fields that do not apply."
+            "`kind` tells Rally what to do next."
+            "Use `handoff` only when `next_route` is `route_repair`."
+            "Use `done` with `summary` when `next_route` is null."
+            "Use `null` for `next_route` when you block or sleep."
+
+
+output PlanAuthorTurnResult[rally.turn_results.BaseRallyTurnResult]: "Plan Author Turn Result"
+    inherit target
+    override shape: PlanAuthorTurnResultJson
+    inherit requirement
+
+    next_route: "Next Route" when route.exists
+        "Use `route_repair` when the smoke test needs one more step."
+
+    no_route: "No Route" when route.exists == false
+        "Use null for `next_route` when this turn can finish here."
+
+    summary: "Summary" when route.exists == false
+        "Write one short closeout summary."
+
+
+output schema RouteRepairTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Route Repair Turn Result Schema"
+    route field next_route: "Next Route"
+        closeout: "Send the smoke test to Closeout." -> Closeout
+        retry: "Send the smoke test back to PlanAuthor." -> PlanAuthor
+        nullable
+        note: "Use null only when RouteRepair must block or sleep."
+
+    inherit kind
+    inherit summary
+    inherit reason
+    inherit sleep_duration_seconds
+
+
+output shape RouteRepairTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Route Repair Turn Result JSON"
+    inherit kind
+    override schema: RouteRepairTurnResultSchema
+
+    override field_notes: "Field Notes"
+        bullets rules:
+            "Always send every field in this schema."
+            "Use `null` for fields that do not apply."
+            "`kind` tells Rally what to do next."
+            "Use `handoff` when `next_route` is `closeout` or `retry`."
+            "Use null for `next_route` only when you block or sleep."
+
+
+output RouteRepairTurnResult[rally.turn_results.BaseRallyTurnResult]: "Route Repair Turn Result"
+    inherit target
+    override shape: RouteRepairTurnResultJson
+    inherit requirement
+
+    next_route: "Next Route" when route.exists
+        "Use `closeout` to finish the smoke test now."
+        "Use `retry` to send it back for one more pass."
 
 
 output schema CloseoutTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Closeout Turn Result Schema"
     inherit kind
-    inherit next_owner
     inherit summary
     inherit reason
     inherit sleep_duration_seconds
 
     field current_artifact: "Current Artifact"
         type: string
-        optional
+        nullable
         min_length: 1
         note: "Current artifact path when the smoke test closes out."
 
     example:
         kind: "done"
-        next_owner: null
         summary: "Repair plan is written and the smoke test is done."
         reason: null
         sleep_duration_seconds: null
@@ -225,12 +271,9 @@ agent PlanAuthor[rally.base_agent.RallyManagedBaseAgent]:
 
         turn_result: "Turn Result"
             PlanAuthorTurnResult
-    handoff_routing: "Handoff Routing"
-        law:
-            active when true
-            stop "Hand off or finish the smoke test."
-            route "Send the smoke test to RouteRepair." -> RouteRepair when RoutingFacts.needs_route_repair
-    final_output: PlanAuthorTurnResult
+    final_output:
+        output: PlanAuthorTurnResult
+        route: next_route
 
 
 agent RouteRepair[rally.base_agent.RallyManagedBaseAgent]:
@@ -239,23 +282,21 @@ agent RouteRepair[rally.base_agent.RallyManagedBaseAgent]:
     inherit read_first
     inherit how_to_take_a_turn
     workflow: "Route Repair"
+        "Read `Previous Plan Author Turn` first so you know why PlanAuthor sent work here."
         "Choose whether the smoke test should close out now or loop back for one more pass."
+    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
+        inherit issue_ledger
+
+        previous_plan_author_turn:
+            PreviousPlanAuthorTurn
     outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         inherit issue_note
 
-        route_decision:
-            RouteRepairDecision
-
         turn_result: "Turn Result"
             RouteRepairTurnResult
-    handoff_routing: "Handoff Routing"
-        law:
-            route_from RouteRepairDecision.route_choice as SmokeRoute:
-                SmokeRoute.closeout:
-                    route "Send the smoke test to Closeout." -> Closeout
-                SmokeRoute.retry:
-                    route "Send the smoke test back to PlanAuthor." -> PlanAuthor
-    final_output: RouteRepairTurnResult
+    final_output:
+        output: RouteRepairTurnResult
+        route: next_route
 
 
 agent Closeout[rally.base_agent.RallyManagedBaseAgent]:

@@ -5,7 +5,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from rally.domain.flow import CompiledAgentContract, FieldPath, ReviewContract
+from rally.domain.flow import (
+    CompiledAgentContract,
+    FieldPath,
+    ReviewContract,
+    RouteBranchContract,
+    RouteContract,
+    RouteSelectorContract,
+)
 from rally.domain.turn_result import (
     BlockerTurnResult,
     DoneTurnResult,
@@ -53,7 +60,8 @@ def load_agent_final_response(
     payload = load_turn_result_payload(last_message_file=last_message_file)
     try:
         if compiled_agent.review is None:
-            return LoadedFinalResponse(payload=payload, turn_result=parse_turn_result(payload))
+            turn_result = _load_producer_turn_result(payload=payload, compiled_agent=compiled_agent)
+            return LoadedFinalResponse(payload=payload, turn_result=turn_result)
         review_truth = _load_review_truth(payload=payload, review=compiled_agent.review)
         turn_result = _parse_review_turn_result(review_truth=review_truth)
         return LoadedFinalResponse(
@@ -84,6 +92,83 @@ def load_turn_result_payload(*, last_message_file: Path) -> Mapping[str, object]
     if not isinstance(payload, dict):
         raise RallyStateError(f"Final output file `{last_message_file}` must contain a JSON object.")
     return payload
+
+
+def _load_producer_turn_result(
+    *,
+    payload: Mapping[str, object],
+    compiled_agent: CompiledAgentContract,
+) -> TurnResult:
+    handoff_next_owner = _resolve_producer_handoff_next_owner(
+        payload=payload,
+        route=compiled_agent.route,
+    )
+    return parse_turn_result(payload, handoff_next_owner=handoff_next_owner)
+
+
+def _resolve_producer_handoff_next_owner(
+    *,
+    payload: Mapping[str, object],
+    route: RouteContract | None,
+) -> str | None:
+    kind = payload.get("kind")
+    selector = route.selector if route is not None else None
+    if selector is None:
+        if kind == "handoff":
+            raise ValueError("Producer handoff requires emitted `route.selector` truth.")
+        return None
+
+    selected_member = _extract_field_value(payload=payload, path=selector.field_path)
+    if kind == "handoff":
+        if selected_member is None:
+            if selector.null_behavior == "invalid":
+                raise ValueError(
+                    f"Producer handoff must select route field `{'.'.join(selector.field_path)}`."
+                )
+            raise ValueError(
+                f"Producer handoff cannot leave route field `{'.'.join(selector.field_path)}` empty."
+            )
+        return _resolve_branch_target(route=route, selector=selector, selected_member=selected_member)
+
+    if selected_member is None and selector.null_behavior == "invalid":
+        raise ValueError(
+            f"Route selector `{'.'.join(selector.field_path)}` cannot be null when `kind` is `{kind}`."
+        )
+    if selected_member is not None:
+        raise ValueError(
+            f"Non-handoff producer result must not select route field `{'.'.join(selector.field_path)}`."
+        )
+    return None
+
+
+def _resolve_branch_target(
+    *,
+    route: RouteContract,
+    selector: RouteSelectorContract,
+    selected_member: object,
+) -> str:
+    if not isinstance(selected_member, str) or not selected_member:
+        raise ValueError(
+            f"Route selector `{'.'.join(selector.field_path)}` must resolve to a non-empty string member."
+        )
+    branch = _find_route_branch(route=route, selected_member=selected_member)
+    if branch is None:
+        raise ValueError(
+            f"Route selector `{'.'.join(selector.field_path)}` picked unknown route member `{selected_member}`."
+        )
+    return branch.target.key
+
+
+def _find_route_branch(
+    *,
+    route: RouteContract,
+    selected_member: str,
+) -> RouteBranchContract | None:
+    for branch in route.branches:
+        for choice_member in branch.choice_members:
+            if choice_member.member_wire == selected_member:
+                return branch
+    return None
 
 
 def _strip_json_fence(raw_text: str) -> str:

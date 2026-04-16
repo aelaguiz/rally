@@ -21,6 +21,108 @@ inputs SoftwareEngineeringDemoInputs[rally.base_agent.RallyManagedInputs]: "Inpu
         shared.inputs.DemoRepoRoot
 
 
+output schema ArchitectTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Architect Turn Result Schema"
+    route field next_route: "Next Route"
+        architect_reviewer: "Send the issue to ArchitectReviewer." -> ArchitectReviewer
+        nullable
+        note: "Use null only when the architect turn blocks or sleeps."
+
+    inherit kind
+    inherit summary
+    inherit reason
+    inherit sleep_duration_seconds
+
+
+output shape ArchitectTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Architect Turn Result JSON"
+    inherit kind
+    override schema: ArchitectTurnResultSchema
+
+    override field_notes: "Field Notes"
+        bullets rules:
+            "Always send every field in this schema."
+            "Use `null` for fields that do not apply."
+            "Use `handoff` when `next_route` is `architect_reviewer`."
+            "Do not use `done` here."
+            "Use null for `next_route` only when you block or sleep."
+
+
+output ArchitectTurnResult[rally.turn_results.BaseRallyTurnResult]: "Architect Turn Result"
+    inherit target
+    override shape: ArchitectTurnResultJson
+    inherit requirement
+
+    next_route: "Next Route" when route.exists
+        "Use `architect_reviewer` when the architect pass is ready for review."
+
+
+output schema DeveloperTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Developer Turn Result Schema"
+    route field next_route: "Next Route"
+        developer_reviewer: "Send the issue to DeveloperReviewer." -> DeveloperReviewer
+        nullable
+        note: "Use null only when the developer turn blocks or sleeps."
+
+    inherit kind
+    inherit summary
+    inherit reason
+    inherit sleep_duration_seconds
+
+
+output shape DeveloperTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Developer Turn Result JSON"
+    inherit kind
+    override schema: DeveloperTurnResultSchema
+
+    override field_notes: "Field Notes"
+        bullets rules:
+            "Always send every field in this schema."
+            "Use `null` for fields that do not apply."
+            "Use `handoff` when `next_route` is `developer_reviewer`."
+            "Do not use `done` here."
+            "Use null for `next_route` only when you block or sleep."
+
+
+output DeveloperTurnResult[rally.turn_results.BaseRallyTurnResult]: "Developer Turn Result"
+    inherit target
+    override shape: DeveloperTurnResultJson
+    inherit requirement
+
+    next_route: "Next Route" when route.exists
+        "Use `developer_reviewer` when the developer pass is ready for review."
+
+
+output schema QaDocsTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "QA Docs Turn Result Schema"
+    route field next_route: "Next Route"
+        qa_reviewer: "Send the issue to QaReviewer." -> QaReviewer
+        nullable
+        note: "Use null only when the QA docs turn blocks or sleeps."
+
+    inherit kind
+    inherit summary
+    inherit reason
+    inherit sleep_duration_seconds
+
+
+output shape QaDocsTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "QA Docs Turn Result JSON"
+    inherit kind
+    override schema: QaDocsTurnResultSchema
+
+    override field_notes: "Field Notes"
+        bullets rules:
+            "Always send every field in this schema."
+            "Use `null` for fields that do not apply."
+            "Use `handoff` when `next_route` is `qa_reviewer`."
+            "Do not use `done` here."
+            "Use null for `next_route` only when you block or sleep."
+
+
+output QaDocsTurnResult[rally.turn_results.BaseRallyTurnResult]: "QA Docs Turn Result"
+    inherit target
+    override shape: QaDocsTurnResultJson
+    inherit requirement
+
+    next_route: "Next Route" when route.exists
+        "Use `qa_reviewer` when the QA pass is ready for review."
+
+
 abstract agent SoftwareEngineeringRole[rally.base_agent.RallyManagedBaseAgent]:
     inherit rally_contract
     inherit read_first
@@ -112,8 +214,10 @@ agent Architect[SoftwareEngineeringRole]:
             shared.outputs.ArchitectIssueNote
 
         turn_result: "Turn Result"
-            rally.turn_results.RallyTurnResult
-    final_output: rally.turn_results.RallyTurnResult
+            ArchitectTurnResult
+    final_output:
+        output: ArchitectTurnResult
+        route: next_route
 
 
 agent ArchitectReviewer[SoftwareEngineeringRole]:
@@ -160,8 +264,10 @@ agent Developer[SoftwareEngineeringRole]:
             shared.outputs.DeveloperIssueNote
 
         turn_result: "Turn Result"
-            rally.turn_results.RallyTurnResult
-    final_output: rally.turn_results.RallyTurnResult
+            DeveloperTurnResult
+    final_output:
+        output: DeveloperTurnResult
+        route: next_route
 
 
 agent DeveloperReviewer[SoftwareEngineeringRole]:
@@ -208,8 +314,10 @@ agent QaDocsTester[SoftwareEngineeringRole]:
             shared.outputs.QaIssueNote
 
         turn_result: "Turn Result"
-            rally.turn_results.RallyTurnResult
-    final_output: rally.turn_results.RallyTurnResult
+            QaDocsTurnResult
+    final_output:
+        output: QaDocsTurnResult
+        route: next_route
 
 
 agent QaReviewer[SoftwareEngineeringRole]:

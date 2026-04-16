@@ -49,8 +49,9 @@ agents, shared workflows, typed inputs and outputs, routed review behavior,
 Doctrine `review_family`, workflow law, and skill-package emit. Keep the shared
 ledger in `home:issue.md` as the one cross-turn note surface. Make agents read
 the repo and deterministic tools directly instead of injecting extra prompt
-summaries each turn. Keep review truth in split final JSON, then let Rally copy
-that JSON into one `Rally Turn Result` block for each successful turn.
+summaries each turn. Keep producer routing on Doctrine `final_output.route`,
+keep review routing on split review JSON, then let Rally copy that JSON into
+one `Rally Turn Result` block for each successful turn.
 
 ## What shipped
 
@@ -88,5 +89,7 @@ Current proof keeps the showcase honest:
 
 - Doctrine rebuilds landed for `_stdlib_smoke`, `poem_loop`,
   `software_engineering_demo`, and `demo-git`
+- Rally now injects `AGENTS.md` plus a generated previous-turn appendix when a
+  compiled contract asks for prior outputs
 - the full unit suite passes on current head
 - live `SED-3` and `SED-4` run artifacts proved the shipped loop

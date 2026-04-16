@@ -56,7 +56,7 @@ output PoemReviewResponse[rally.review_results.BaseRallyReviewResponse]: "Poem R
         "Use `home:artifacts/poem.md` when the poem draft still stands."
 
     override next_owner: "Next Owner" when present(next_owner):
-        "Use {{PoemWriter:key}} when the poem needs another draft."
+        "Use {{Muse:key}} when the poem needs another draft."
 
     inherit trust_surface
     inherit standalone_read

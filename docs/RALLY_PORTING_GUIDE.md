@@ -53,7 +53,8 @@ Say the move first:
 - `Use rally issue current first, then keep going from the named current
   artifact.`
 - `Write one readable note and name the current artifact.`
-- `Set the next owner in final JSON when the route is clear.`
+- `Set the route field in final JSON when the producer route is clear.`
+- `Use review next-owner fields only on review lanes.`
 
 Use `do not` for the cases that really need a hard stop:
 
@@ -99,9 +100,14 @@ After emit, Rally reads the package Doctrine built:
 
 - `AGENTS.md` for human instruction readback
 - `schemas/<name>.schema.json` for the JSON wire shape
-- `final_output.contract.json` for final-output and review-control metadata
+- `final_output.contract.json` for final-output, route, review-control, and
+  previous-turn input metadata
 - optional peer files such as `SOUL.md` as compiler-owned readback, not
   Rally-owned side output
+
+At run time, Rally may also write `previous_turn_inputs.md` under the current
+turn when the compiled contract asks for prior outputs. That file is runtime
+readback, not authored prompt source.
 
 That pattern has to work for Rally users too. A user should be able to inherit
 or extend the shared Rally JSON contract in their own prompt source without
@@ -920,8 +926,8 @@ The key change is this:
 
 - old shape leaned on issue plan plus comment stack plus extra control-plane
   facts
-- Rally shape reads `home:issue.md`, uses readable notes, and sets owner in
-  final JSON
+- Rally shape reads `home:issue.md`, uses readable notes, sets producer route
+  in final JSON, and keeps review routing in review JSON
 
 ## Example 2: Shared Output Rules Get Smaller And Sharper
 
