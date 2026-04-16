@@ -249,7 +249,7 @@ class CliTests(unittest.TestCase):
         with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
             "rally.cli.sync_workspace_builtins",
             return_value=SimpleNamespace(
-                message="Synced Rally built-ins into `/tmp/repo`: `stdlib/rally`, `skills/rally-kernel`, `skills/rally-memory`."
+                message="Synced Rally built-ins into `/tmp/repo`: `stdlib/rally`, `skills/rally-kernel`."
             ),
         ) as sync_mock:
             with redirect_stdout(stdout):
@@ -274,6 +274,46 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("already owns Rally built-ins", stdout.getvalue())
+
+    def test_issue_current_prints_bounded_current_view(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+            issue_file.write_text(
+                textwrap.dedent(
+                    """\
+                    # Brief
+
+                    Fix the pagination bug.
+
+                    ---
+
+                    ## Rally Note
+                    - Run ID: `FLW-1`
+                    - Source: `rally issue note`
+
+                    ### Note
+                    - latest context
+                    """
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+
+            with patch("rally.cli.resolve_workspace", return_value=self._workspace(repo_root)):
+                with redirect_stdout(stdout):
+                    exit_code = main(["issue", "current", "--run-id", "FLW-1"])
+
+            # The shared read path should show the live request and newest note
+            # without making the caller reread the full append-only ledger.
+            self.assertEqual(exit_code, 0)
+            rendered = stdout.getvalue()
+            self.assertIn("# Rally Issue Current View", rendered)
+            self.assertIn("## Opening Issue", rendered)
+            self.assertIn("Fix the pagination bug.", rendered)
+            self.assertIn("## Latest Rally Note", rendered)
+            self.assertIn("latest context", rendered)
+            self.assertIn("## Full Ledger", rendered)
 
     def test_issue_note_reads_stdin(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

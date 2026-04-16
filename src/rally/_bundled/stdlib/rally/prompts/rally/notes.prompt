@@ -1,10 +1,17 @@
+# Notes build on the ledger owner instead of naming `home:issue.md` again.
+# That keeps the note path and required target keys in one place.
 import rally.issue_ledger
 
 
+# The render profile keeps saved context compact when Doctrine emits it.
+# It changes emitted text only. It is not another runtime state path.
 render_profile CompactSavedContext:
     properties -> sentence
 
 
+# A saved note is advisory because notes are for later readers.
+# Routing, `done`, `blocker`, and `sleep` still belong to the declared final
+# JSON for the turn.
 output RallyIssueNote: "Issue Note"
     target: rally.issue_ledger.RallyIssueNoteAppend
         append_with: "\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\""

@@ -100,5 +100,16 @@ agent PoemCritic[PoemLoopRole]:
     inputs: PoemLoopInputs
     outputs: "Outputs"
         shared.review.PoemReviewResponse
+        shared.review.PoemReviewFinalResponse
     skills: rally.base_agent.RallyManagedSkills
-    final_output: shared.review.PoemReviewResponse
+    final_output:
+        output: shared.review.PoemReviewFinalResponse
+        review_fields:
+            verdict: verdict
+            reviewed_artifact: reviewed_artifact
+            analysis: analysis_performed
+            readback: findings_first
+            current_artifact: current_artifact
+            blocked_gate: failure_detail.blocked_gate
+            failing_gates: failure_detail.failing_gates
+            next_owner: next_owner

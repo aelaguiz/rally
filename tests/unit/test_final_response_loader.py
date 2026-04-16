@@ -53,7 +53,7 @@ class FinalResponseLoaderTests(unittest.TestCase):
             with self.assertRaisesRegex(RallyStateError, "does not contain valid JSON"):
                 load_turn_result(last_message_file=last_message)
 
-    def test_load_agent_final_response_maps_review_carrier_to_done_and_renders_note(self) -> None:
+    def test_load_agent_final_response_maps_review_carrier_to_done_and_returns_review_truth(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             last_message = Path(temp_dir) / "last_message.json"
             last_message.write_text(
@@ -73,8 +73,11 @@ class FinalResponseLoaderTests(unittest.TestCase):
             )
 
             self.assertEqual(loaded.turn_result, DoneTurnResult(summary="The poem is ready to keep."))
-            self.assertIn("### Findings First", loaded.review_note_markdown or "")
-            self.assertIn("- Verdict: `accept`", loaded.review_note_markdown or "")
+            self.assertIsNotNone(loaded.review_truth)
+            self.assertEqual(loaded.review_truth.verdict, "accept")
+            self.assertEqual(loaded.review_truth.reviewed_artifact, "home:artifacts/poem.md")
+            self.assertEqual(loaded.review_truth.readback, "The poem is ready to keep.")
+            self.assertIsNone(loaded.review_truth.next_owner)
 
     def test_load_agent_final_response_maps_review_blocked_gate_to_blocker(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -99,6 +102,8 @@ class FinalResponseLoaderTests(unittest.TestCase):
             )
 
             self.assertEqual(loaded.turn_result, BlockerTurnResult(reason="The poem draft is missing."))
+            self.assertIsNotNone(loaded.review_truth)
+            self.assertEqual(loaded.review_truth.blocked_gate, "The poem draft is missing.")
 
     def test_load_agent_final_response_maps_split_control_ready_review_to_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -106,8 +111,12 @@ class FinalResponseLoaderTests(unittest.TestCase):
             last_message.write_text(
                 """{
   "verdict": "changes_requested",
+  "reviewed_artifact": "home:artifacts/poem.md",
+  "analysis_performed": "The middle image still needs work.",
+  "findings_first": "The poem needs one more draft.",
   "current_artifact": "home:artifacts/poem.md",
-  "next_owner": "poem_writer"
+  "next_owner": "poem_writer",
+  "blocked_gate": null
 }
 """,
                 encoding="utf-8",
@@ -119,7 +128,9 @@ class FinalResponseLoaderTests(unittest.TestCase):
             )
 
             self.assertEqual(loaded.turn_result, HandoffTurnResult(next_owner="poem_writer"))
-            self.assertIn("- Next Owner: `poem_writer`", loaded.review_note_markdown or "")
+            self.assertIsNotNone(loaded.review_truth)
+            self.assertEqual(loaded.review_truth.next_owner, "poem_writer")
+            self.assertEqual(loaded.review_truth.current_artifact, "home:artifacts/poem.md")
 
 
 if __name__ == "__main__":
@@ -151,6 +162,7 @@ def _review_agent_contract(*, mode: str) -> CompiledAgentContract:
             "current_artifact": ("current_artifact",),
             "next_owner": ("next_owner",),
             "blocked_gate": ("blocked_gate",),
+            "failing_gates": ("failing_gates",),
         }
         final_response = ReviewFinalResponseContract(
             mode="split",
@@ -158,8 +170,13 @@ def _review_agent_contract(*, mode: str) -> CompiledAgentContract:
             declaration_name="PoemReviewControl",
             review_fields={
                 "verdict": ("verdict",),
+                "reviewed_artifact": ("reviewed_artifact",),
+                "analysis": ("analysis_performed",),
+                "readback": ("findings_first",),
                 "current_artifact": ("current_artifact",),
                 "next_owner": ("next_owner",),
+                "blocked_gate": ("blocked_gate",),
+                "failing_gates": ("failing_gates",),
             },
             control_ready=True,
         )

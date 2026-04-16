@@ -39,7 +39,7 @@ Rally can now:
 - drive authored flows to real handoff, done, blocker, or sleep states through
   one shared run model
 
-The current repo also ships built-in Rally memory on top of that runtime:
+The current repo also ships Rally memory support on top of that runtime:
 
 - shared Doctrine memory contract
 - repo-local markdown memory truth
@@ -52,10 +52,11 @@ logging contract.
 
 What ships today:
 
-- per-command Doctrine rebuild for the current flow before Rally loads compiled
-  agents
-- flow loading plus emitted agent-package checks:
-  `AGENTS.md`, emitted schema files, and `final_output.contract.json`
+- per-command Doctrine rebuild for the current flow before Rally loads
+  compiled agent packages
+- flow loading plus compiled agent-package checks:
+  the required runtime pair `AGENTS.md` plus `final_output.contract.json`,
+  plus emitted schema files referenced by that contract
 - one shared adapter boundary under `src/rally/adapters/base.py` and
   `src/rally/adapters/registry.py`
 - supported adapters: `codex` and `claude_code`
@@ -73,8 +74,8 @@ What ships today:
   `SKILL.md` and Doctrine `prompts/SKILL.prompt` both supported
 - per-agent skill views refreshed under `home/sessions/<agent>/skills/` and
   the live `home/skills/` tree activated per turn from that prebuilt view
-- flow-level `setup_home_script`, `runtime.prompt_input_command`,
-  `runtime.env`, and `runtime.guarded_git_repos`
+- flow-level `setup_home_script`, `runtime.env`, and
+  `runtime.guarded_git_repos`
 - dirty guarded-repo failures that block `handoff` or `done` loud instead of
   letting Rally claim a clean finish
 - `rally workspace sync`
@@ -97,7 +98,9 @@ What ships today:
 - `home/issue.md` plus `issue_history/`
 - the opening brief lives in `home/issue.md`, not a shared sidecar brief file
 - `rally issue note --field key=value`
-- shared issue-ledger input and shared `rally-memory` guidance in the Rally stdlib
+- `rally issue current`
+- shared issue-ledger input in the Rally stdlib
+- optional Rally memory contract in the Rally stdlib
 - `rally memory search`
 - `rally memory use`
 - `rally memory save`
@@ -140,6 +143,7 @@ What is not shipped yet:
 - `AGENTS.md` is injected instruction readback only.
 - `final_output.contract.json` is the compiler-owned metadata file Rally loads.
 - Emitted schema files under `schemas/` are the payload wire contract.
+- Other files in the compiled package stay compiler-owned peer artifacts.
 - There is no separate handoff artifact.
 - Shared runtime owns prompt assembly, home policy, state routing, and the
   final JSON read path.
@@ -151,17 +155,17 @@ What is not shipped yet:
 The current checked-in runtime surface is:
 
 - `src/rally/services/flow_build.py`
-  - rebuilds one flow's compiled agents through Doctrine
+  - rebuilds one flow's compiled agent packages through Doctrine
+  - trusts Doctrine for optional peer files such as `SOUL.md`
 - `src/rally/services/flow_loader.py`
   - loads `flow.yaml`
   - validates supported adapter names and adapter args through the registry
   - validates `runtime.max_command_turns`, `runtime.env`, and guarded repo paths
-  - requires compiled `build/agents/*`
+  - treats each `build/agents/<slug>/` directory as one compiled agent package
   - requires `AGENTS.md`, emitted schema files, and
     `final_output.contract.json`
   - validates flow codes, `runtime.max_command_turns`, `runtime.env`,
-    `runtime.guarded_git_repos`, `runtime.prompt_input_command`, and the
-    shared turn-result schema
+    `runtime.guarded_git_repos`, and the shared turn-result schema
   - carries the compiled slug forward as the source-of-truth agent identity after validation
 - `src/rally/services/skill_bundles.py`
   - resolves markdown skill roots from `SKILL.md`
@@ -172,6 +176,7 @@ The current checked-in runtime surface is:
   - ships real `resume`
   - ships `resume --edit`
   - ships `resume --restart`
+  - ships `issue current`
   - ships `issue note`, including repeatable `--field key=value`
   - ships `memory search`, `memory use`, `memory save`, and `memory refresh`
   - stamps `- Turn: \`N\`` on in-turn notes automatically when Rally launched that turn
@@ -198,7 +203,7 @@ The current checked-in runtime surface is:
   - prepares the shared run-home layout
   - enforces non-empty `home/issue.md`
   - syncs built-in framework assets
-  - copies compiled agents, refreshes per-agent skill views under
+  - copies whole compiled agent packages, refreshes per-agent skill views under
     `home/sessions/<agent>/skills/`, and copies allowlisted MCPs
   - calls `adapter.prepare_home(...)`
   - checks startup host inputs against the effective env from shell env plus
@@ -210,6 +215,7 @@ The current checked-in runtime surface is:
   - renders the blocker text Rally writes when those checks fail
 - `src/rally/services/issue_ledger.py`
   - appends Rally-stamped notes and runtime event blocks
+  - renders the bounded current issue view for the shared read-first path
   - inserts the original-issue marker
   - snapshots the full issue log after each append
 - `src/rally/services/run_events.py`
@@ -261,8 +267,7 @@ The current checked-in runtime surface is:
 - `src/rally/services/runner.py`
   - rebuilds the current flow under the flow lock before loading compiled
   agents
-  - wires run creation, resume, runtime prompt-input injection, adapter
-    launch, guarded-repo checks, result handling, state writes, and
+  - wires run creation, resume, adapter launch, guarded-repo checks, result handling, state writes, and
     issue/event logging
   - validates `run --from-file` before archive or run creation, then copies
     that text into the new run's `home/issue.md`
@@ -273,8 +278,9 @@ The current checked-in runtime surface is:
     `resume --edit` changed the issue text
   - appends Rally-owned ledger blocks with Markdown `---` dividers and turn
     labels on turn-scoped records
-  - keeps the quick summary lines on `Rally Turn Result` blocks and adds a
-    pretty JSON copy of the full final message under them
+  - keeps the quick summary lines on `Rally Turn Result` blocks, including
+    structured review fields for review turns, and adds a pretty JSON copy of
+    the full final message under them
   - lets `run --step` and `resume --step` stop clean after one turn and mark
     the run as `paused`
   - keeps chaining turns after handoffs until Rally reaches `done`, `blocker`,

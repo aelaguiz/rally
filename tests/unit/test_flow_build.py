@@ -141,8 +141,6 @@ class FlowBuildTests(unittest.TestCase):
                     str(repo_root / "pyproject.toml"),
                     "--target",
                     "rally-kernel",
-                    "--target",
-                    "rally-memory",
                 ],
             )
 
@@ -170,8 +168,9 @@ class FlowBuildTests(unittest.TestCase):
             self.assertEqual(len(calls), 1)
             self.assertEqual(calls[0]["command"][2], "doctrine.emit_docs")
             self.assertTrue((repo_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertTrue((repo_root / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((repo_root / "skills" / "rally-memory").exists())
             self.assertTrue((repo_root / "stdlib" / "rally" / "prompts" / "rally" / "turn_results.prompt").is_file())
+            self.assertTrue((repo_root / "stdlib" / "rally" / "prompts" / "rally" / "review_results.prompt").is_file())
             self.assertFalse((repo_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").exists())
 
     def test_ensure_flow_assets_built_rejects_missing_workspace_pyproject(self) -> None:
@@ -295,7 +294,7 @@ class FlowBuildTests(unittest.TestCase):
             self.assertEqual(len(calls), 1)
             self.assertEqual(calls[0]["command"][2], "doctrine.emit_docs")
 
-    def test_ensure_flow_assets_built_renders_role_soul_sidecars_into_agent_dirs(self) -> None:
+    def test_ensure_flow_assets_built_preserves_compiler_owned_peer_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve() / "rally"
             repo_root.mkdir(parents=True)
@@ -304,9 +303,8 @@ class FlowBuildTests(unittest.TestCase):
             self._write_markdown_skill(repo_root=repo_root, skill_name="rally-kernel")
             self._write_markdown_skill(repo_root=repo_root, skill_name="rally-memory")
             self._write_role_soul_prompt(repo_root=repo_root, role_slug="scope_lead")
-            stale_sidecar = repo_root / "flows" / "demo" / "build" / "agents" / "stale_role" / "SOUL.md"
-            stale_sidecar.parent.mkdir(parents=True, exist_ok=True)
-            stale_sidecar.write_text("stale\n", encoding="utf-8")
+            compiler_owned_soul = repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "SOUL.md"
+            compiler_owned_soul.write_text("Compiler-owned soul.\n", encoding="utf-8")
             calls: list[dict[str, object]] = []
 
             def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -319,10 +317,8 @@ class FlowBuildTests(unittest.TestCase):
                 subprocess_run=fake_run,
             )
 
-            soul_path = repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "SOUL.md"
-            self.assertTrue(soul_path.is_file())
-            self.assertIn("You are Scope Lead.", soul_path.read_text(encoding="utf-8"))
-            self.assertFalse(stale_sidecar.exists())
+            self.assertTrue(compiler_owned_soul.is_file())
+            self.assertEqual(compiler_owned_soul.read_text(encoding="utf-8"), "Compiler-owned soul.\n")
 
     def _write_flow_file(self, *, repo_root: Path, allowed_skills: tuple[str, ...]) -> None:
         flow_root = repo_root / "flows" / "demo"

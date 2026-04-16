@@ -93,6 +93,7 @@ This is the canonical split between Doctrine and Rally.
 - CLI behavior
 - issue-log ordering and snapshots
 - the shared `rally issue note` surface
+- the shared `rally issue current` surface
 - the Rally kernel skill
 - the Rally memory skill
 - repo-local memory files, QMD state, and memory indexing
@@ -144,8 +145,8 @@ Each runnable flow lives under `flows/<flow-slug>/`.
 The canonical runtime contract for a flow is `flows/<flow-slug>/flow.yaml`.
 That file declares runtime facts, not instruction prose.
 It also carries runtime limits such as `runtime.max_command_turns`, plus
-runtime hooks such as one setup script, one prompt-input reducer, one optional
-`runtime.env` map, and guarded git repo paths.
+runtime hooks such as one setup script, one optional `runtime.env` map, and
+guarded git repo paths.
 
 Every runnable flow has three stable identities:
 
@@ -204,10 +205,10 @@ After that:
 - repos, artifacts, env files, and adapter-local state live there
 - agents do not escape home
 
-A flow may also declare one prompt-input reducer that runs before each turn and
-one guarded-git list that Rally checks before it accepts `handoff` or `done`.
+A flow may also declare one guarded-git list that Rally checks before it
+accepts `handoff` or `done`.
 If a flow sets `runtime.env`, Rally uses those env vars during startup host
-input checks, setup, prompt input, and adapter launches. That means
+input checks, setup, and adapter launches. That means
 `runtime.env` can satisfy `host_inputs.required_env` and `host:$VAR` paths
 before setup runs. Flow values win over duplicate shell env vars.
 
@@ -234,7 +235,7 @@ It should:
 - begin with the operator's brief exactly as entered
 - remain append-only after that initial brief
 - add one hidden `<!-- RALLY_ORIGINAL_ISSUE_END -->` marker before the first Rally-owned block
-- hold setup notes, serialized notes, `Rally Turn Result` records with short summary lines plus a pretty copy of the full final JSON, and runner-generated status records
+- hold setup notes, serialized notes, one `Rally Turn Result` record for each successful turn, and runner-generated lifecycle or early-failure status records
 - use one Markdown `---` divider between Rally-owned blocks after that marker
 - add `- Turn: \`N\`` on turn-scoped blocks without asking the agent to manage that line
 
@@ -255,6 +256,7 @@ They may carry flat string note fields when later turns need stable labels.
 
 The structured final turn result is the only turn-ending control surface.
 It tells Rally whether to route, stop, block, or ask for sleep.
+Rally copies that full final JSON into the matching `Rally Turn Result` block.
 The shared JSON always carries the same five keys:
 
 - `kind`
@@ -289,15 +291,16 @@ It should start with:
 - one shared note path
 - one shared memory contract
 - one mandatory Rally kernel skill
-- one mandatory Rally memory skill
+- one optional Rally memory skill
 
 The Rally kernel skill should:
 
 - teach agents to use the shared `rally issue note` CLI surface for durable notes
+- teach agents to use the shared `rally issue current` CLI surface for bounded shared-ledger reads
 - teach agents how to shape schema-valid end-of-turn JSON
 - remain helper-shaped rather than becoming a second runtime
 
-The Rally memory skill should:
+The optional Rally memory skill should:
 
 - teach agents to use `rally memory search`, `rally memory use`, `rally memory save`, and `rally memory refresh`
 - keep memory as explicit CLI behavior instead of hidden prompt-only magic
@@ -419,7 +422,7 @@ These are the stable runtime surfaces the design depends on:
 | `logs/agents/` | per-agent event mirrors |
 | `logs/rendered.log` | plain operator transcript |
 | `logs/adapter_launch/` | proof of the launch contract per turn |
-| `home/agents/` | per-run copy of compiled agent outputs, refreshed on each start or resume |
+| `home/agents/` | per-run copy of compiled agent packages, refreshed on each start or resume |
 | `home/skills/` | live adapter-facing skill tree for the current agent, refreshed before each turn |
 | `home/mcps/` | materialized allowed MCP capabilities, refreshed on each start or resume |
 | `home/sessions/<agent>/skills/` | stable per-agent skill views, refreshed on each start or resume |
@@ -435,6 +438,7 @@ rally run <flow> [--new] [--step] [--from-file <path>]
 rally resume <FLOW_CODE>-<n> [--edit|--restart] [--step]
 rally status [<FLOW_CODE>-<n>]
 rally archive <FLOW_CODE>-<n>
+rally issue current --run-id <FLOW_CODE>-<n>
 rally issue note --run-id <FLOW_CODE>-<n> [--field key=value ...]
 rally memory search --run-id <FLOW_CODE>-<n> --query "<text>"
 rally memory use --run-id <FLOW_CODE>-<n> <memory-id>
@@ -449,7 +453,7 @@ adapter, start agent, and agent count.
 `rally --help` should teach the happy path in plain English with a few short
 examples instead of only listing command names.
 Before either command starts the next turn, Rally should rebuild that flow's
-compiled agents through the paired Doctrine emit target and refresh the
+compiled agent packages through the paired Doctrine emit target and refresh the
 run-home `home/agents/` copy from the rebuilt readback.
 `rally run` creates the run shell first. If `home/issue.md` is missing or
 blank on a real TTY, Rally should open the editor, seed a short issue prompt,
@@ -483,6 +487,10 @@ a fresh run with a new run id, and seed that new run's `home/issue.md` with
 only the recovered original issue. The new `Rally Run Started` block should
 use source `rally resume --restart` and include `Restarted From: <old-run-id>`.
 Done runs may restart even though they cannot resume.
+
+`rally issue current` should print the opening issue plus the newest shared
+state blocks without rereading the full append-only ledger.
+That is the small shared read path agents and operators should reach for first.
 
 `rally issue note` is the shared durable-note write surface for both agents and operators.
 When Rally launched the active turn, the CLI should add the current turn
@@ -568,6 +576,7 @@ The communication model locks these rules:
 
 - no human handoff
 - no separate authored handoff object
+- bounded shared-ledger reads through `rally issue current`
 - serialized notes through the Rally kernel skill plus `rally issue note`
 - strict final JSON as the only turn-ending control path
 - `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_TURN_NUMBER` injected on every Rally-managed launch

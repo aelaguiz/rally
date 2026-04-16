@@ -434,7 +434,6 @@ def _demo_flow(
         code="DMO",
         root_dir=flow_root,
         flow_file=flow_root / "flow.yaml",
-        prompt_entrypoint=prompt_path,
         build_agents_dir=flow_root / "build" / "agents",
         setup_home_script=None,
         start_agent_key=agent.key,

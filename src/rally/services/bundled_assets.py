@@ -38,11 +38,6 @@ _BUNDLE_SPECS = (
         workspace_relative=Path("skills") / "rally-kernel",
         emit_target_name="rally-kernel",
     ),
-    _BundleSpec(
-        bundled_relative=Path("skills") / "rally-memory",
-        workspace_relative=Path("skills") / "rally-memory",
-        emit_target_name="rally-memory",
-    ),
 )
 
 

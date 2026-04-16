@@ -4,6 +4,7 @@ skill package RallyMemory: "Rally Memory"
         description: "Shared Rally memory skill for searching, using, saving, and refreshing cross-run memory through Rally CLI."
 
     "Use this skill when past work could help on this turn."
+    "This skill is for memory work only. It does not replace the turn's declared output."
 
     quick_model: "Quick model"
         bullets points:

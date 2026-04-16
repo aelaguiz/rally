@@ -29,5 +29,6 @@ htmlcov/
 /for_reference_only/
 .codex
 _audit_ledger.md
+_comment_ledger.md
 skills/**/build
 **/legacy

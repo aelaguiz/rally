@@ -27,21 +27,25 @@ class BundledAssetsTests(unittest.TestCase):
                 pyproject_path=pyproject_path,
             )
 
+            # External workspaces inherit only the one mandatory built-in skill.
+            # Optional memory stays out until a workspace ships it on purpose.
             self.assertEqual(
                 copied,
                 [
                     "stdlib/rally",
                     "skills/rally-kernel",
-                    "skills/rally-memory",
                 ],
             )
             self.assertTrue(
                 (workspace_root / "stdlib" / "rally" / "prompts" / "rally" / "turn_results.prompt").is_file()
             )
+            self.assertTrue(
+                (workspace_root / "stdlib" / "rally" / "prompts" / "rally" / "review_results.prompt").is_file()
+            )
             self.assertFalse(stale_schema.exists())
             self.assertFalse(stale_example.exists())
             self.assertTrue((workspace_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertTrue((workspace_root / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((workspace_root / "skills" / "rally-memory").exists())
 
     def test_ensure_workspace_builtins_synced_skips_current_rally_source_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -112,12 +116,6 @@ class BundledAssetsTests(unittest.TestCase):
                     'name = "rally-kernel"',
                     'entrypoint = "skills/rally-kernel/prompts/SKILL.prompt"',
                     'output_dir = "skills/rally-kernel/build"',
-                    "",
-                    "[[tool.doctrine.emit.targets]]",
-                    'name = "rally-memory"',
-                    'entrypoint = "skills/rally-memory/prompts/SKILL.prompt"',
-                    'output_dir = "skills/rally-memory/build"',
-                    "",
                 )
             ),
             encoding="utf-8",

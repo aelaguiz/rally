@@ -288,6 +288,9 @@ def _home_ready_marker(run_home: Path) -> Path:
 
 
 def _sync_compiled_agents(*, run_home: Path, flow: FlowDefinition) -> None:
+    # Copy each compiled agent package directory whole so compiler-owned peers
+    # such as `SOUL.md` survive into the run home without Rally re-emitting
+    # them or treating them as a second prompt surface.
     _sync_named_directories(
         target_root=run_home / "agents",
         sources_by_name={

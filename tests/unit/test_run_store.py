@@ -121,7 +121,6 @@ class RunStoreTests(unittest.TestCase):
 
 def _demo_flow(*, repo_root: Path) -> FlowDefinition:
     flow_root = repo_root / "flows" / "demo"
-    prompt_path = flow_root / "prompts" / "AGENTS.prompt"
     markdown_path = flow_root / "build" / "agents" / "scope_lead" / "AGENTS.md"
     metadata_file = flow_root / "build" / "agents" / "scope_lead" / "final_output.contract.json"
     final_output = FinalOutputContract(
@@ -148,7 +147,7 @@ def _demo_flow(*, repo_root: Path) -> FlowDefinition:
         compiled=CompiledAgentContract(
             name="ScopeLead",
             slug="scope_lead",
-            entrypoint=prompt_path,
+            entrypoint=flow_root / "prompts" / "AGENTS.prompt",
             markdown_path=markdown_path,
             metadata_file=metadata_file,
             contract_version=1,
@@ -160,7 +159,6 @@ def _demo_flow(*, repo_root: Path) -> FlowDefinition:
         code="DMO",
         root_dir=flow_root,
         flow_file=flow_root / "flow.yaml",
-        prompt_entrypoint=prompt_path,
         build_agents_dir=flow_root / "build" / "agents",
         setup_home_script=None,
         start_agent_key=agent.key,

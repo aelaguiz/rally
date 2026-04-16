@@ -4,6 +4,7 @@ skill package RallyKernel: "Rally Kernel"
         description: "Shared Rally note skill for saving one short run note through Rally CLI."
 
     "Use this skill when a later reader needs one short saved note on this run."
+    "This skill is for note work only. It does not replace the turn's declared output."
 
     quick_model: "Quick model"
         bullets points:

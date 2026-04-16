@@ -107,25 +107,11 @@ def load_flow_definition(
     runtime_env = _load_runtime_env(runtime_payload=runtime_payload)
     adapter_args = _require_mapping(runtime_payload, "adapter_args", context="runtime")
     get_adapter(adapter_name).validate_args(args=adapter_args)
-    prompt_input_command_raw = runtime_payload.get("prompt_input_command")
-    prompt_input_command = None
-    if prompt_input_command_raw is not None:
-        if not isinstance(prompt_input_command_raw, str) or not prompt_input_command_raw:
-            raise RallyConfigError("`runtime.prompt_input_command` must be a non-empty string when present.")
-        prompt_input_command = _resolve_rooted_existing_file(
-            raw_value=prompt_input_command_raw,
-            repo_root=repo_root,
-            flow_root=flow_root,
-            context="runtime.prompt_input_command",
-            allowed_roots={FLOW_ROOT},
-            example="flow:setup/prompt_inputs.py",
+    if "prompt_input_command" in runtime_payload:
+        raise RallyConfigError(
+            "Rally does not support `runtime.prompt_input_command`. "
+            "Expose runtime truth through files, setup, tools, or `rally issue current`."
         )
-    prompt_entrypoint = _resolve_repo_relative_file(
-        repo_root=repo_root,
-        relative_path=f"flows/{flow_name}/prompts/AGENTS.prompt",
-        context="flow prompt entrypoint",
-    )
-
     setup_home_script_raw = payload.get("setup_home_script")
     setup_home_script = None
     if setup_home_script_raw is not None:
@@ -146,7 +132,6 @@ def load_flow_definition(
         code=flow_code,
         root_dir=flow_root,
         flow_file=flow_file,
-        prompt_entrypoint=prompt_entrypoint,
         build_agents_dir=build_agents_dir,
         setup_home_script=setup_home_script,
         start_agent_key=start_agent_key,
@@ -155,7 +140,7 @@ def load_flow_definition(
         runtime_env=runtime_env,
         host_inputs=host_inputs,
         agents=agents,
-        adapter=AdapterConfig(name=adapter_name, args=adapter_args, prompt_input_command=prompt_input_command),
+        adapter=AdapterConfig(name=adapter_name, args=adapter_args),
     )
 
 
@@ -192,6 +177,9 @@ def _load_compiled_agents(
         raise RallyConfigError(f"Compiled agent directory is missing: `{build_agents_dir}`.")
 
     compiled_agents: dict[str, CompiledAgentContract] = {}
+    # Each directory under `build/agents/` is one compiler-owned package.
+    # Rally loads the required runtime pair and leaves any extra peer files in
+    # place for authored instructions to open when needed.
     for agent_dir in sorted(build_agents_dir.iterdir()):
         if not agent_dir.is_dir():
             continue

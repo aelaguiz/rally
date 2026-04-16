@@ -15,7 +15,6 @@ workflow ArchitectJob: "Your Job"
         "The note hides the next build step."
 
     process: "Process"
-        "Read `home:issue.md` first."
         "Start with `demo-git` status."
         "Use the attached decision scaffold before you lock the next build step."
         "Do not change the repo unless the issue truly needs architecture scaffolding."

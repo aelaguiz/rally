@@ -139,7 +139,18 @@ agent ArchitectReviewer[SoftwareEngineeringRole]:
     inputs: SoftwareEngineeringDemoInputs
     outputs: "Outputs"
         shared.review.EngineeringReviewResponse
-    final_output: shared.review.EngineeringReviewResponse
+        shared.review.EngineeringReviewFinalResponse
+    final_output:
+        output: shared.review.EngineeringReviewFinalResponse
+        review_fields:
+            verdict: verdict
+            reviewed_artifact: reviewed_artifact
+            analysis: analysis_performed
+            readback: findings_first
+            current_artifact: current_artifact
+            blocked_gate: failure_detail.blocked_gate
+            failing_gates: failure_detail.failing_gates
+            next_owner: next_owner
 
 
 agent Developer[SoftwareEngineeringRole]:
@@ -178,7 +189,18 @@ agent DeveloperReviewer[SoftwareEngineeringRole]:
     inputs: SoftwareEngineeringDemoInputs
     outputs: "Outputs"
         shared.review.EngineeringReviewResponse
-    final_output: shared.review.EngineeringReviewResponse
+        shared.review.EngineeringReviewFinalResponse
+    final_output:
+        output: shared.review.EngineeringReviewFinalResponse
+        review_fields:
+            verdict: verdict
+            reviewed_artifact: reviewed_artifact
+            analysis: analysis_performed
+            readback: findings_first
+            current_artifact: current_artifact
+            blocked_gate: failure_detail.blocked_gate
+            failing_gates: failure_detail.failing_gates
+            next_owner: next_owner
 
 
 agent QaDocsTester[SoftwareEngineeringRole]:
@@ -217,4 +239,15 @@ agent QaReviewer[SoftwareEngineeringRole]:
     inputs: SoftwareEngineeringDemoInputs
     outputs: "Outputs"
         shared.review.EngineeringReviewResponse
-    final_output: shared.review.EngineeringReviewResponse
+        shared.review.EngineeringReviewFinalResponse
+    final_output:
+        output: shared.review.EngineeringReviewFinalResponse
+        review_fields:
+            verdict: verdict
+            reviewed_artifact: reviewed_artifact
+            analysis: analysis_performed
+            readback: findings_first
+            current_artifact: current_artifact
+            blocked_gate: failure_detail.blocked_gate
+            failing_gates: failure_detail.failing_gates
+            next_owner: next_owner

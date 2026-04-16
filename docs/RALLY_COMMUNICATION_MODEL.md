@@ -10,6 +10,7 @@ related:
   - docs/RALLY_RUNTIME.md
   - stdlib/rally/prompts/rally/base_agent.prompt
   - stdlib/rally/prompts/rally/notes.prompt
+  - stdlib/rally/prompts/rally/review_results.prompt
   - stdlib/rally/prompts/rally/turn_results.prompt
   - skills/rally-kernel/SKILL.md
   - src/rally/cli.py
@@ -39,6 +40,7 @@ block in `home:issue.md`.
 - Every Rally-managed agent inherits the shared base agent in `stdlib/rally/prompts/rally/base_agent.prompt`.
 - Every Rally-managed agent gets the shared `rally-kernel` skill.
 - The shared note path is `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`.
+- The shared read-first path is `"$RALLY_CLI_BIN" issue current --run-id "$RALLY_RUN_ID"`.
 - Rally injects `RALLY_WORKSPACE_DIR`, `RALLY_CLI_BIN`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, `RALLY_AGENT_SLUG`, and `RALLY_TURN_NUMBER`.
 - A flow may also add extra startup and launch env vars through `runtime.env` in `flow.yaml`.
 - `rally.turn_results` is the classic shared five-key control JSON.
@@ -61,14 +63,15 @@ block in `home:issue.md`.
 - `stdlib/rally/prompts/rally/turn_results.prompt`
   - the classic shared final JSON contract, authored with Doctrine
     `output schema`
+- `stdlib/rally/prompts/rally/review_results.prompt`
+  - the shared review final JSON family for review-native turns
 - `skills/rally-kernel/SKILL.md`
   - teaches note procedure and note examples
-- `skills/rally-memory/SKILL.md`
-  - teaches memory procedure for `search`, `use`, `save`, and `refresh`
 - `src/rally/cli.py`
+  - ships `rally issue current` for the bounded shared read path
   - ships `rally issue note`, including repeatable `--field key=value`
 - `src/rally/services/issue_ledger.py`
-  - owns note append, flat note-field header lines, issue-history snapshots, Markdown `---` dividers, and optional turn labels
+  - owns the bounded current view, note append, flat note-field header lines, issue-history snapshots, Markdown `---` dividers, and optional turn labels
 - `src/rally/adapters/base.py`
   - builds the shared Rally launch env map, including the active turn number for note labeling
 - `src/rally/services/final_response_loader.py`

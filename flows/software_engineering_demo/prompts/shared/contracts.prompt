@@ -18,7 +18,8 @@ workflow IssueLedgerGroundTruth: "Issue Ledger Truth"
         "Start with the newest relevant block when you need the latest truth."
 
     review_history: "Review History"
-        "Read the newest `rally runtime review` note before you rely on an older review verdict."
+        "Read the newest `Rally Turn Result` block before you rely on an older review verdict."
+        "Treat the review JSON in that block as the current review truth."
 
 
 workflow DemoRepoRules: "Demo Repo Rules"

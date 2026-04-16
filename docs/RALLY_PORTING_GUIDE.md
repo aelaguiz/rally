@@ -50,8 +50,8 @@ Agents respond better to direct positive framing than to a wall of bans.
 
 Say the move first:
 
-- `Read home:issue.md, read the latest turn result, then keep going from the
-  named current artifact.`
+- `Use rally issue current first, then keep going from the named current
+  artifact.`
 - `Write one readable note and name the current artifact.`
 - `Set the next owner in final JSON when the route is clear.`
 
@@ -100,6 +100,8 @@ After emit, Rally reads the package Doctrine built:
 - `AGENTS.md` for human instruction readback
 - `schemas/<name>.schema.json` for the JSON wire shape
 - `final_output.contract.json` for final-output and review-control metadata
+- optional peer files such as `SOUL.md` as compiler-owned readback, not
+  Rally-owned side output
 
 That pattern has to work for Rally users too. A user should be able to inherit
 or extend the shared Rally JSON contract in their own prompt source without
@@ -149,8 +151,9 @@ Port rule:
   prefer that
 - do not add a special mode gate just to restate what the issue and last turn
   already say
-- only add computed prompt inputs when the runtime cannot expose the truth
-  cleanly any other way
+- Rally does not support `runtime.prompt_input_command`
+- expose runtime truth through files, setup, tools, or `rally issue current`
+  instead of prompt-side reducers
 - do not use a fake typed `Prompt` input as a disguise for a Rally-side
   reducer or summary script
 
@@ -274,8 +277,9 @@ Deleting explicit pickup truth is bad.
 
 The clean Rally move is:
 
-- read the newest Rally note and newest Rally turn result directly
-- name the main current surface in the note
+- read the newest Rally turn result directly
+- read the newest explicit Rally note only when one exists
+- name the main current surface in the note when a note is needed
 - make the pickup summary and proof pointer explicit
 
 That is the good version of simplification.
@@ -289,7 +293,7 @@ The bad version would be:
 
 Another bad version is subtler:
 
-- read the latest review note
+- read the latest review turn result
 - summarize its verdict, next owner, and findings into a new prompt JSON blob
 - feed that blob back into producer prompts as `latest_critic_review`
 
@@ -304,7 +308,7 @@ Port rule:
 - the note still has to say what is current, what changed, and what the next
   owner should read first
 - do not feed a review summary back into prompt context when the real review
-  note already exists in `home:issue.md`
+  turn result already exists in `home:issue.md`
 
 ### 6. Move Bootstrap Out Of Agent Doctrine
 
@@ -503,10 +507,8 @@ Good cleanup removes Rally-foreign machinery instead of polishing it.
 
 The important wins are concrete:
 
-- `flow.yaml` drops `prompt_input_command` when it only exists to keep a
-  prompt-side reducer loop alive
-- `prompt_input_command` stays available only for narrow computed context that
-  cannot be exposed cleanly through files, tools, setup, or the issue ledger
+- Rally no longer supports `runtime.prompt_input_command`, so old reducer
+  scripts have to go away instead of hiding behind a smaller wrapper
 - prompt source stops importing special state builders and roles read the ledger
   directly
 - shared contracts use one plain ledger input from `home:issue.md` instead of
@@ -608,8 +610,8 @@ The point of this loop is simple:
 
 | Source shape | Rally home | Example |
 | --- | --- | --- |
-| family entrypoint | `flows/<flow>/prompts/AGENTS.prompt` | source family entrypoint -> host flow entrypoint |
-| role prompt or generated role home | `flows/<flow>/prompts/roles/<role>/**` plus generated readback in `flows/<flow>/build/**` | old role slug -> Rally role key |
+| family entrypoint | `flows/<flow>/prompts/AGENTS.prompt` as a thin build handle when target mode still needs one | source family entrypoint -> host flow build handle |
+| role prompt or generated role home | `flows/<flow>/prompts/agents/<role>/**` plus generated readback in `flows/<flow>/build/**` | old role slug -> Rally role key |
 | shared role-home shell | `flows/<flow>/prompts/shared/**` | source role-home shell -> shared contracts owner |
 | shared output rules | `flows/<flow>/prompts/shared/**` | source outputs owner -> shared review owner |
 | shared capability meaning | `flows/<flow>/prompts/shared/skills.prompt` or reusable `skills/**` | source skill law split into shared skill law plus local skill packages |
@@ -773,12 +775,12 @@ facts: RouteOnlyTurnFacts
 handoff_output: RouteOnlyHandoffOutput
 ```
 
-After, the Rally-native prompt says the agent should read the shared ledger and
-set the next owner directly:
+After, the Rally-native prompt says the agent should use the bounded shared
+read path and set the next owner directly:
 
 ```text
 workflow RouteOnlyTurns: "Lead Role Workflow"
-    "Read the opening request, the newest Rally turn result, the newest relevant Rally notes, and any real current file they name."
+    "Use rally issue current first, then open home:issue.md only when older history matters."
     "If no specialist artifact is current yet, keep the work in `home:issue.md` and say the route in the note."
     "When the route is clear, set the next owner in final JSON directly."
 ```
@@ -899,7 +901,12 @@ The source runtime home might live at:
 
 The ported authored source lives at:
 
-- `flows/<flow>/prompts/roles/<role>/AGENTS.prompt`
+- `flows/<flow>/prompts/agents/<role>/AGENTS.prompt`
+
+The flow may still keep:
+
+- `flows/<flow>/prompts/AGENTS.prompt` as a thin build handle when Doctrine
+  target mode still needs one
 
 The generated readback lives at:
 
@@ -996,9 +1003,10 @@ If `flow.yaml` owns capability truth, do not keep a second live allowlist file.
 
 ## Mistake: Overbuild Mode Gates
 
-If the next agent can reread `home:issue.md`, the latest Rally note, and the
-latest Rally turn result, do not invent a special `waiting`, `review_mode`, or
-`active_mode` gate just to tell it what already happened.
+If the next agent can use `rally issue current` and then open
+`home:issue.md` only when older history matters, do not invent a special
+`waiting`, `review_mode`, or `active_mode` gate just to tell it what already
+happened.
 
 ## Mistake: Encode Review Work As Generic Agent Prose
 

@@ -11,7 +11,7 @@ from rally.domain.flow import FlowDefinition
 from rally.domain.run import ResumeRequest, RunRecord, RunRequest
 from rally.errors import RallyError, RallyUsageError
 from rally.memory.service import refresh_memory, save_memory, search_memory, use_memory
-from rally.services.issue_ledger import append_issue_note
+from rally.services.issue_ledger import append_issue_note, render_issue_current_view
 from rally.services.run_status import show_status
 from rally.services.runner import resume_run, run_flow
 from rally.services.workspace import resolve_workspace
@@ -186,8 +186,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "issue",
         help="Work with a Rally issue log.",
         description=(
-            "Append operator notes to a run's `home/issue.md`.\n\n"
-            "Use this when you need to leave durable context in the run ledger."
+            "Read or update one run's `home/issue.md` ledger.\n\n"
+            "Use this when you need the bounded current view or need to leave durable context in the run ledger."
         ),
         formatter_class=_HelpFormatter,
     )
@@ -221,6 +221,24 @@ def _build_parser() -> argparse.ArgumentParser:
     note_source.add_argument("--text", help="Inline note text to append.")
     note_source.add_argument("--file", help="Read note markdown from this file.")
     issue_note_parser.set_defaults(func=_issue_note_command)
+
+    issue_current_parser = issue_subparsers.add_parser(
+        "current",
+        help="Show the bounded current issue view for one run.",
+        description=(
+            "Print the opening issue plus the newest shared Rally state for one run.\n\n"
+            "Use this when you want the latest shared truth without rereading the full append-only ledger."
+        ),
+        epilog=_examples(
+            "Examples",
+            (
+                "rally issue current --run-id DMO-1",
+            ),
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    issue_current_parser.add_argument("--run-id", required=True, help="Run identifier to read.")
+    issue_current_parser.set_defaults(func=_issue_current_command)
 
     memory_parser = subparsers.add_parser(
         "memory",
@@ -372,6 +390,17 @@ def _issue_note_command(args: argparse.Namespace) -> int:
     print(
         f"Appended note for run `{result.run_id}` to `{result.issue_file}`. "
         f"Saved snapshot `{result.snapshot_file}`."
+    )
+    return 0
+
+
+def _issue_current_command(args: argparse.Namespace) -> int:
+    workspace = resolve_workspace()
+    print(
+        render_issue_current_view(
+            repo_root=workspace.workspace_root,
+            run_id=args.run_id,
+        ).rstrip()
     )
     return 0
 

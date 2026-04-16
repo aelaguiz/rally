@@ -75,10 +75,10 @@ class FlowLoaderTests(unittest.TestCase):
         )
         self.assertEqual(
             flow.agent("02_poem_critic").compiled.final_output.generated_schema_file,
-            repo_root / "flows/poem_loop/build/agents/poem_critic/schemas/poem_review_response.schema.json",
+            repo_root / "flows/poem_loop/build/agents/poem_critic/schemas/poem_review_final_response.schema.json",
         )
         self.assertIsNotNone(flow.agent("02_poem_critic").compiled.review)
-        self.assertEqual(flow.agent("02_poem_critic").compiled.review.final_response.mode, "carrier")
+        self.assertEqual(flow.agent("02_poem_critic").compiled.review.final_response.mode, "split")
         self.assertTrue(flow.agent("02_poem_critic").compiled.review.final_response.control_ready)
 
     def test_load_flow_definition_supports_issue_ledger_first_flow_without_setup_or_prompt_inputs(self) -> None:
@@ -106,8 +106,20 @@ class FlowLoaderTests(unittest.TestCase):
         )
         self.assertEqual(
             flow.agent("02_poem_critic").compiled.final_output.generated_schema_file,
-            repo_root / "flows/poem_loop/build/agents/poem_critic/schemas/poem_review_response.schema.json",
+            repo_root / "flows/poem_loop/build/agents/poem_critic/schemas/poem_review_final_response.schema.json",
         )
+
+    def test_load_flow_definition_allows_compiler_owned_peer_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(repo_root=repo_root)
+            peer_file = repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "SOUL.md"
+            peer_file.write_text("# Scope Soul\n", encoding="utf-8")
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            self.assertEqual(flow.agent("01_scope_lead").slug, "scope_lead")
+            self.assertTrue(peer_file.is_file())
 
     def test_load_flow_definition_loads_guarded_git_repos(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -322,7 +334,7 @@ class FlowLoaderTests(unittest.TestCase):
 
         self.assertIn("## Skills", writer_readback)
         self.assertIn("### rally-kernel", writer_readback)
-        self.assertIn("### rally-memory", writer_readback)
+        self.assertNotIn("### rally-memory", writer_readback)
         self.assertIn("### Saved Run Note", writer_readback)
         self.assertNotIn("\n### Writer Issue Note\n", writer_readback)
         self.assertIn("### Shared Ledger File", writer_readback)
@@ -339,6 +351,7 @@ class FlowLoaderTests(unittest.TestCase):
             "Rally runs this flow. Use the shared rules below with this role's local rules.",
             writer_readback,
         )
+        self.assertIn('"$RALLY_CLI_BIN" issue current --run-id "$RALLY_RUN_ID"', writer_readback)
         self.assertIn("Use `home:issue.md` as the shared ledger for this run.", writer_readback)
         self.assertNotIn("For this turn, read skills from `home:skills/`.", writer_readback)
         self.assertNotIn("On Codex turns, that same folder is `$CODEX_HOME/skills/`.", writer_readback)
@@ -349,8 +362,83 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertIn("#### Review Summary", critic_readback)
         self.assertIn("#### Findings First", critic_readback)
         self.assertNotIn("### Rally Turn Result", critic_readback)
+        self.assertIn("### Poem Review Final Response", critic_readback)
+        self.assertIn("This final response is control-ready. A host may read it as the review outcome.", critic_readback)
 
-    def test_framework_owned_memory_guidance_stays_out_of_example_flow_skills(self) -> None:
+    def test_stdlib_smoke_closeout_uses_inherited_turn_result_family(self) -> None:
+        repo_root = self.repo_root
+
+        schema = json.loads(
+            (repo_root / "flows/_stdlib_smoke/build/agents/closeout/schemas/closeout_turn_result.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        closeout_readback = (repo_root / "flows/_stdlib_smoke/build/agents/closeout/AGENTS.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertEqual(schema["title"], "Closeout Turn Result Schema")
+        self.assertIn("current_artifact", schema["properties"])
+        self.assertEqual(
+            schema["properties"]["kind"]["enum"],
+            ["handoff", "done", "blocker", "sleep"],
+        )
+        self.assertIn("### Closeout Turn Result", closeout_readback)
+        self.assertIn(
+            "| `current_artifact` | string | Yes | Yes | Current artifact path when the smoke test closes out. |",
+            closeout_readback,
+        )
+
+    def test_stdlib_smoke_review_probe_uses_split_final_output_on_shared_review_family(self) -> None:
+        repo_root = self.repo_root
+
+        metadata = json.loads(
+            (repo_root / "flows/_stdlib_smoke/build/agents/repair_plan_reviewer/final_output.contract.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        reviewer_readback = (
+            repo_root / "flows/_stdlib_smoke/build/agents/repair_plan_reviewer/AGENTS.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(metadata["final_output"]["declaration_name"], "SmokeReviewFinalResponse")
+        self.assertEqual(metadata["review"]["comment_output"]["declaration_name"], "SmokeReviewResponse")
+        self.assertEqual(metadata["review"]["final_response"]["mode"], "split")
+        self.assertTrue(metadata["review"]["final_response"]["control_ready"])
+        self.assertIn("### Smoke Review Final Response", reviewer_readback)
+        self.assertIn("This final response is control-ready. A host may read it as the review outcome.", reviewer_readback)
+
+    def test_software_engineering_demo_reviewers_use_split_control_ready_final_output(self) -> None:
+        repo_root = self.repo_root
+
+        architect_metadata = json.loads(
+            (
+                repo_root
+                / "flows/software_engineering_demo/build/agents/architect_reviewer/final_output.contract.json"
+            ).read_text(encoding="utf-8")
+        )
+        qa_metadata = json.loads(
+            (repo_root / "flows/software_engineering_demo/build/agents/qa_reviewer/final_output.contract.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        architect_readback = (
+            repo_root / "flows/software_engineering_demo/build/agents/architect/AGENTS.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(architect_metadata["review"]["final_response"]["mode"], "split")
+        self.assertTrue(architect_metadata["review"]["final_response"]["control_ready"])
+        self.assertEqual(
+            architect_metadata["final_output"]["declaration_name"],
+            "EngineeringReviewFinalResponse",
+        )
+        self.assertEqual(qa_metadata["review"]["final_response"]["mode"], "split")
+        self.assertTrue(qa_metadata["review"]["final_response"]["control_ready"])
+        self.assertIn("Read the newest `Rally Turn Result` block before you rely on an older review verdict.", architect_readback)
+        self.assertIn("Treat the review JSON in that block as the current review truth.", architect_readback)
+        self.assertNotIn("rally runtime review", architect_readback)
+
+    def test_framework_owned_memory_prompt_stays_opt_in(self) -> None:
         repo_root = self.repo_root
 
         flow_skills_source = (
@@ -359,11 +447,13 @@ class FlowLoaderTests(unittest.TestCase):
         base_source = (repo_root / "stdlib/rally/prompts/rally/base_agent.prompt").read_text(encoding="utf-8")
         memory_source = (repo_root / "stdlib/rally/prompts/rally/memory.prompt").read_text(encoding="utf-8")
 
-        self.assertNotIn("Use `rally-memory` only when a past lesson could help.", flow_skills_source)
-        self.assertNotIn("skill rally_memory:", flow_skills_source)
-        self.assertIn("skill rally_memory: rally.memory.RallyMemorySkill", base_source)
+        # Shared base rules stay lean. A flow only teaches memory use when it
+        # opts into the memory skill on purpose.
+        self.assertNotIn("rally-memory", flow_skills_source)
+        self.assertNotIn("rally-memory", base_source)
         self.assertIn("workflow RallyReadFirst", base_source)
         self.assertIn("workflow RallyHowToTakeATurn", base_source)
+        self.assertIn('skill RallyMemorySkill: "rally-memory"', memory_source)
         self.assertNotIn("workflow RallyReadFirst", memory_source)
         self.assertNotIn("workflow RallyHowToTakeATurn", memory_source)
 
@@ -711,17 +801,15 @@ class FlowLoaderTests(unittest.TestCase):
 
 
 class FlowLoaderRuntimeConfigTests(unittest.TestCase):
-    def test_load_flow_definition_resolves_prompt_input_command(self) -> None:
+    def test_load_flow_definition_rejects_prompt_input_command(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_runtime_fixture_repo(repo_root=repo_root)
 
-            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
-
-            self.assertEqual(
-                flow.adapter.prompt_input_command,
-                repo_root / "flows" / "demo" / "setup" / "prompt_inputs.py",
-            )
+            # Rally should fail loud here instead of keeping a generic per-turn
+            # prompt reducer alive in the runtime contract.
+            with self.assertRaisesRegex(RallyConfigError, "does not support `runtime.prompt_input_command`"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
 
     def _write_runtime_fixture_repo(self, *, repo_root: Path) -> None:
         flow_root = repo_root / "flows" / "demo"

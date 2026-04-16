@@ -6,7 +6,7 @@ from typing import Literal
 
 from rally.errors import RallyConfigError
 
-MANDATORY_SKILL_NAMES = ("rally-kernel", "rally-memory")
+MANDATORY_SKILL_NAMES = ("rally-kernel",)
 
 SkillSourceKind = Literal["markdown", "doctrine"]
 

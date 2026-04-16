@@ -1,4 +1,9 @@
-output schema RallyTurnResultSchema: "Rally Turn Result Schema"
+# Keep the shared control core in one base family so flows can extend it
+# without cloning field meaning.
+
+# Base schema: the fields Rally reads to control the next turn.
+# Flows inherit from this when they need the same control JSON plus local fields.
+output schema BaseRallyTurnResultSchema: "Base Rally Turn Result Schema"
     field kind: "Kind"
         type: string
         enum:
@@ -41,9 +46,30 @@ output schema RallyTurnResultSchema: "Rally Turn Result Schema"
         sleep_duration_seconds: null
 
 
-output shape RallyTurnResultJson: "Rally Turn Result JSON"
+# Concrete schema: Rally's stock turn result.
+# It inherits every base field so flow-specific schemas can also inherit the
+# same base and override only the parts they own.
+output schema RallyTurnResultSchema[BaseRallyTurnResultSchema]: "Rally Turn Result Schema"
+    inherit kind
+    inherit next_owner
+    inherit summary
+    inherit reason
+    inherit sleep_duration_seconds
+
+    override example:
+        kind: "handoff"
+        next_owner: "change_engineer"
+        summary: null
+        reason: null
+        sleep_duration_seconds: null
+
+
+# Base shape: the JSON wrapper around the reusable schema.
+# `field_notes` explains how Rally reads the fields without changing schema
+# validation rules.
+output shape BaseRallyTurnResultJson: "Base Rally Turn Result JSON"
     kind: JsonObject
-    schema: RallyTurnResultSchema
+    schema: BaseRallyTurnResultSchema
 
     field_notes: "Field Notes"
         bullets rules:
@@ -54,7 +80,27 @@ output shape RallyTurnResultJson: "Rally Turn Result JSON"
             "If you set `next_owner`, use the flow owner key, not the display name."
 
 
-output RallyTurnResult: "Rally Turn Result"
+# Concrete shape: same JSON kind and notes, with the concrete schema swapped in.
+# The `override schema` line is the key Doctrine move that keeps examples,
+# notes, and field meaning shared.
+output shape RallyTurnResultJson[BaseRallyTurnResultJson]: "Rally Turn Result JSON"
+    inherit kind
+    override schema: RallyTurnResultSchema
+    inherit field_notes
+
+
+# Base output: the reusable final-response target.
+# Flows extend this output when they need Rally control plus extra readback
+# fields in the same final JSON.
+output BaseRallyTurnResult: "Base Rally Turn Result"
     target: TurnResponse
-    shape: RallyTurnResultJson
+    shape: BaseRallyTurnResultJson
     requirement: Required
+
+
+# Stock output: the common final JSON for producer turns.
+# It inherits the target and required status, then points at the stock shape.
+output RallyTurnResult[BaseRallyTurnResult]: "Rally Turn Result"
+    inherit target
+    override shape: RallyTurnResultJson
+    inherit requirement

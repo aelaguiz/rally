@@ -10,9 +10,14 @@ from rally.errors import RallyStateError
 from rally.services.issue_ledger import (
     ORIGINAL_ISSUE_END_MARKER,
     append_issue_edit_diff,
+    append_issue_event,
     append_issue_note,
+    extract_current_issue_text,
     extract_original_issue_text,
+    load_current_issue_text,
+    load_issue_current_view,
     load_original_issue_text,
+    render_issue_current_view,
 )
 
 
@@ -295,6 +300,27 @@ class IssueLedgerTests(unittest.TestCase):
             "# Brief\n\nOriginal operator brief.\n",
         )
 
+    def test_extract_current_issue_text_matches_live_issue_header(self) -> None:
+        issue_text = textwrap.dedent(
+            f"""\
+            # Brief
+
+            Updated operator brief.
+
+            {ORIGINAL_ISSUE_END_MARKER}
+
+            ---
+
+            ## Rally Turn Result
+            - Run ID: `FLW-1`
+            """
+        )
+
+        self.assertEqual(
+            extract_current_issue_text(issue_text),
+            "# Brief\n\nUpdated operator brief.\n",
+        )
+
     def test_load_original_issue_text_prefers_earliest_snapshot_over_live_issue(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
@@ -326,6 +352,117 @@ class IssueLedgerTests(unittest.TestCase):
                 load_original_issue_text(repo_root=repo_root, run_id="FLW-1"),
                 "# Brief\n\nOriginal operator brief.\n",
             )
+
+    def test_load_current_issue_text_reads_live_issue_header(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+            issue_file.write_text(
+                textwrap.dedent(
+                    f"""\
+                    # Brief
+
+                    Updated operator brief.
+
+                    {ORIGINAL_ISSUE_END_MARKER}
+
+                    ---
+
+                    ## Rally Turn Result
+                    - Run ID: `FLW-1`
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                load_current_issue_text(repo_root=repo_root, run_id="FLW-1"),
+                "# Brief\n\nUpdated operator brief.\n",
+            )
+
+    def test_load_issue_current_view_keeps_the_opening_issue_and_latest_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            append_issue_note(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                note_markdown="### Note\n- first note",
+                now=datetime(2026, 4, 13, 19, 30, tzinfo=UTC),
+            )
+            append_issue_event(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                title="Rally Turn Result",
+                source="rally runtime",
+                detail_lines=("Kind: `handoff`",),
+                body="```json\n{\"next_owner\": \"writer\"}\n```",
+                turn_index=1,
+                now=datetime(2026, 4, 13, 19, 31, tzinfo=UTC),
+            )
+            append_issue_note(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                note_markdown="### Note\n- latest note",
+                now=datetime(2026, 4, 13, 19, 32, tzinfo=UTC),
+            )
+            append_issue_event(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                title="Rally Turn Result",
+                source="rally runtime",
+                detail_lines=("Kind: `done`",),
+                body="```json\n{\"done\": true}\n```",
+                turn_index=2,
+                now=datetime(2026, 4, 13, 19, 33, tzinfo=UTC),
+            )
+
+            view = load_issue_current_view(repo_root=repo_root, run_id="FLW-1")
+
+            # A new turn should get the live opening request plus the newest
+            # shared state instead of rereading every older ledger block.
+            self.assertEqual(view.opening_issue, "# Brief\n\nOriginal operator brief.\n")
+            self.assertIn("Kind: `done`", view.latest_turn_result or "")
+            self.assertNotIn("Kind: `handoff`", view.latest_turn_result or "")
+            self.assertIn("latest note", view.latest_note or "")
+            self.assertNotIn("first note", view.latest_note or "")
+            self.assertIsNone(view.latest_blocked)
+
+    def test_render_issue_current_view_shows_current_blocker_only_when_it_is_latest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_run(repo_root=repo_root, run_id="FLW-1")
+
+            append_issue_event(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                title="Rally Blocked",
+                source="rally runtime",
+                detail_lines=("Reason: missing repo",),
+                now=datetime(2026, 4, 13, 19, 30, tzinfo=UTC),
+            )
+            blocked_view = render_issue_current_view(repo_root=repo_root, run_id="FLW-1")
+
+            # The operator-facing read path should call out a live blocker, but
+            # it should drop stale blockers once Rally moves again.
+            self.assertIn("## Current Rally Blocked", blocked_view)
+            self.assertIn("Reason: missing repo", blocked_view)
+
+            append_issue_event(
+                repo_root=repo_root,
+                run_id="FLW-1",
+                title="Rally Turn Result",
+                source="rally runtime",
+                detail_lines=("Kind: `handoff`",),
+                body="```json\n{\"next_owner\": \"writer\"}\n```",
+                turn_index=1,
+                now=datetime(2026, 4, 13, 19, 31, tzinfo=UTC),
+            )
+            recovered_view = render_issue_current_view(repo_root=repo_root, run_id="FLW-1")
+
+            self.assertNotIn("## Current Rally Blocked", recovered_view)
+            self.assertIn("## Latest Rally Turn Result", recovered_view)
 
     def test_append_issue_edit_diff_appends_formatted_diff_block_and_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

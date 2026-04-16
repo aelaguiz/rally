@@ -48,6 +48,7 @@ class RunnerTests(unittest.TestCase):
             agent_markdown = run_home / "agents" / "demo_agent" / "AGENTS.md"
             agent_markdown.parent.mkdir(parents=True, exist_ok=True)
             agent_markdown.write_text("# Demo Agent\n\nRead the ledger.\n", encoding="utf-8")
+            (agent_markdown.parent / "SOUL.md").write_text("# Demo Soul\n\nIgnored by Rally.\n", encoding="utf-8")
 
             workspace = workspace_context_from_root(repo_root)
             final_output = FinalOutputContract(
@@ -82,7 +83,6 @@ class RunnerTests(unittest.TestCase):
                 code="DMO",
                 root_dir=repo_root / "flows" / "demo",
                 flow_file=repo_root / "flows" / "demo" / "flow.yaml",
-                prompt_entrypoint=repo_root / "flows" / "demo" / "prompts" / "AGENTS.prompt",
                 build_agents_dir=repo_root / "flows" / "demo" / "build" / "agents",
                 setup_home_script=None,
                 start_agent_key="01_demo_agent",
@@ -114,121 +114,6 @@ class RunnerTests(unittest.TestCase):
             )
 
             self.assertEqual(prompt, "# Demo Agent\n\nRead the ledger.\n")
-
-    def test_build_agent_prompt_appends_runtime_prompt_inputs(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            repo_root = Path(temp_dir).resolve()
-            for directory_name in ("flows", "skills", "mcps", "stdlib", "runs"):
-                (repo_root / directory_name).mkdir(parents=True, exist_ok=True)
-            (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally-test'\n", encoding="utf-8")
-
-            run_dir = repo_root / "runs" / "active" / "DMO-1"
-            run_home = run_dir / "home"
-            agent_markdown = run_home / "agents" / "demo_agent" / "AGENTS.md"
-            agent_markdown.parent.mkdir(parents=True, exist_ok=True)
-            agent_markdown.write_text("# Demo Agent\n\nRead the ledger.\n", encoding="utf-8")
-            flow_root = repo_root / "flows" / "demo"
-            prompt_input_command = flow_root / "setup" / "prompt_inputs.py"
-            prompt_input_command.parent.mkdir(parents=True, exist_ok=True)
-            prompt_input_command.write_text("print('{}')\n", encoding="utf-8")
-
-            workspace = workspace_context_from_root(repo_root)
-            final_output = FinalOutputContract(
-                exists=True,
-                contract_version=1,
-                declaration_key="DemoTurnResult",
-                declaration_name="DemoTurnResult",
-                format_mode="json_object",
-                schema_profile="OpenAIStructuredOutput",
-                generated_schema_file=None,
-                metadata_file=None,
-            )
-            compiled = CompiledAgentContract(
-                name="DemoAgent",
-                slug="demo_agent",
-                entrypoint=flow_root / "prompts" / "AGENTS.prompt",
-                markdown_path=agent_markdown,
-                metadata_file=run_home / "agents" / "demo_agent" / "final_output.contract.json",
-                contract_version=1,
-                final_output=final_output,
-            )
-            agent = FlowAgent(
-                key="01_demo_agent",
-                slug="demo_agent",
-                timeout_sec=60,
-                allowed_skills=(),
-                allowed_mcps=(),
-                compiled=compiled,
-            )
-            flow = FlowDefinition(
-                name="demo",
-                code="DMO",
-                root_dir=flow_root,
-                flow_file=flow_root / "flow.yaml",
-                prompt_entrypoint=flow_root / "prompts" / "AGENTS.prompt",
-                build_agents_dir=flow_root / "build" / "agents",
-                setup_home_script=None,
-                start_agent_key="01_demo_agent",
-                max_command_turns=8,
-                guarded_git_repos=(),
-                runtime_env={"PROJECT_ROOT": "workspace:fixtures/project"},
-                host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
-                agents={"01_demo_agent": agent},
-                adapter=AdapterConfig(name="codex", args={}, prompt_input_command=prompt_input_command),
-            )
-            run_record = RunRecord(
-                id="DMO-1",
-                flow_name="demo",
-                flow_code="DMO",
-                adapter_name="codex",
-                start_agent_key="01_demo_agent",
-                created_at="2026-04-15T00:00:00Z",
-            )
-            recorder = RunEventRecorder(run_dir=run_dir, run_id="DMO-1", flow_code="DMO")
-            captured: dict[str, object] = {}
-
-            def fake_prompt_input_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-                captured["command"] = command
-                captured["kwargs"] = kwargs
-                return subprocess.CompletedProcess(
-                    args=command,
-                    returncode=0,
-                    stdout=json.dumps(
-                        {
-                            "Ledger": "Read the newest note.",
-                            "Context": {"turn": 1},
-                        }
-                    ),
-                    stderr="",
-                )
-
-            with patch("rally.services.runner.subprocess.run", side_effect=fake_prompt_input_run):
-                prompt = _build_agent_prompt(
-                    workspace=workspace,
-                    run_home=run_home,
-                    flow=flow,
-                    run_record=run_record,
-                    agent=agent,
-                    recorder=recorder,
-                    turn_index=1,
-                )
-
-            kwargs = captured["kwargs"]
-            env = kwargs["env"]
-            self.assertEqual(captured["command"], [sys.executable, str(prompt_input_command)])
-            self.assertEqual(kwargs["cwd"], flow_root)
-            self.assertEqual(env["RALLY_AGENT_KEY"], "01_demo_agent")
-            self.assertEqual(env["RALLY_AGENT_SLUG"], "demo_agent")
-            self.assertEqual(env["RALLY_CLI_BIN"], str(workspace.cli_bin.resolve()))
-            self.assertEqual(env["RALLY_FLOW_CODE"], "DMO")
-            self.assertEqual(env["RALLY_ISSUE_PATH"], str((run_home / "issue.md").resolve()))
-            self.assertEqual(env["RALLY_RUN_HOME"], str(run_home.resolve()))
-            self.assertEqual(env["RALLY_RUN_ID"], "DMO-1")
-            self.assertEqual(env["RALLY_WORKSPACE_DIR"], str(repo_root))
-            self.assertEqual(env["PROJECT_ROOT"], str(repo_root / "fixtures" / "project"))
-            self.assertIn("## Runtime Prompt Inputs", prompt)
-            self.assertIn("### Ledger\n\nRead the newest note.", prompt)
-            self.assertIn('"turn": 1', prompt)
 
     def test_run_flow_creates_pending_run_until_issue_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -335,10 +220,10 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("Fix the pagination bug.", issue_text)
             self.assertIn("Rally Run Started", issue_text)
             self.assertIn("Rally Turn Result", issue_text)
-            self.assertIn("Rally Done", issue_text)
+            self.assertNotIn("Rally Done", issue_text)
             self.assertIn("## Rally Run Started\n- Run ID: `DMO-1`\n- Time:", issue_text)
             self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
-            self.assertIn("## Rally Done\n- Run ID: `DMO-1`\n- Turn: `2`", issue_text)
+            self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `2`", issue_text)
             self.assertIn("\n---\n\n## Rally Turn Result", issue_text)
             self.assertIn("```json\n{\n  \"kind\": \"handoff\"", issue_text)
             self.assertIn('"next_owner": "change_engineer"', issue_text)
@@ -717,7 +602,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(second_result.status, RunStatus.DONE)
             self.assertEqual(state.status, RunStatus.DONE)
             self.assertIn("Rally Paused", issue_text)
-            self.assertIn("Rally Done", issue_text)
+            self.assertNotIn("Rally Done", issue_text)
+            self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `2`", issue_text)
 
     def test_resume_run_step_from_paused_advances_one_more_turn(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -928,16 +814,17 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(result.status, RunStatus.DONE)
             self.assertIsNone(result.current_agent_key)
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "skills" / "rally-memory").exists())
             self.assertIn("## Skills", prompt_text)
             self.assertIn("### rally-kernel", prompt_text)
-            self.assertIn("### rally-memory", prompt_text)
+            self.assertNotIn("### rally-memory", prompt_text)
             self.assertIn("### Saved Run Note", prompt_text)
             self.assertNotIn("\n### Writer Issue Note\n", prompt_text)
             self.assertIn(
                 "Rally runs this flow. Use the shared rules below with this role's local rules.",
                 prompt_text,
             )
+            self.assertIn('"$RALLY_CLI_BIN" issue current --run-id "$RALLY_RUN_ID"', prompt_text)
             self.assertIn("Use `home:issue.md` as the shared ledger for this run.", prompt_text)
             self.assertNotIn("### Read Order", prompt_text)
             self.assertNotIn("### Turn Sequence", prompt_text)
@@ -946,9 +833,9 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("Artistic Rationale", prompt_text)
             self.assertIn("### Rally Turn Result", prompt_text)
             self.assertNotIn("\n### Writer Turn Result\n", prompt_text)
-            self.assertIn("## Rally Note", issue_text)
-            self.assertIn("- Source: `rally runtime review`", issue_text)
-            self.assertIn("### Findings First", issue_text)
+            self.assertNotIn("## Rally Note", issue_text)
+            self.assertIn("Review Verdict: `accept`", issue_text)
+            self.assertIn("Findings First: The poem is ready to keep as written.", issue_text)
             self.assertIn("The poem is ready to keep as written.", issue_text)
             self.assertIn("```json\n{\n  \"verdict\": \"accept\"", issue_text)
             self.assertIn('"reviewed_artifact": "home:artifacts/poem.md"', issue_text)
@@ -964,15 +851,10 @@ class RunnerTests(unittest.TestCase):
                 + "\n[[tool.doctrine.emit.targets]]\n"
                 'name = "rally-kernel"\n'
                 'entrypoint = "skills/rally-kernel/prompts/SKILL.prompt"\n'
-                'output_dir = "skills/rally-kernel/build"\n'
-                "\n[[tool.doctrine.emit.targets]]\n"
-                'name = "rally-memory"\n'
-                'entrypoint = "skills/rally-memory/prompts/SKILL.prompt"\n'
-                'output_dir = "skills/rally-memory/build"\n',
+                'output_dir = "skills/rally-kernel/build"\n',
                 encoding="utf-8",
             )
             shutil.rmtree(repo_root / "skills" / "rally-kernel")
-            shutil.rmtree(repo_root / "skills" / "rally-memory")
             self._write_framework_builtin_skills(framework_root=repo_root)
 
             flow_path = repo_root / "flows" / "poem_loop" / "flow.yaml"
@@ -1126,10 +1008,12 @@ class RunnerTests(unittest.TestCase):
 
             run_dir = find_run_dir(repo_root=repo_root, run_id="DMO-1")
             self.assertEqual(result.status, RunStatus.DONE)
+            # Workspace sync should only restore the required built-ins. The
+            # run home must match that same contract on the first turn.
             self.assertTrue((repo_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertTrue((repo_root / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((repo_root / "skills" / "rally-memory").exists())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "skills" / "rally-memory").exists())
 
     def test_run_flow_passes_flow_env_to_setup_script(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1410,8 +1294,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(
                 observed_skill_sets,
                 [
-                    {"repo-search", "rally-kernel", "rally-memory"},
-                    {"demo-git", "rally-kernel", "rally-memory"},
+                    {"repo-search", "rally-kernel"},
+                    {"demo-git", "rally-kernel"},
                 ],
             )
             self.assertTrue((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "repo-search" / "SKILL.md").is_file())
@@ -1504,8 +1388,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(
                 observed_skill_sets,
                 [
-                    {"repo-search", "rally-kernel", "rally-memory"},
-                    {"pytest-local", "rally-kernel", "rally-memory"},
+                    {"repo-search", "rally-kernel"},
+                    {"pytest-local", "rally-kernel"},
                 ],
             )
             self.assertTrue((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "repo-search" / "SKILL.md").is_file())
@@ -1641,12 +1525,90 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(critic_last_message["verdict"], "changes_requested")
             self.assertEqual(critic_last_message["next_owner"], "poem_writer")
             self.assertTrue((run_dir / "logs" / "adapter_launch" / "turn-003-poem_writer.json").is_file())
-            self.assertIn("### Findings First", issue_text)
+            # The single turn-result block should keep the route visible without
+            # forcing the next reader to open the JSON payload first.
+            self.assertIn("Review Verdict: `changes_requested`", issue_text)
+            self.assertIn("Next Owner: `poem_writer`", issue_text)
+            self.assertIn("Findings First: Line 3 lands. Line 2 still needs a sharper image", issue_text)
             self.assertIn("Line 3 lands. Line 2 still needs a sharper image", issue_text)
             self.assertIn("Middle line explains rather than shows the stranding.", issue_text)
             self.assertIn("```json\n{\n  \"verdict\": \"changes_requested\"", issue_text)
             self.assertIn('"failure_detail": {', issue_text)
             self.assertIn('"failing_gates": [', issue_text)
+
+    def test_poem_loop_review_blocker_keeps_blocked_gate_in_turn_result_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_poem_repo(repo_root=repo_root)
+            flow_path = repo_root / "flows" / "poem_loop" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_text = flow_text.replace("  adapter: claude_code\n", "  adapter: codex\n")
+            flow_text = flow_text.replace("    model: sonnet\n", "    model: gpt-5.4\n")
+            flow_path.write_text(flow_text, encoding="utf-8")
+            fake_run = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-poem-1",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_owner": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    },
+                    {
+                        "thread_id": "session-poem-2",
+                        "last_message": {
+                            "verdict": "changes_requested",
+                            "reviewed_artifact": "home:artifacts/poem.md",
+                            "analysis_performed": "Could not review because the poem draft is missing.",
+                            "findings_first": "The poem draft is missing, so the review cannot continue.",
+                            "current_artifact": None,
+                            "next_owner": None,
+                            "failure_detail": {
+                                "blocked_gate": "The poem draft is missing.",
+                                "failing_gates": None,
+                            },
+                        },
+                    },
+                ]
+            )
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Write a sonnet about the moon.\n", encoding="utf-8")
+                return IssueEditorResult(
+                    status="saved",
+                    cleaned_text="Write a sonnet about the moon.\n",
+                )
+
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                result = run_flow(
+                    repo_root=repo_root,
+                    request=RunRequest(flow_name="poem_loop"),
+                    subprocess_run=fake_run,
+                )
+
+            run_dir = find_run_dir(repo_root=repo_root, run_id="POM-1")
+            state = load_run_state(run_dir=run_dir)
+            issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+
+            self.assertEqual(result.status, RunStatus.BLOCKED)
+            self.assertEqual(state.status, RunStatus.BLOCKED)
+            # The one runtime-owned record still needs the blocker reason in the
+            # summary lines so later readers can see why work stopped at a glance.
+            self.assertIn("Review Verdict: `changes_requested`", issue_text)
+            self.assertIn("Blocked Gate: The poem draft is missing.", issue_text)
+            self.assertNotIn("## Rally Blocked", issue_text)
+            self.assertIn("```json\n{\n  \"verdict\": \"changes_requested\"", issue_text)
+            self.assertIn('"blocked_gate": "The poem draft is missing."', issue_text)
 
     def test_run_flow_rebuild_failure_stops_before_creating_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2036,7 +1998,7 @@ class RunnerTests(unittest.TestCase):
                 updated_skill,
             )
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
-            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "skills" / "rally-memory").exists())
             self.assertTrue((run_dir / "home" / "mcps" / "fixture-repo" / "server.toml").is_file())
             config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
             self.assertIn("project_doc_max_bytes = 0", config_text)
@@ -2179,7 +2141,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(first_result.status, RunStatus.BLOCKED)
             self.assertTrue((run_dir / "home" / "skills" / "repo-search" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
-            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "skills" / "rally-memory").exists())
             self.assertTrue((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "repo-search" / "SKILL.md").is_file())
             self.assertTrue(
                 (run_dir / "home" / "sessions" / "change_engineer" / "skills" / "repo-search" / "SKILL.md").is_file()
@@ -2226,13 +2188,11 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse((run_dir / "home" / "skills" / "repo-search").exists())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
-            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "skills" / "rally-memory").exists())
             self.assertFalse((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "repo-search").exists())
             self.assertFalse((run_dir / "home" / "sessions" / "change_engineer" / "skills" / "repo-search").exists())
             self.assertTrue((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertTrue(
-                (run_dir / "home" / "sessions" / "change_engineer" / "skills" / "rally-memory" / "SKILL.md").is_file()
-            )
+            self.assertTrue((run_dir / "home" / "sessions" / "change_engineer" / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertFalse((run_dir / "home" / "mcps" / "fixture-repo").exists())
             config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
             self.assertEqual(config_text, "project_doc_max_bytes = 0\n")
@@ -2553,9 +2513,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(state.last_turn_kind, "sleep")
             self.assertIn("Sleep turn results are not supported", state.blocker_reason or "")
             self.assertIn("Rally Turn Result", issue_text)
-            self.assertIn("Rally Blocked", issue_text)
+            self.assertNotIn("Rally Blocked", issue_text)
             self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
-            self.assertIn("## Rally Blocked\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
             self.assertNotIn("Rally Sleeping", issue_text)
             self.assertIn("```json\n{\n  \"kind\": \"sleep\"", issue_text)
             self.assertIn('"sleep_duration_seconds": 60', issue_text)
@@ -3889,26 +3848,10 @@ class RunnerTests(unittest.TestCase):
     def _write_framework_builtin_skills(self, *, framework_root: Path) -> None:
         source_root = Path(__file__).resolve().parents[2]
         self._copy_builtin_skill(source_root=source_root, framework_root=framework_root, skill_name="rally-kernel")
-        self._copy_builtin_skill(source_root=source_root, framework_root=framework_root, skill_name="rally-memory")
 
     def _copy_builtin_skill(self, *, source_root: Path, framework_root: Path, skill_name: str) -> None:
         skill_root = framework_root / "skills" / skill_name
         shutil.copytree(source_root / "skills" / skill_name, skill_root)
-        if skill_name == "rally-memory" and not (skill_root / "build" / "SKILL.md").is_file():
-            (skill_root / "build").mkdir(parents=True, exist_ok=True)
-            (skill_root / "build" / "SKILL.md").write_text(
-                textwrap.dedent(
-                    """\
-                    ---
-                    name: "rally-memory"
-                    description: "Shared Rally memory skill."
-                    ---
-
-                    # Rally Memory
-                    """
-                ),
-                encoding="utf-8",
-            )
 
     def _write_markdown_skill(
         self,

@@ -49,7 +49,8 @@ agents, shared workflows, typed inputs and outputs, routed review behavior,
 Doctrine `review_family`, workflow law, and skill-package emit. Keep the shared
 ledger in `home:issue.md` as the one cross-turn note surface. Make agents read
 the repo and deterministic tools directly instead of injecting extra prompt
-summaries each turn.
+summaries each turn. Keep review truth in split final JSON, then let Rally copy
+that JSON into one `Rally Turn Result` block for each successful turn.
 
 ## What shipped
 
@@ -89,4 +90,3 @@ Current proof keeps the showcase honest:
   `software_engineering_demo`, and `demo-git`
 - the full unit suite passes on current head
 - live `SED-3` and `SED-4` run artifacts proved the shipped loop
-

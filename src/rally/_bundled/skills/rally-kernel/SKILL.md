@@ -6,6 +6,7 @@ description: "Shared Rally note skill for saving one short run note through Rall
 # Rally Kernel
 
 Use this skill when a later reader needs one short saved note on this run.
+This skill is for note work only. It does not replace the turn's declared output.
 
 ## Quick model
 

@@ -21,17 +21,21 @@ class WorkspaceSyncTests(unittest.TestCase):
             result = sync_workspace_builtins(workspace=self._workspace(workspace_root))
 
             self.assertFalse(result.already_owned)
+            # The live workspace sync should mirror package install behavior:
+            # only the required kernel skill is copied by default.
             self.assertEqual(
                 result.synced_paths,
                 (
                     "stdlib/rally",
                     "skills/rally-kernel",
-                    "skills/rally-memory",
                 ),
             )
             self.assertIn("Synced Rally built-ins into", result.message)
             self.assertTrue(
                 (workspace_root / "stdlib" / "rally" / "prompts" / "rally" / "turn_results.prompt").is_file()
+            )
+            self.assertTrue(
+                (workspace_root / "stdlib" / "rally" / "prompts" / "rally" / "review_results.prompt").is_file()
             )
             self.assertFalse(
                 (workspace_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").exists()
@@ -40,7 +44,7 @@ class WorkspaceSyncTests(unittest.TestCase):
                 (workspace_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json").exists()
             )
             self.assertTrue((workspace_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertTrue((workspace_root / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((workspace_root / "skills" / "rally-memory").exists())
 
             second_result = sync_workspace_builtins(workspace=self._workspace(workspace_root))
 

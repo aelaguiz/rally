@@ -79,8 +79,10 @@ def ensure_flow_assets_built(
         target_names=(flow_name,),
         failure_label=f"flow `{flow_name}`",
     )
-    _prune_retired_compiled_agent_sidecars(repo_root / "flows" / flow_name / "build" / "agents")
-    _sync_role_soul_sidecars(workspace=workspace_context, flow_name=flow_name)
+    # Doctrine owns the full compiled agent package, including optional peer
+    # files such as `SOUL.md`. Rally only prunes retired legacy artifacts and
+    # validates the package boundary before runtime code consumes it.
+    _prune_retired_compiled_agent_artifacts(repo_root / "flows" / flow_name / "build" / "agents")
     _validate_emitted_agent_packages(repo_root / "flows" / flow_name / "build" / "agents")
 
     if not doctrine_skill_targets:
@@ -176,7 +178,7 @@ def _run_doctrine_emit(
     raise RallyConfigError(f"Failed to rebuild {failure_label} with `{module_name}`: {detail}")
 
 
-def _prune_retired_compiled_agent_sidecars(build_agents_root: Path) -> None:
+def _prune_retired_compiled_agent_artifacts(build_agents_root: Path) -> None:
     if not build_agents_root.is_dir():
         return
     for old_sidecar in build_agents_root.glob("*/AGENTS.contract.json"):
@@ -226,80 +228,6 @@ def _load_final_output_metadata(metadata_file: Path) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise RallyConfigError(f"`{metadata_file}` must contain a top-level object.")
     return payload
-
-
-def _sync_role_soul_sidecars(*, workspace: WorkspaceContext, flow_name: str) -> None:
-    roles_root = workspace.workspace_root / "flows" / flow_name / "prompts" / "roles"
-    build_agents_root = workspace.workspace_root / "flows" / flow_name / "build" / "agents"
-    expected_role_slugs: set[str] = set()
-
-    if roles_root.is_dir():
-        for role_dir in sorted(roles_root.iterdir()):
-            if not role_dir.is_dir():
-                continue
-            soul_prompt = role_dir / "SOUL.prompt"
-            if not soul_prompt.is_file():
-                continue
-            expected_role_slugs.add(role_dir.name)
-            rendered = _render_sidecar_prompt(
-                prompt_path=soul_prompt,
-                project_config_path=workspace.pyproject_path,
-                flow_name=flow_name,
-            )
-            target_dir = build_agents_root / role_dir.name
-            target_dir.mkdir(parents=True, exist_ok=True)
-            (target_dir / "SOUL.md").write_text(rendered, encoding="utf-8")
-
-    if not build_agents_root.is_dir():
-        return
-
-    for agent_dir in sorted(build_agents_root.iterdir()):
-        if not agent_dir.is_dir() or agent_dir.name in expected_role_slugs:
-            continue
-        for sidecar_name in ("SOUL.md", "SOUL.contract.json"):
-            sidecar_path = agent_dir / sidecar_name
-            if sidecar_path.is_file():
-                sidecar_path.unlink()
-        if not any(agent_dir.iterdir()):
-            agent_dir.rmdir()
-
-
-def _render_sidecar_prompt(
-    *,
-    prompt_path: Path,
-    project_config_path: Path,
-    flow_name: str,
-) -> str:
-    try:
-        from doctrine.compiler import CompilationSession
-        from doctrine.diagnostics import DoctrineError
-        from doctrine.parser import parse_file
-        from doctrine.project_config import load_project_config
-        from doctrine.renderer import render_markdown
-    except ImportError as exc:
-        raise RallyConfigError(
-            f"Failed to import Doctrine while rendering role sidecars for flow `{flow_name}`: {exc}."
-        ) from exc
-
-    try:
-        prompt_file = parse_file(prompt_path)
-        project_config = load_project_config(project_config_path)
-        session = CompilationSession(prompt_file, project_config=project_config)
-        agent_names = tuple(
-            agent_name
-            for agent_name, agent in session.root_unit.agents_by_name.items()
-            if not agent.abstract
-        )
-        if len(agent_names) != 1:
-            raise RallyConfigError(
-                f"Role sidecar `{prompt_path}` must compile exactly one concrete agent, found {len(agent_names)}."
-            )
-        compiled_agents = session.compile_agents(agent_names)
-    except DoctrineError as exc:
-        raise RallyConfigError(f"Failed to compile role sidecar `{prompt_path}`: {exc}") from exc
-
-    return render_markdown(compiled_agents[0])
-
 
 def _coerce_workspace(*, workspace: WorkspaceContext | None, repo_root: Path | None) -> WorkspaceContext:
     if workspace is not None and repo_root is not None:

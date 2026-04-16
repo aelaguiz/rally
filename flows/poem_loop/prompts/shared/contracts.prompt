@@ -13,8 +13,8 @@ workflow IssueLedgerGroundTruth: "Inputs And Ground Truth"
         "Treat the opening issue as everything before the first `## Rally` heading."
 
     turn_history: "Turn History"
-        "Read later `## Rally Note` blocks as turn history."
-        "When you need the latest guidance, start with the newest Rally note."
+        "Read later `## Rally Turn Result` blocks as turn history."
+        "When you need the latest guidance, start with the newest turn result."
 
     writer_rationale: "Writer Rationale"
         "The newest writer note should say why the draft took its current shape."

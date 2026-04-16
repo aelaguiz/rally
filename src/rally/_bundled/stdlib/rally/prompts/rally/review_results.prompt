@@ -1,0 +1,133 @@
+# Keep review truth separate from producer control so review lanes do not carry
+# two control languages.
+
+# Base review schema: shared review fields, not producer turn fields.
+# Flow review shapes inherit this and add examples or local wording without
+# changing what Rally can read back from a review turn.
+output schema BaseRallyReviewSchema: "Base Rally Review Schema"
+    field verdict: "Verdict"
+        type: string
+        enum:
+            accept
+            changes_requested
+        required
+        note: "Review verdict."
+
+    field reviewed_artifact: "Reviewed Artifact"
+        type: string
+        required
+        min_length: 1
+        note: "Artifact the review judged."
+
+    field analysis_performed: "Analysis Performed"
+        type: string
+        required
+        min_length: 1
+        note: "Short review summary."
+
+    field findings_first: "Findings First"
+        type: string
+        required
+        min_length: 1
+        note: "Main finding and next move."
+
+    field current_artifact: "Current Artifact"
+        type: string
+        optional
+        min_length: 1
+        note: "Current artifact path when the work still stands."
+
+    field next_owner: "Next Owner"
+        type: string
+        optional
+        min_length: 1
+        note: "Next owner key when the review routes."
+
+    field failure_detail: "Failure Detail"
+        type: object
+        optional
+        note: "Blocked or rejected review details."
+
+        field blocked_gate: "Blocked Gate"
+            type: string
+            optional
+            min_length: 1
+            note: "Blocking reason when review could not start."
+
+        field failing_gates: "Failing Gates"
+            type: array
+            items: string
+            optional
+            min_items: 1
+            note: "Exact failing review gates in authored order."
+
+    example:
+        verdict: "accept"
+        reviewed_artifact: "home:issue.md"
+        analysis_performed: "The review checked the work and the next move is clear."
+        findings_first: "The reviewed work is ready to keep."
+        current_artifact: "home:issue.md"
+        next_owner: null
+        failure_detail: null
+
+
+# Base review shape: a JSON object backed by the review schema.
+# Field notes explain null handling that schema alone cannot teach clearly.
+output shape BaseRallyReviewJson: "Base Rally Review JSON"
+    kind: JsonObject
+    schema: BaseRallyReviewSchema
+
+    field_notes: "Field Notes"
+        bullets rules:
+            "Use `null` for optional fields that do not apply."
+            "Use an owner key in `next_owner` when the review routes."
+            "Keep `failure_detail` null when the review accepts."
+            "Inside `failure_detail`, use null for `blocked_gate` or `failing_gates` when one does not apply."
+
+
+# Base review response: the reusable review carrier.
+# A flow can inherit this output, override local wording, and still keep the
+# same review fields Rally writes into run history.
+output BaseRallyReviewResponse: "Base Rally Review Response"
+    target: TurnResponse
+    shape: BaseRallyReviewJson
+    requirement: Required
+
+    verdict: "Verdict"
+        "Say whether the review accepts the work or asks for changes."
+
+    reviewed_artifact: "Reviewed Artifact"
+        "Name the artifact path you reviewed."
+
+    analysis_performed: "Review Summary"
+        "Explain the review in 2-4 plain sentences."
+
+    findings_first: "Findings First"
+        "Start with the main finding, then the next move."
+        "Keep it short and plain."
+
+    # Conditional sections keep optional fields out of the readback unless the
+    # final JSON actually uses them.
+    current_artifact: "Current Artifact" when present(current_artifact):
+        "Use the current artifact path when the work still stands."
+
+    next_owner: "Next Owner" when present(next_owner):
+        "Use the next owner key when the review routes."
+
+    failure_detail: "Failure Detail" when verdict == ReviewVerdict.changes_requested:
+        blocked_gate: "Blocked Gate" when present(blocked_gate):
+            "Name the blocker when review could not start."
+
+        failing_gates: "Failing Gates"
+            "List the exact failing review gates in authored order."
+
+    # `trust_surface` tells a later reader which emitted field is safe to treat
+    # as the current artifact after review routing.
+    trust_surface:
+        current_artifact
+
+    # Flow-specific review outputs can override this when their reader needs a
+    # narrower promise.
+    standalone_read: "Standalone Read"
+        "This review should stand on its own."
+        "A later reader should know the verdict, the current artifact when one still stands, and the next move."

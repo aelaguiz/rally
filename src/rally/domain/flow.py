@@ -31,7 +31,6 @@ def normalize_flow_code(flow_code: str) -> str:
 class AdapterConfig:
     name: str
     args: Mapping[str, object]
-    prompt_input_command: Path | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "args", MappingProxyType(dict(self.args)))
@@ -122,7 +121,6 @@ class FlowDefinition:
     code: str
     root_dir: Path
     flow_file: Path
-    prompt_entrypoint: Path
     build_agents_dir: Path
     setup_home_script: Path | None
     start_agent_key: str
