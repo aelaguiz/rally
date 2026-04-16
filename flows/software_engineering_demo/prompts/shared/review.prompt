@@ -79,18 +79,14 @@ output EngineeringReviewResponse[rally.review_results.BaseRallyReviewResponse]: 
     override shape: EngineeringReviewJson
     inherit requirement
     inherit verdict
+    inherit findings_first
+    inherit failure_detail
 
     override reviewed_artifact: "Reviewed Artifact"
         "Use `home:issue.md`."
 
     override analysis_performed: "Review Summary"
         "Explain the review in 2-4 plain sentences."
-        "Say what is ready."
-        "Say what is still missing when the review rejects."
-
-    override findings_first: "Findings First"
-        "Start with the main finding, then the next move."
-        "Keep it short and plain."
 
     override current_artifact: "Current Artifact" when present(current_artifact):
         "Use `home:issue.md`."
@@ -100,18 +96,8 @@ output EngineeringReviewResponse[rally.review_results.BaseRallyReviewResponse]: 
         "Use {{Developer:key}} when the next repo change belongs to Developer."
         "Use {{QaDocsTester:key}} when the accepted developer pass is ready for QA."
 
-    override failure_detail: "Failure Detail" when verdict == ReviewVerdict.changes_requested:
-        blocked_gate: "Blocked Gate" when present(blocked_gate):
-            "Name the blocker when review cannot start honestly."
-
-        failing_gates: "Failing Gates"
-            "List the exact failing gates in authored order."
-
     inherit trust_surface
-
-    override standalone_read: "Standalone Read"
-        "This review should stand on its own."
-        "A downstream owner should know the verdict, the next owner when one exists, and the main reason."
+    inherit standalone_read
 
 
 output EngineeringReviewFinalResponse[EngineeringReviewResponse]: "Engineering Review Final Response"
@@ -126,6 +112,4 @@ output EngineeringReviewFinalResponse[EngineeringReviewResponse]: "Engineering R
     inherit next_owner
     inherit failure_detail
     inherit trust_surface
-
-    override standalone_read: "Standalone Read"
-        "This final JSON should be enough for Rally to read the review outcome."
+    inherit standalone_read

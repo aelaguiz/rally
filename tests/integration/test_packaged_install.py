@@ -288,41 +288,19 @@ class PackagedInstallTests(unittest.TestCase):
                         "This review should stand on its own."
 
 
-                output ScopeReviewFinalResponse: "Scope Review Final Response"
-                    target: TurnResponse
-                    shape: rally.review_results.BaseRallyReviewJson
-                    requirement: Required
-
-                    verdict: "Verdict"
-                        "Say whether the review accepts the scope draft or asks for changes."
-
-                    reviewed_artifact: "Reviewed Artifact"
-                        "Use `home:artifacts/scope.md`."
-
-                    analysis_performed: "Review Summary"
-                        "Explain the review in 2-4 plain sentences."
-
-                    findings_first: "Findings First"
-                        "Start with the main finding, then the next move."
-
-                    current_artifact: "Current Artifact" when present(current_artifact):
-                        "Use `home:artifacts/scope.md` when the scope draft still stands."
-
-                    next_owner: "Next Owner" when present(next_owner):
-                        "Use the next owner key when the review routes."
-
-                    failure_detail: "Failure Detail" when verdict == ReviewVerdict.changes_requested:
-                        blocked_gate: "Blocked Gate" when present(blocked_gate):
-                            "Name the blocker when the review could not start."
-
-                        failing_gates: "Failing Gates"
-                            "List the exact failing review gates in authored order."
-
-                    trust_surface:
-                        current_artifact
-
-                    standalone_read: "Standalone Read"
-                        "This final JSON should be enough for Rally to read the review outcome."
+                output ScopeReviewFinalResponse[ScopeReviewResponse]: "Scope Review Final Response"
+                    inherit target
+                    inherit shape
+                    inherit requirement
+                    inherit verdict
+                    inherit reviewed_artifact
+                    inherit analysis_performed
+                    inherit findings_first
+                    inherit current_artifact
+                    inherit next_owner
+                    inherit failure_detail
+                    inherit trust_surface
+                    inherit standalone_read
 
 
                 review ScopeReview: "Scope Review"
@@ -360,12 +338,17 @@ class PackagedInstallTests(unittest.TestCase):
                     workflow: "Finish"
                         "Finish the task and stop."
                     inherit rally_contract
-                    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
-                        inherit rally_workspace_dir
-                        inherit rally_run_id
-                        inherit rally_flow_code
-                        inherit rally_agent_slug
-                        inherit issue_ledger
+                    inputs: "Inputs"
+                        issue_ledger: "Issue Ledger"
+                            rally.base_agent.RallyIssueLedger
+                        rally_workspace_dir: "Rally Workspace Dir"
+                            rally.base_agent.RallyWorkspaceDir
+                        rally_run_id: "Rally Run ID"
+                            rally.base_agent.RallyRunId
+                        rally_flow_code: "Rally Flow Code"
+                            rally.base_agent.RallyFlowCode
+                        rally_agent_slug: "Rally Agent Slug"
+                            rally.base_agent.RallyAgentSlug
                     outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
                         inherit issue_note
                         turn_result: "Turn Result"
@@ -380,12 +363,17 @@ class PackagedInstallTests(unittest.TestCase):
                     inherit how_to_take_a_turn
                     inherit rally_contract
                     review: ScopeReview
-                    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
-                        inherit rally_workspace_dir
-                        inherit rally_run_id
-                        inherit rally_flow_code
-                        inherit rally_agent_slug
-                        inherit issue_ledger
+                    inputs: "Inputs"
+                        issue_ledger: "Issue Ledger"
+                            rally.base_agent.RallyIssueLedger
+                        rally_workspace_dir: "Rally Workspace Dir"
+                            rally.base_agent.RallyWorkspaceDir
+                        rally_run_id: "Rally Run ID"
+                            rally.base_agent.RallyRunId
+                        rally_flow_code: "Rally Flow Code"
+                            rally.base_agent.RallyFlowCode
+                        rally_agent_slug: "Rally Agent Slug"
+                            rally.base_agent.RallyAgentSlug
                         scope_draft_file: "Scope Draft File"
                             ScopeDraftFile
                     outputs: "Outputs"

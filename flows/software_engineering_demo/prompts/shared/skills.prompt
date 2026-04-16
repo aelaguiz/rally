@@ -14,20 +14,14 @@ skill PytestLocalSkill: "pytest-local"
 
 
 skills SoftwareEngineeringSkills: "Skills And Tools"
-    how_to_use: "How To Use"
-        "Start with `demo-git` for branch and status."
-        "Use `repo-search` before you guess where code or tests live."
-        "Use `pytest-local` only when the turn needs proof."
+    skill rally_kernel: rally.base_agent.RallyKernelSkill
+        requirement: Required
 
-    can_run: "Can Run"
-        skill rally_kernel: rally.base_agent.RallyKernelSkill
-            requirement: Required
+    skill demo_git: DemoGitSkill
+        requirement: Required
 
-        skill demo_git: DemoGitSkill
-            requirement: Required
+    skill repo_search: RepoSearchSkill
+        requirement: Advisory
 
-        skill repo_search: RepoSearchSkill
-            requirement: Advisory
-
-        skill pytest_local: PytestLocalSkill
-            requirement: Advisory
+    skill pytest_local: PytestLocalSkill
+        requirement: Advisory

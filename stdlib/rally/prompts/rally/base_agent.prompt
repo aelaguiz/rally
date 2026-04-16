@@ -3,8 +3,8 @@
 # in `rally.memory` so a flow chooses it on purpose.
 
 # Use a tiny text shape for runtime env values.
-# The inputs below make Rally-owned env facts visible to Doctrine instead of
-# hiding them in prose.
+# Keep these inputs available for flows that truly need them, but do not make
+# them part of every managed role's always-on readback.
 output shape RallyEnvText: "Rally Env Text"
     kind: PlainText
 
@@ -47,9 +47,6 @@ input RallyAgentSlug: "Rally Agent Slug"
 skill RallyKernelSkill: "rally-kernel"
     purpose: "Use the shared Rally kernel skill when you need one saved note on this turn."
 
-    use_when: "Use When"
-        "A later reader needs one short saved note."
-
 
 # This read-first block stays small on purpose.
 # It teaches the one shared habit every Rally agent should keep.
@@ -71,10 +68,15 @@ workflow RallyHowToTakeATurn: "Shared Rules"
         "Keep routing, `done`, `blocker`, and `sleep` in final JSON, not in notes."
 
 
-# Group the runtime-managed inputs behind one named block.
-# Flow inputs can inherit these fields and add local files or env vars beside
-# them, which keeps the shared run context in one owner.
+# Keep the always-on input block to the one shared ledger file.
+# Flows can opt into the env inputs below only when their authored prompt really
+# needs them.
 inputs RallyManagedInputs: "Inputs"
+    issue_ledger:
+        RallyIssueLedger
+
+
+inputs RallyRuntimeEnvInputs: "Runtime Env Inputs"
     rally_workspace_dir:
         RallyWorkspaceDir
 
@@ -87,9 +89,6 @@ inputs RallyManagedInputs: "Inputs"
     rally_agent_slug:
         RallyAgentSlug
 
-    issue_ledger:
-        RallyIssueLedger
-
 
 # Group mandatory Rally skills the same way.
 # This keeps the base agent lean while still making every managed turn expose
@@ -97,7 +96,6 @@ inputs RallyManagedInputs: "Inputs"
 skills RallyManagedSkills: "Skills"
     skill rally_kernel: RallyKernelSkill
         requirement: Required
-        reason: "Rally provides this skill on every Rally-managed turn."
 
 # The render profile keeps saved context compact when Doctrine emits it.
 # It changes emitted text only. It is not another runtime state path.
@@ -144,7 +142,7 @@ outputs RallyManagedOutputs: "Outputs"
 # shared shape without creating a runnable stdlib-only agent.
 abstract agent RallyManagedBaseAgent:
     rally_contract: "Rally Context"
-        "You are operating in a system called Rally that functions as our shared control plane. Rally provides skills, a single shared ledger file, routes work between agents and is responsible for waking agents when it is their turn."
+        "Rally is the shared control plane for this run. It gives you the shared ledger, shared skills, and the next route."
     read_first: RallyReadFirst
     how_to_take_a_turn: RallyHowToTakeATurn
 

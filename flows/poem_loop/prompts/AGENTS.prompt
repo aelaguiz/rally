@@ -9,14 +9,9 @@ import roles.poem_critic
 
 
 inputs PoemLoopInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
-    inherit rally_workspace_dir
-
-    inherit rally_run_id
-    inherit rally_flow_code
-    inherit rally_agent_slug
     inherit issue_ledger
 
-    poem_draft_file: "Poem Draft File"
+    poem_draft_file:
         shared.inputs.PoemDraftFile
 
 
@@ -40,7 +35,7 @@ output shape PoemWriterTurnResultJson[rally.turn_results.BaseRallyTurnResultJson
 
     override field_notes: "Field Notes"
         bullets rules:
-            "Always send all six keys."
+            "Always send every field in this schema."
             "Use `null` for fields that do not apply."
             "`kind` tells Rally what to do next."
             "Use `handoff` with `next_owner`, `done` with `summary`, `blocker` with `reason`, and `sleep` with `reason` plus `sleep_duration_seconds`."
@@ -83,7 +78,7 @@ agent PoemWriter[PoemLoopRole]:
         override issue_note: "Saved Run Note"
             shared.outputs.WriterIssueNote
 
-        poem_draft: "Poem Draft"
+        poem_draft:
             shared.outputs.PoemDraft
 
         turn_result: "Turn Result"

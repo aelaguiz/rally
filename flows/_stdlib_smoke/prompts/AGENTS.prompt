@@ -82,7 +82,7 @@ output schema CloseoutTurnResultSchema[rally.turn_results.BaseRallyTurnResultSch
         min_length: 1
         note: "Current artifact path when the smoke test closes out."
 
-    override example:
+    example:
         kind: "done"
         next_owner: null
         summary: "Repair plan is written and the smoke test is done."
@@ -147,42 +147,19 @@ output SmokeReviewResponse[rally.review_results.BaseRallyReviewResponse]: "Smoke
     inherit standalone_read
 
 
-output SmokeReviewFinalResponse: "Smoke Review Final Response"
-    target: TurnResponse
-    shape: SmokeReviewJson
-    requirement: Required
-
-    verdict: "Verdict"
-        "Say whether the review accepts the work or asks for changes."
-
-    reviewed_artifact: "Reviewed Artifact"
-        "Use `home:artifacts/repair_plan.md`."
-
-    analysis_performed: "Review Summary"
-        "Explain the review in 2-4 plain sentences."
-
-    findings_first: "Findings First"
-        "Start with the main finding, then the next move."
-        "Keep it short and plain."
-
-    current_artifact: "Current Artifact" when present(current_artifact):
-        "Use `home:artifacts/repair_plan.md` when the repair plan still stands."
-
-    next_owner: "Next Owner" when present(next_owner):
-        "Use the next owner key when the review routes."
-
-    failure_detail: "Failure Detail" when verdict == ReviewVerdict.changes_requested:
-        blocked_gate: "Blocked Gate" when present(blocked_gate):
-            "Name the blocker when review could not start."
-
-        failing_gates: "Failing Gates"
-            "List the exact failing review gates in authored order."
-
-    trust_surface:
-        current_artifact
-
-    standalone_read: "Standalone Read"
-        "This final JSON should be enough for Rally to read the review outcome."
+output SmokeReviewFinalResponse[SmokeReviewResponse]: "Smoke Review Final Response"
+    inherit target
+    inherit shape
+    inherit requirement
+    inherit verdict
+    inherit reviewed_artifact
+    inherit analysis_performed
+    inherit findings_first
+    inherit current_artifact
+    inherit next_owner
+    inherit failure_detail
+    inherit trust_surface
+    inherit standalone_read
 
 
 schema SmokeReviewContract: "Smoke Review Contract"
@@ -233,21 +210,17 @@ agent PlanAuthor[rally.base_agent.RallyManagedBaseAgent]:
         "Pass the smoke test to RouteRepair only when it needs one more step."
         "Otherwise finish the smoke test here."
     inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
-        inherit rally_workspace_dir
-        inherit rally_run_id
-        inherit rally_flow_code
-        inherit rally_agent_slug
         inherit issue_ledger
 
-        work_brief: "Work Brief"
+        work_brief:
             WorkBrief
 
-        routing_facts: "Routing Facts"
+        routing_facts:
             RoutingFacts
     outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         inherit issue_note
 
-        repair_plan: "Repair Plan"
+        repair_plan:
             RepairPlan
 
         turn_result: "Turn Result"
@@ -270,7 +243,7 @@ agent RouteRepair[rally.base_agent.RallyManagedBaseAgent]:
     outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         inherit issue_note
 
-        route_decision: "Route Decision"
+        route_decision:
             RouteRepairDecision
 
         turn_result: "Turn Result"

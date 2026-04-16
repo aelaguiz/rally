@@ -338,7 +338,10 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertIn("### Saved Run Note", writer_readback)
         self.assertNotIn("\n### Writer Issue Note\n", writer_readback)
         self.assertIn("### Issue Ledger", writer_readback)
-        self.assertIn("### Rally Agent Slug", writer_readback)
+        self.assertNotIn("### Rally Workspace Dir", writer_readback)
+        self.assertNotIn("### Rally Run ID", writer_readback)
+        self.assertNotIn("### Rally Flow Code", writer_readback)
+        self.assertNotIn("### Rally Agent Slug", writer_readback)
         self.assertIn("## Rally Context", writer_readback)
         self.assertIn("## Read First", writer_readback)
         self.assertIn("## Shared Rules", writer_readback)
@@ -348,9 +351,9 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertIn("### Poem Writer Turn Result", writer_readback)
         self.assertIn("| Delivered Via | `rally-kernel` |", writer_readback)
         self.assertIn("`inspiration`", writer_readback)
-        self.assertIn("Always send all six keys.", writer_readback)
+        self.assertIn("Always send every field in this schema.", writer_readback)
         self.assertIn(
-            "You are operating in a system called Rally",
+            "Rally is the shared control plane for this run.",
             writer_readback,
         )
         self.assertIn("Read `home:issue.md` from the top", writer_readback)
@@ -358,6 +361,8 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertNotIn("For this turn, read skills from `home:skills/`.", writer_readback)
         self.assertNotIn("On Codex turns, that same folder is `$CODEX_HOME/skills/`.", writer_readback)
         self.assertNotIn("Many turns use this shared result.", writer_readback)
+        self.assertNotIn("**Use When**", writer_readback)
+        self.assertNotIn("**Reason**", writer_readback)
         self.assertNotIn("### Saved Run Note", critic_readback)
         self.assertIn("## Poem Review", critic_readback)
         self.assertIn("### Poem Review Response", critic_readback)
@@ -436,8 +441,9 @@ class FlowLoaderTests(unittest.TestCase):
         )
         self.assertEqual(qa_metadata["review"]["final_response"]["mode"], "split")
         self.assertTrue(qa_metadata["review"]["final_response"]["control_ready"])
-        self.assertIn("Read the newest `Rally Turn Result` block before you rely on an older review verdict.", architect_readback)
-        self.assertIn("Treat the review JSON in that block as the current review truth.", architect_readback)
+        self.assertIn("This flow works in one demo repo at `home:repos/demo_repo`.", architect_readback)
+        self.assertNotIn("Read the newest `Rally Turn Result` block before you rely on an older review verdict.", architect_readback)
+        self.assertNotIn("Treat the review JSON in that block as the current review truth.", architect_readback)
         self.assertNotIn("rally runtime review", architect_readback)
 
     def test_framework_owned_memory_prompt_stays_opt_in(self) -> None:

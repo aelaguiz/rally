@@ -15,14 +15,9 @@ import roles.qa_reviewer
 
 
 inputs SoftwareEngineeringDemoInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
-    inherit rally_workspace_dir
-
-    inherit rally_run_id
-    inherit rally_flow_code
-    inherit rally_agent_slug
     inherit issue_ledger
 
-    demo_repo_root: "Demo Repo Root"
+    demo_repo_root:
         shared.inputs.DemoRepoRoot
 
 
@@ -33,7 +28,6 @@ abstract agent SoftwareEngineeringRole[rally.base_agent.RallyManagedBaseAgent]:
     system_context: shared.contracts.SoftwareEngineeringSystemContext
     issue_truth: shared.contracts.IssueLedgerGroundTruth
     repo_rules: shared.contracts.DemoRepoRules
-    turn_rules: shared.contracts.SpecialistTurnRules
     skills: shared.skills.SoftwareEngineeringSkills
 
 
@@ -109,7 +103,6 @@ agent Architect[SoftwareEngineeringRole]:
     inherit system_context
     inherit issue_truth
     inherit repo_rules
-    inherit turn_rules
     decision: shared.decisions.ArchitectureChoice
     your_job: roles.architect.ArchitectJob
     quality_bar: roles.architect.ArchitectQualityBar
@@ -131,7 +124,6 @@ agent ArchitectReviewer[SoftwareEngineeringRole]:
     inherit system_context
     inherit issue_truth
     inherit repo_rules
-    inherit turn_rules
     your_job: roles.architect_reviewer.ArchitectReviewerJob
     quality_bar: roles.architect_reviewer.ArchitectReviewerQualityBar
     review: ArchitectReview
@@ -160,7 +152,6 @@ agent Developer[SoftwareEngineeringRole]:
     inherit system_context
     inherit issue_truth
     inherit repo_rules
-    inherit turn_rules
     your_job: roles.developer.DeveloperJob
     quality_bar: roles.developer.DeveloperQualityBar
     inputs: SoftwareEngineeringDemoInputs
@@ -181,7 +172,6 @@ agent DeveloperReviewer[SoftwareEngineeringRole]:
     inherit system_context
     inherit issue_truth
     inherit repo_rules
-    inherit turn_rules
     your_job: roles.developer_reviewer.DeveloperReviewerJob
     quality_bar: roles.developer_reviewer.DeveloperReviewerQualityBar
     review: DeveloperReview
@@ -210,7 +200,6 @@ agent QaDocsTester[SoftwareEngineeringRole]:
     inherit system_context
     inherit issue_truth
     inherit repo_rules
-    inherit turn_rules
     your_job: roles.qa_docs_tester.QaDocsTesterJob
     quality_bar: roles.qa_docs_tester.QaDocsTesterQualityBar
     inputs: SoftwareEngineeringDemoInputs
@@ -231,7 +220,6 @@ agent QaReviewer[SoftwareEngineeringRole]:
     inherit system_context
     inherit issue_truth
     inherit repo_rules
-    inherit turn_rules
     your_job: roles.qa_reviewer.QaReviewerJob
     quality_bar: roles.qa_reviewer.QaReviewerQualityBar
     review: QaReview

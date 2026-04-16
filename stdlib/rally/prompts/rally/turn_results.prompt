@@ -59,7 +59,7 @@ output shape BaseRallyTurnResultJson: "Base Rally Turn Result JSON"
 
     field_notes: "Field Notes"
         bullets rules:
-            "Always send all keys."
+            "Always send every field in this schema."
             "Use `null` for fields that do not apply."
             "`kind` tells Rally what to do next."
             "Use `handoff` with `next_owner`, `done` with `summary`, `blocker` with `reason`, and `sleep` with `reason` plus `sleep_duration_seconds`."
