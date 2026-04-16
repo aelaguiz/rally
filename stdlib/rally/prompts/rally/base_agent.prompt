@@ -57,8 +57,7 @@ skill RallyKernelSkill: "rally-kernel"
 # a tool, input, output, or review rule.
 workflow RallyReadFirst: "Read First"
     sequence steps:
-        "Use `\"$RALLY_CLI_BIN\" issue current --run-id \"$RALLY_RUN_ID\"` first."
-        "Open `home:issue.md` only when you need older ledger history or the full block text."
+        "Read `home:issue.md` from the top, even if you've read it before."
         "Then read this role's local rules, files, and outputs."
 
 
@@ -145,8 +144,7 @@ outputs RallyManagedOutputs: "Outputs"
 # shared shape without creating a runnable stdlib-only agent.
 abstract agent RallyManagedBaseAgent:
     rally_contract: "Rally Context"
-        "Rally runs this flow. Use the shared rules below with this role's local rules."
-
+        "You are operating in a system called Rally that functions as our shared control plane. Rally provides skills, a single shared ledger file, routes work between agents and is responsible for waking agents when it is their turn."
     read_first: RallyReadFirst
     how_to_take_a_turn: RallyHowToTakeATurn
 
