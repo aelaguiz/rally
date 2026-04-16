@@ -80,25 +80,21 @@ workflow RallyHowToTakeATurn: "Shared Rules"
 
 
 # Keep the always-on input block to the one shared ledger file.
+# Use the one-line wrapper form when a slot is only one direct declaration and
+# adds no local prose of its own.
 # Flows can opt into the env inputs below only when their authored prompt really
 # needs them.
 inputs RallyManagedInputs: "Inputs"
-    issue_ledger:
-        RallyIssueLedger
+    issue_ledger: RallyIssueLedger
 
 
+# These runtime env wrappers are the same kind of pass-through slot.
+# Keep them short so the shared owner teaches the simplest safe pattern.
 inputs RallyRuntimeEnvInputs: "Runtime Env Inputs"
-    rally_workspace_dir:
-        RallyWorkspaceDir
-
-    rally_run_id:
-        RallyRunId
-
-    rally_flow_code:
-        RallyFlowCode
-
-    rally_agent_slug:
-        RallyAgentSlug
+    rally_workspace_dir: RallyWorkspaceDir
+    rally_run_id: RallyRunId
+    rally_flow_code: RallyFlowCode
+    rally_agent_slug: RallyAgentSlug
 
 
 # Group mandatory Rally skills the same way.
@@ -142,6 +138,8 @@ output RallyIssueNote: "Issue Note"
 # The saved note output is advisory by design.
 # Final JSON owns routing and completion, while this output is only for context
 # a later turn should remember.
+# Keep this wrapper explicit because `Saved Run Note` is still the heading Rally
+# wants readers to see.
 outputs RallyManagedOutputs: "Outputs"
     issue_note: "Saved Run Note"
         RallyIssueNote

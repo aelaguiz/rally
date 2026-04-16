@@ -1,4 +1,4 @@
-import rally.base_agent
+from rally.base_agent import RallyIssueNoteAppend
 
 
 document ArchitectIssueNoteDocument: "Architect Note"
@@ -44,21 +44,21 @@ document QaIssueNoteDocument: "QA Note"
 
 
 output ArchitectIssueNote: "Architect Issue Note"
-    target: rally.base_agent.RallyIssueNoteAppend
+    target: RallyIssueNoteAppend
     shape: MarkdownDocument
     structure: ArchitectIssueNoteDocument
     requirement: Required
 
 
 output DeveloperIssueNote: "Developer Issue Note"
-    target: rally.base_agent.RallyIssueNoteAppend
+    target: RallyIssueNoteAppend
     shape: MarkdownDocument
     structure: DeveloperIssueNoteDocument
     requirement: Required
 
 
 output QaIssueNote: "QA Issue Note"
-    target: rally.base_agent.RallyIssueNoteAppend
+    target: RallyIssueNoteAppend
     shape: MarkdownDocument
     structure: QaIssueNoteDocument
     requirement: Required

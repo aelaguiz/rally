@@ -37,11 +37,9 @@ output schema BaseRallyTurnResultSchema: "Base Rally Turn Result Schema"
 # Concrete schema: Rally's stock turn result.
 # It inherits every base field so flow-specific schemas can also inherit the
 # same base and override only the parts they own.
+# Group the plain inherited fields when nothing local sits between them.
 output schema RallyTurnResultSchema[BaseRallyTurnResultSchema]: "Rally Turn Result Schema"
-    inherit kind
-    inherit summary
-    inherit reason
-    inherit sleep_duration_seconds
+    inherit {kind, summary, reason, sleep_duration_seconds}
 
 
 # Base shape: the JSON wrapper around the reusable schema.
@@ -65,6 +63,8 @@ output shape BaseRallyTurnResultJson: "Base Rally Turn Result JSON"
 # Concrete shape: same JSON kind and notes, with the concrete schema swapped in.
 # The `override schema` line is the key Doctrine move that keeps examples,
 # notes, and field meaning shared.
+# Grouped inherit is legal here too, but the explicit lines keep the schema
+# override easy to scan in the middle.
 output shape RallyTurnResultJson[BaseRallyTurnResultJson]: "Rally Turn Result JSON"
     inherit kind
     override schema: RallyTurnResultSchema
@@ -82,6 +82,8 @@ output BaseRallyTurnResult: "Base Rally Turn Result"
 
 # Stock output: the common final JSON for producer turns.
 # It inherits the target and required status, then points at the stock shape.
+# Keep the explicit order here for the same reason: the shape override reads
+# better when the inherited slots stay spelled out around it.
 output RallyTurnResult[BaseRallyTurnResult]: "Rally Turn Result"
     inherit target
     override shape: RallyTurnResultJson

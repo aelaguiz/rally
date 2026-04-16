@@ -1,4 +1,4 @@
-import rally.base_agent
+from rally.base_agent import RallyKernelSkill
 
 
 skill DemoGitSkill: "demo-git"
@@ -14,7 +14,7 @@ skill PytestLocalSkill: "pytest-local"
 
 
 skills SoftwareEngineeringSkills: "Skills And Tools"
-    skill rally_kernel: rally.base_agent.RallyKernelSkill
+    skill rally_kernel: RallyKernelSkill
         requirement: Required
 
     skill demo_git: DemoGitSkill

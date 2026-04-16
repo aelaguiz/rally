@@ -1,11 +1,11 @@
-import rally.base_agent
-import rally.turn_results
-import shared.inputs
-import shared.skills
-import shared.outputs
-import shared.contracts
-import shared.decisions
-import shared.review
+import rally.base_agent as base
+import rally.turn_results as turn_results
+from shared.inputs import DemoRepoRoot
+from shared.decisions import ArchitectureChoice
+import shared.skills as skills
+import shared.outputs as outputs
+import shared.contracts as contracts
+import shared.review as review
 import roles.architect
 import roles.architect_reviewer
 import roles.developer
@@ -14,26 +14,22 @@ import roles.qa_docs_tester
 import roles.qa_reviewer
 
 
-inputs SoftwareEngineeringDemoInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
+inputs SoftwareEngineeringDemoInputs[base.RallyManagedInputs]: "Inputs"
     inherit issue_ledger
 
-    demo_repo_root:
-        shared.inputs.DemoRepoRoot
+    demo_repo_root: DemoRepoRoot
 
 
-output schema ArchitectTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Architect Turn Result Schema"
+output schema ArchitectTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Architect Turn Result Schema"
     route field next_route: "Next Route"
         architect_reviewer: "Send the issue to ArchitectReviewer." -> ArchitectReviewer
         nullable
         note: "Use null only when the architect turn blocks or sleeps."
 
-    inherit kind
-    inherit summary
-    inherit reason
-    inherit sleep_duration_seconds
+    inherit {kind, summary, reason, sleep_duration_seconds}
 
 
-output shape ArchitectTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Architect Turn Result JSON"
+output shape ArchitectTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Architect Turn Result JSON"
     inherit kind
     override schema: ArchitectTurnResultSchema
 
@@ -46,7 +42,7 @@ output shape ArchitectTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]
             "Use null for `next_route` only when you block or sleep."
 
 
-output ArchitectTurnResult[rally.turn_results.BaseRallyTurnResult]: "Architect Turn Result"
+output ArchitectTurnResult[turn_results.BaseRallyTurnResult]: "Architect Turn Result"
     inherit target
     override shape: ArchitectTurnResultJson
     inherit requirement
@@ -55,19 +51,16 @@ output ArchitectTurnResult[rally.turn_results.BaseRallyTurnResult]: "Architect T
         "Use `architect_reviewer` when the architect pass is ready for review."
 
 
-output schema DeveloperTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Developer Turn Result Schema"
+output schema DeveloperTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Developer Turn Result Schema"
     route field next_route: "Next Route"
         developer_reviewer: "Send the issue to DeveloperReviewer." -> DeveloperReviewer
         nullable
         note: "Use null only when the developer turn blocks or sleeps."
 
-    inherit kind
-    inherit summary
-    inherit reason
-    inherit sleep_duration_seconds
+    inherit {kind, summary, reason, sleep_duration_seconds}
 
 
-output shape DeveloperTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Developer Turn Result JSON"
+output shape DeveloperTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Developer Turn Result JSON"
     inherit kind
     override schema: DeveloperTurnResultSchema
 
@@ -80,7 +73,7 @@ output shape DeveloperTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]
             "Use null for `next_route` only when you block or sleep."
 
 
-output DeveloperTurnResult[rally.turn_results.BaseRallyTurnResult]: "Developer Turn Result"
+output DeveloperTurnResult[turn_results.BaseRallyTurnResult]: "Developer Turn Result"
     inherit target
     override shape: DeveloperTurnResultJson
     inherit requirement
@@ -89,19 +82,16 @@ output DeveloperTurnResult[rally.turn_results.BaseRallyTurnResult]: "Developer T
         "Use `developer_reviewer` when the developer pass is ready for review."
 
 
-output schema QaDocsTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "QA Docs Turn Result Schema"
+output schema QaDocsTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "QA Docs Turn Result Schema"
     route field next_route: "Next Route"
         qa_reviewer: "Send the issue to QaReviewer." -> QaReviewer
         nullable
         note: "Use null only when the QA docs turn blocks or sleeps."
 
-    inherit kind
-    inherit summary
-    inherit reason
-    inherit sleep_duration_seconds
+    inherit {kind, summary, reason, sleep_duration_seconds}
 
 
-output shape QaDocsTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "QA Docs Turn Result JSON"
+output shape QaDocsTurnResultJson[turn_results.BaseRallyTurnResultJson]: "QA Docs Turn Result JSON"
     inherit kind
     override schema: QaDocsTurnResultSchema
 
@@ -114,7 +104,7 @@ output shape QaDocsTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "
             "Use null for `next_route` only when you block or sleep."
 
 
-output QaDocsTurnResult[rally.turn_results.BaseRallyTurnResult]: "QA Docs Turn Result"
+output QaDocsTurnResult[turn_results.BaseRallyTurnResult]: "QA Docs Turn Result"
     inherit target
     override shape: QaDocsTurnResultJson
     inherit requirement
@@ -123,95 +113,92 @@ output QaDocsTurnResult[rally.turn_results.BaseRallyTurnResult]: "QA Docs Turn R
         "Use `qa_reviewer` when the QA pass is ready for review."
 
 
-abstract agent SoftwareEngineeringRole[rally.base_agent.RallyManagedBaseAgent]:
-    inherit rally_contract
-    inherit read_first
-    inherit how_to_take_a_turn
-    system_context: shared.contracts.SoftwareEngineeringSystemContext
-    issue_truth: shared.contracts.IssueLedgerGroundTruth
-    repo_rules: shared.contracts.DemoRepoRules
-    skills: shared.skills.SoftwareEngineeringSkills
+abstract agent SoftwareEngineeringRole[base.RallyManagedBaseAgent]:
+    inherit {rally_contract, read_first, how_to_take_a_turn}
+    system_context: contracts.SoftwareEngineeringSystemContext
+    issue_truth: contracts.IssueLedgerGroundTruth
+    repo_rules: contracts.DemoRepoRules
+    skills: skills.SoftwareEngineeringSkills
 
 
 review_family EngineeringReviewFamily: "Engineering Review"
-    comment_output: shared.review.EngineeringReviewResponse
+    comment_output: review.EngineeringReviewResponse
 
+    # Bare names mean identity binds.
+    # Keep explicit paths only where the review semantic name changes.
     fields:
-        verdict: verdict
-        reviewed_artifact: reviewed_artifact
+        verdict
+        reviewed_artifact
         analysis: analysis_performed
         readback: findings_first
-        current_artifact: current_artifact
+        current_artifact
         blocked_gate: failure_detail.blocked_gate
         failing_gates: failure_detail.failing_gates
-        next_owner: next_owner
+        next_owner
 
 
 review ArchitectReview[EngineeringReviewFamily]: "Architect Review"
-    subject: rally.base_agent.RallyIssueLedger
-    contract: shared.review.ArchitectReviewContract
+    subject: base.RallyIssueLedger
+    contract: review.ArchitectReviewContract
     inherit fields
 
     contract_checks: "Contract Checks"
         accept "The architect review contract passes." when contract.passes
 
     on_accept:
-        current artifact rally.base_agent.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
+        current artifact base.RallyIssueLedger via review.EngineeringReviewResponse.current_artifact
         route "Accepted architecture goes to Developer." -> Developer
 
     on_reject:
-        current artifact rally.base_agent.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
+        current artifact base.RallyIssueLedger via review.EngineeringReviewResponse.current_artifact
         route "Architect needs another pass." -> Architect
 
 
 review DeveloperReview[EngineeringReviewFamily]: "Developer Review"
-    subject: rally.base_agent.RallyIssueLedger
-    contract: shared.review.DeveloperReviewContract
+    subject: base.RallyIssueLedger
+    contract: review.DeveloperReviewContract
     inherit fields
 
     contract_checks: "Contract Checks"
         accept "The developer review contract passes." when contract.passes
 
     on_accept:
-        current artifact rally.base_agent.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
+        current artifact base.RallyIssueLedger via review.EngineeringReviewResponse.current_artifact
         route "Accepted development goes to QA." -> QaDocsTester
 
     on_reject:
-        current artifact rally.base_agent.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
+        current artifact base.RallyIssueLedger via review.EngineeringReviewResponse.current_artifact
         route "Developer needs another pass." -> Developer
 
 
 review QaReview[EngineeringReviewFamily]: "QA Review"
-    subject: rally.base_agent.RallyIssueLedger
-    contract: shared.review.QaReviewContract
+    subject: base.RallyIssueLedger
+    contract: review.QaReviewContract
     inherit fields
 
     contract_checks: "Contract Checks"
         accept "The QA review contract passes." when contract.passes
 
     on_accept:
-        current artifact rally.base_agent.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
+        current artifact base.RallyIssueLedger via review.EngineeringReviewResponse.current_artifact
 
     on_reject:
-        current artifact rally.base_agent.RallyIssueLedger via shared.review.EngineeringReviewResponse.current_artifact
+        current artifact base.RallyIssueLedger via review.EngineeringReviewResponse.current_artifact
         route "QA found work that still belongs in the repo." -> Developer
 
 
 agent Architect[SoftwareEngineeringRole]:
     role: "Core job: turn the issue into one real next build step for the demo repo."
-    inherit rally_contract
-    inherit read_first
-    inherit how_to_take_a_turn
-    inherit system_context
-    inherit issue_truth
-    inherit repo_rules
-    decision: shared.decisions.ArchitectureChoice
+    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, issue_truth, repo_rules}
+    decision: ArchitectureChoice
     your_job: roles.architect.ArchitectJob
     quality_bar: roles.architect.ArchitectQualityBar
     inputs: SoftwareEngineeringDemoInputs
-    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
-        override issue_note: "Saved Run Note"
-            shared.outputs.ArchitectIssueNote
+    outputs[base.RallyManagedOutputs]: "Outputs"
+        # Keep `Turn Result` explicit because the wrapper title still helps the
+        # emitted readback. `override issue_note:` stays short because it keeps
+        # the inherited `Saved Run Note` title.
+        override issue_note: outputs.ArchitectIssueNote
 
         turn_result: "Turn Result"
             ArchitectTurnResult
@@ -222,46 +209,37 @@ agent Architect[SoftwareEngineeringRole]:
 
 agent ArchitectReviewer[SoftwareEngineeringRole]:
     role: "Core job: review the architect pass honestly and route the next real owner."
-    inherit rally_contract
-    inherit read_first
-    inherit how_to_take_a_turn
-    inherit system_context
-    inherit issue_truth
-    inherit repo_rules
+    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, issue_truth, repo_rules}
     your_job: roles.architect_reviewer.ArchitectReviewerJob
     quality_bar: roles.architect_reviewer.ArchitectReviewerQualityBar
     review: ArchitectReview
     inputs: SoftwareEngineeringDemoInputs
+    # Keep this wrapper explicit because it carries two direct outputs under one
+    # local title.
     outputs: "Outputs"
-        shared.review.EngineeringReviewResponse
-        shared.review.EngineeringReviewFinalResponse
+        review.EngineeringReviewResponse
+        review.EngineeringReviewFinalResponse
     final_output:
-        output: shared.review.EngineeringReviewFinalResponse
+        output: review.EngineeringReviewFinalResponse
         review_fields:
-            verdict: verdict
-            reviewed_artifact: reviewed_artifact
+            verdict
+            reviewed_artifact
             analysis: analysis_performed
             readback: findings_first
-            current_artifact: current_artifact
+            current_artifact
             blocked_gate: failure_detail.blocked_gate
             failing_gates: failure_detail.failing_gates
-            next_owner: next_owner
+            next_owner
 
 
 agent Developer[SoftwareEngineeringRole]:
     role: "Core job: make the next real repo change for the issue."
-    inherit rally_contract
-    inherit read_first
-    inherit how_to_take_a_turn
-    inherit system_context
-    inherit issue_truth
-    inherit repo_rules
+    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, issue_truth, repo_rules}
     your_job: roles.developer.DeveloperJob
     quality_bar: roles.developer.DeveloperQualityBar
     inputs: SoftwareEngineeringDemoInputs
-    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
-        override issue_note: "Saved Run Note"
-            shared.outputs.DeveloperIssueNote
+    outputs[base.RallyManagedOutputs]: "Outputs"
+        override issue_note: outputs.DeveloperIssueNote
 
         turn_result: "Turn Result"
             DeveloperTurnResult
@@ -272,46 +250,35 @@ agent Developer[SoftwareEngineeringRole]:
 
 agent DeveloperReviewer[SoftwareEngineeringRole]:
     role: "Core job: review the developer pass honestly and route the next real owner."
-    inherit rally_contract
-    inherit read_first
-    inherit how_to_take_a_turn
-    inherit system_context
-    inherit issue_truth
-    inherit repo_rules
+    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, issue_truth, repo_rules}
     your_job: roles.developer_reviewer.DeveloperReviewerJob
     quality_bar: roles.developer_reviewer.DeveloperReviewerQualityBar
     review: DeveloperReview
     inputs: SoftwareEngineeringDemoInputs
     outputs: "Outputs"
-        shared.review.EngineeringReviewResponse
-        shared.review.EngineeringReviewFinalResponse
+        review.EngineeringReviewResponse
+        review.EngineeringReviewFinalResponse
     final_output:
-        output: shared.review.EngineeringReviewFinalResponse
+        output: review.EngineeringReviewFinalResponse
         review_fields:
-            verdict: verdict
-            reviewed_artifact: reviewed_artifact
+            verdict
+            reviewed_artifact
             analysis: analysis_performed
             readback: findings_first
-            current_artifact: current_artifact
+            current_artifact
             blocked_gate: failure_detail.blocked_gate
             failing_gates: failure_detail.failing_gates
-            next_owner: next_owner
+            next_owner
 
 
 agent QaDocsTester[SoftwareEngineeringRole]:
     role: "Core job: prove the change, repair small docs or test gaps, and hand the result to QaReviewer."
-    inherit rally_contract
-    inherit read_first
-    inherit how_to_take_a_turn
-    inherit system_context
-    inherit issue_truth
-    inherit repo_rules
+    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, issue_truth, repo_rules}
     your_job: roles.qa_docs_tester.QaDocsTesterJob
     quality_bar: roles.qa_docs_tester.QaDocsTesterQualityBar
     inputs: SoftwareEngineeringDemoInputs
-    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
-        override issue_note: "Saved Run Note"
-            shared.outputs.QaIssueNote
+    outputs[base.RallyManagedOutputs]: "Outputs"
+        override issue_note: outputs.QaIssueNote
 
         turn_result: "Turn Result"
             QaDocsTurnResult
@@ -322,27 +289,22 @@ agent QaDocsTester[SoftwareEngineeringRole]:
 
 agent QaReviewer[SoftwareEngineeringRole]:
     role: "Core job: review the QA pass honestly and end only when the issue is truly done."
-    inherit rally_contract
-    inherit read_first
-    inherit how_to_take_a_turn
-    inherit system_context
-    inherit issue_truth
-    inherit repo_rules
+    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, issue_truth, repo_rules}
     your_job: roles.qa_reviewer.QaReviewerJob
     quality_bar: roles.qa_reviewer.QaReviewerQualityBar
     review: QaReview
     inputs: SoftwareEngineeringDemoInputs
     outputs: "Outputs"
-        shared.review.EngineeringReviewResponse
-        shared.review.EngineeringReviewFinalResponse
+        review.EngineeringReviewResponse
+        review.EngineeringReviewFinalResponse
     final_output:
-        output: shared.review.EngineeringReviewFinalResponse
+        output: review.EngineeringReviewFinalResponse
         review_fields:
-            verdict: verdict
-            reviewed_artifact: reviewed_artifact
+            verdict
+            reviewed_artifact
             analysis: analysis_performed
             readback: findings_first
-            current_artifact: current_artifact
+            current_artifact
             blocked_gate: failure_detail.blocked_gate
             failing_gates: failure_detail.failing_gates
-            next_owner: next_owner
+            next_owner

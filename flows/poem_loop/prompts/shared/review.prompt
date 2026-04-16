@@ -1,14 +1,10 @@
-import rally.review_results
+import rally.review_results as review_results
 
 
-output schema PoemReviewSchema[rally.review_results.BaseRallyReviewSchema]: "Poem Review Schema"
-    inherit verdict
-    inherit reviewed_artifact
-    inherit analysis_performed
-    inherit findings_first
-    inherit current_artifact
-    inherit next_owner
-    inherit failure_detail
+# Group the carried base fields when the child only keeps the shared review
+# body and example.
+output schema PoemReviewSchema[review_results.BaseRallyReviewSchema]: "Poem Review Schema"
+    inherit {verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail}
 
     override example:
         verdict: "accept"
@@ -20,7 +16,9 @@ output schema PoemReviewSchema[rally.review_results.BaseRallyReviewSchema]: "Poe
         failure_detail: null
 
 
-output shape PoemReviewJson[rally.review_results.BaseRallyReviewJson]: "Poem Review JSON"
+# Keep the JSON shape explicit because the schema override is the main thing a
+# reader needs to spot here.
+output shape PoemReviewJson[review_results.BaseRallyReviewJson]: "Poem Review JSON"
     inherit kind
     override schema: PoemReviewSchema
     inherit field_notes
@@ -37,13 +35,10 @@ workflow PoemReviewContract: "Poem Review Contract"
         "Accept only when the poem feels finished and worth keeping."
 
 
-output PoemReviewResponse[rally.review_results.BaseRallyReviewResponse]: "Poem Review Response"
+output PoemReviewResponse[review_results.BaseRallyReviewResponse]: "Poem Review Response"
     inherit target
     override shape: PoemReviewJson
-    inherit requirement
-    inherit verdict
-    inherit findings_first
-    inherit failure_detail
+    inherit {requirement, verdict, findings_first, failure_detail}
 
     override reviewed_artifact: "Reviewed Artifact"
         "Use `home:artifacts/poem.md`."
@@ -58,20 +53,8 @@ output PoemReviewResponse[rally.review_results.BaseRallyReviewResponse]: "Poem R
     override next_owner: "Next Owner" when present(next_owner):
         "Use {{Muse:key}} when the poem needs another draft."
 
-    inherit trust_surface
-    inherit standalone_read
+    inherit {trust_surface, standalone_read}
 
 
 output PoemReviewFinalResponse[PoemReviewResponse]: "Poem Review Final Response"
-    inherit target
-    inherit shape
-    inherit requirement
-    inherit verdict
-    inherit reviewed_artifact
-    inherit analysis_performed
-    inherit findings_first
-    inherit current_artifact
-    inherit next_owner
-    inherit failure_detail
-    inherit trust_surface
-    inherit standalone_read
+    inherit {target, shape, requirement, verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail, trust_surface, standalone_read}
