@@ -1,6 +1,6 @@
 # This module is the shared base for normal Rally work turns.
-# It imports only run-local ledger and note owners. Memory stays opt-in in
-# `rally.memory` so a flow chooses it on purpose.
+# It owns the run-local ledger input and saved note output. Memory stays opt-in
+# in `rally.memory` so a flow chooses it on purpose.
 
 # Use a tiny text shape for runtime env values.
 # The inputs below make Rally-owned env facts visible to Doctrine instead of
@@ -79,17 +79,17 @@ inputs RallyManagedInputs: "Inputs"
     rally_workspace_dir: "Rally Workspace Dir"
         RallyWorkspaceDir
 
-    rally_run_id: "Rally Run ID"
+    rally_run_id:
         RallyRunId
 
-    rally_flow_code: "Rally Flow Code"
+    rally_flow_code:
         RallyFlowCode
 
-    rally_agent_slug: "Rally Agent Slug"
+    rally_agent_slug:
         RallyAgentSlug
 
-    issue_ledger: "Shared Ledger File"
-        rally.issue_ledger.RallyIssueLedger
+    issue_ledger:
+        RallyIssueLedger
 
 
 # Group mandatory Rally skills the same way.
@@ -117,7 +117,6 @@ input RallyIssueLedger: "Issue Ledger"
         path: "home:issue.md"
     shape: MarkdownDocument
     requirement: Required
-    "Use `home:issue.md` as the shared run ledger."
 
 # A saved note is advisory because notes are for later readers.
 # Routing, `done`, `blocker`, and `sleep` still belong to the declared final
@@ -137,7 +136,7 @@ output RallyIssueNote: "Issue Note"
 # a later turn should remember.
 outputs RallyManagedOutputs: "Outputs"
     issue_note: "Saved Run Note"
-        rally.notes.RallyIssueNote
+        RallyIssueNote
 
 
 # This shared base block is where Rally states repo-wide turn rules once.

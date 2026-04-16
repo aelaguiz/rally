@@ -1,9 +1,6 @@
 # This module is the shared base for normal Rally work turns.
-# It imports only run-local ledger and note owners. Memory stays opt-in in
-# `rally.memory` so a flow chooses it on purpose.
-import rally.notes
-import rally.issue_ledger
-
+# It owns the run-local ledger input and saved note output. Memory stays opt-in
+# in `rally.memory` so a flow chooses it on purpose.
 
 # Use a tiny text shape for runtime env values.
 # The inputs below make Rally-owned env facts visible to Doctrine instead of
@@ -82,17 +79,17 @@ inputs RallyManagedInputs: "Inputs"
     rally_workspace_dir: "Rally Workspace Dir"
         RallyWorkspaceDir
 
-    rally_run_id: "Rally Run ID"
+    rally_run_id:
         RallyRunId
 
-    rally_flow_code: "Rally Flow Code"
+    rally_flow_code:
         RallyFlowCode
 
-    rally_agent_slug: "Rally Agent Slug"
+    rally_agent_slug:
         RallyAgentSlug
 
-    issue_ledger: "Shared Ledger File"
-        rally.issue_ledger.RallyIssueLedger
+    issue_ledger:
+        RallyIssueLedger
 
 
 # Group mandatory Rally skills the same way.
@@ -103,13 +100,43 @@ skills RallyManagedSkills: "Skills"
         requirement: Required
         reason: "Rally provides this skill on every Rally-managed turn."
 
+# The render profile keeps saved context compact when Doctrine emits it.
+# It changes emitted text only. It is not another runtime state path.
+render_profile CompactSavedContext:
+    properties -> sentence
+
+
+output target RallyIssueNoteAppend: "Rally Issue Note Append"
+    delivery_skill: RallyKernelSkill
+
+# This module owns Rally's shared run ledger file.
+# Keep the path here so flows import one input instead of spelling their own
+# sidecar files or raw note paths.
+input RallyIssueLedger: "Issue Ledger"
+    source: File
+        path: "home:issue.md"
+    shape: MarkdownDocument
+    requirement: Required
+
+# A saved note is advisory because notes are for later readers.
+# Routing, `done`, `blocker`, and `sleep` still belong to the declared final
+# JSON for the turn.
+output RallyIssueNote: "Issue Note"
+    target: RallyIssueNoteAppend
+    shape: MarkdownDocument
+    render_profile: CompactSavedContext
+    requirement: Advisory
+
+    properties saved_context: "Saved Context"
+        when_to_use: "When To Use"
+            "Leave one short note only when a later reader needs context."
 
 # The saved note output is advisory by design.
 # Final JSON owns routing and completion, while this output is only for context
 # a later turn should remember.
 outputs RallyManagedOutputs: "Outputs"
     issue_note: "Saved Run Note"
-        rally.notes.RallyIssueNote
+        RallyIssueNote
 
 
 # This shared base block is where Rally states repo-wide turn rules once.
