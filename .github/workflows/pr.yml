@@ -54,9 +54,9 @@ jobs:
         working-directory: rally
         run: uv sync --dev
 
-      - name: Emit built-in skills
+      - name: Emit Rally flow and skill bundles
         working-directory: rally
-        run: uv run python -m doctrine.emit_skill --target rally-kernel --target rally-memory
+        run: make emit
 
       - name: Run unit tests
         working-directory: rally
@@ -115,10 +115,10 @@ jobs:
         if: steps.changes.outputs.needed != 'true'
         run: printf '%s\n' 'No runtime, release, packaging, or host-path changes in this pull request.'
 
-      - name: Emit built-in skills
+      - name: Emit Rally flow and skill bundles
         if: steps.changes.outputs.needed == 'true'
         working-directory: rally
-        run: uv run python -m doctrine.emit_skill --target rally-kernel --target rally-memory
+        run: make emit
 
       - name: Build Rally artifacts
         if: steps.changes.outputs.needed == 'true'

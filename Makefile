@@ -5,12 +5,12 @@ PYTHON ?= python
 
 UV_RUN := $(UV) run $(PYTHON)
 
-.PHONY: help setup emit-builtin-skills test tests build-dist verify-package-wheel verify-package-sdist verify-package verify check release-prepare release-tag release-draft release-publish
+.PHONY: help setup emit test tests build-dist verify-package-wheel verify-package-sdist verify-package verify check release-prepare release-tag release-draft release-publish
 
 help:
 	@printf '%s\n' \
 		'make setup                 Sync Rally dev dependencies.' \
-		'make emit-builtin-skills   Compile the Rally built-in skill bundles.' \
+		'make emit                  Compile the checked-in Rally flow and skill bundles.' \
 		'make tests                 Run the Rally unit suite.' \
 		'make test                  Alias for make tests.' \
 		'make build-dist            Build the Rally wheel and sdist.' \
@@ -25,10 +25,11 @@ help:
 setup:
 	$(UV) sync --dev
 
-emit-builtin-skills:
-	$(UV_RUN) -m doctrine.emit_skill --target rally-kernel --target rally-memory
+emit:
+	$(UV_RUN) -m doctrine.emit_docs --pyproject pyproject.toml --target _stdlib_smoke --target poem_loop --target software_engineering_demo
+	$(UV_RUN) -m doctrine.emit_skill --pyproject pyproject.toml --target rally-kernel --target rally-memory --target demo-git
 
-tests: emit-builtin-skills
+tests: emit
 	$(UV) run pytest tests/unit -q
 
 test: tests
@@ -47,7 +48,7 @@ verify-package: build-dist
 	$(UV_RUN) -m rally._package_release smoke --artifact-type wheel
 	$(UV_RUN) -m rally._package_release smoke --artifact-type sdist
 
-verify: emit-builtin-skills
+verify: emit
 	$(UV) run pytest tests/unit/test_package_release.py -q
 	$(UV) run pytest tests/unit/test_release_flow.py -q
 	$(UV) run pytest tests/unit -q
