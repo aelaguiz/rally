@@ -320,6 +320,33 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertTrue(resume_run_mock.call_args.kwargs["request"].detach)
 
+    def test_watch_command_invokes_watch_run(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.watch_run",
+            return_value=0,
+        ) as watch_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["watch", "DMO-1", "--since", "3", "--follow"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(watch_mock.call_args.kwargs["run_id"], "DMO-1")
+        self.assertEqual(watch_mock.call_args.kwargs["since"], 3)
+        self.assertTrue(watch_mock.call_args.kwargs["follow"])
+
+    def test_watch_command_rejects_negative_since(self) -> None:
+        stderr = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace):
+            with redirect_stderr(stderr):
+                exit_code = main(["watch", "DMO-1", "--since", "-1"])
+
+        self.assertNotEqual(exit_code, 0)
+        self.assertIn("--since", stderr.getvalue())
+
     def test_stop_command_defaults_to_cooperative_request(self) -> None:
         stdout = io.StringIO()
         workspace = self._workspace(Path("/tmp/repo"))
