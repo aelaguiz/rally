@@ -11,11 +11,10 @@ from rally.domain.flow import FlowDefinition
 from rally.domain.run import ResumeRequest, RunRecord, RunRequest
 from rally.errors import RallyError, RallyUsageError
 from rally.memory.service import refresh_memory, save_memory, search_memory, use_memory
-from rally.services.issue_ledger import append_issue_note
+from rally.services.issue_ledger import append_issue_note, render_issue_current_view
 from rally.services.run_status import show_status
 from rally.services.runner import resume_run, run_flow
 from rally.services.workspace import resolve_workspace
-from rally.services.workspace_sync import sync_workspace_builtins
 from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display
 
 
@@ -38,13 +37,12 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="rally",
         description=(
             "Run filesystem-first Rally workflows from the repo root.\n\n"
-            "Use `rally workspace sync` in a host repo, `rally run <flow>` to start work, "
-            "`rally status` to see what is active, and `rally resume <run-id>` to keep moving."
+            "Use `rally run <flow>` to start work, `rally status` to see what is active, "
+            "and `rally resume <run-id>` to keep moving."
         ),
         epilog=_examples(
             "Examples",
             (
-                "rally workspace sync",
                 "rally run demo",
                 "rally run demo --from-file ./issue.md",
                 "rally status",
@@ -69,6 +67,7 @@ def _build_parser() -> argparse.ArgumentParser:
                 "rally run demo --step",
                 "rally run demo --new",
                 "rally run demo --from-file ./issue.md",
+                "rally run demo --model gpt-5.4 --thinking high",
                 "rally run demo --new --from-file ./issue.md",
             ),
         )
@@ -90,6 +89,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--from-file",
         help="Copy the starting `home/issue.md` text from this file before the run starts.",
     )
+    run_parser.add_argument(
+        "--model",
+        help="Override `runtime.adapter_args.model` for this run and save it in `run.yaml`.",
+    )
+    run_parser.add_argument(
+        "--thinking",
+        help="Override `runtime.adapter_args.reasoning_effort` for this run and save it in `run.yaml`.",
+    )
     run_parser.set_defaults(func=_run_command)
 
     resume_parser = subparsers.add_parser(
@@ -106,6 +113,7 @@ def _build_parser() -> argparse.ArgumentParser:
                 "rally resume DMO-1 --step",
                 "rally resume DMO-1 --edit",
                 "rally resume DMO-1 --restart",
+                "rally resume DMO-1 --model gpt-5.4 --thinking low",
             ),
         )
         + "\n\nNext: Use `rally status <run-id>` first if you are not sure what state the run is in.",
@@ -127,6 +135,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--step",
         action="store_true",
         help="Run one agent turn, then pause so you can resume later.",
+    )
+    resume_parser.add_argument(
+        "--model",
+        help="Update the saved `runtime.adapter_args.model` override before Rally resumes this run.",
+    )
+    resume_parser.add_argument(
+        "--thinking",
+        help="Update the saved `runtime.adapter_args.reasoning_effort` override before Rally resumes this run.",
     )
     resume_parser.set_defaults(func=_resume_command)
 
@@ -153,41 +169,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     status_parser.set_defaults(func=_status_command)
 
-    workspace_parser = subparsers.add_parser(
-        "workspace",
-        help="Work with the Rally workspace.",
-        description=(
-            "Workspace-level setup commands.\n\n"
-            "Use this before the first run in a host repo or when Rally-owned built-ins need to be refreshed."
-        ),
-        formatter_class=_HelpFormatter,
-    )
-    workspace_subparsers = workspace_parser.add_subparsers(dest="workspace_command", required=True)
-
-    workspace_sync_parser = workspace_subparsers.add_parser(
-        "sync",
-        help="Sync Rally-owned built-ins into this workspace.",
-        description=(
-            "Copy Rally-owned built-ins into the current workspace.\n\n"
-            "Use this in a host repo before the first run or after upgrading Rally."
-        ),
-        epilog=_examples(
-            "Examples",
-            (
-                "rally workspace sync",
-            ),
-        )
-        + "\n\nNext: emit your flow if needed, or start work with `rally run <flow>`.",
-        formatter_class=_HelpFormatter,
-    )
-    workspace_sync_parser.set_defaults(func=_workspace_sync_command)
-
     issue_parser = subparsers.add_parser(
         "issue",
         help="Work with a Rally issue log.",
         description=(
-            "Append operator notes to a run's `home/issue.md`.\n\n"
-            "Use this when you need to leave durable context in the run ledger."
+            "Read or update one run's `home/issue.md` ledger.\n\n"
+            "Use this when you need the bounded current view or need to leave durable context in the run ledger."
         ),
         formatter_class=_HelpFormatter,
     )
@@ -221,6 +208,24 @@ def _build_parser() -> argparse.ArgumentParser:
     note_source.add_argument("--text", help="Inline note text to append.")
     note_source.add_argument("--file", help="Read note markdown from this file.")
     issue_note_parser.set_defaults(func=_issue_note_command)
+
+    issue_current_parser = issue_subparsers.add_parser(
+        "current",
+        help="Show the bounded current issue view for one run.",
+        description=(
+            "Print the opening issue plus the newest shared Rally state for one run.\n\n"
+            "Use this when you want the latest shared truth without rereading the full append-only ledger."
+        ),
+        epilog=_examples(
+            "Examples",
+            (
+                "rally issue current --run-id DMO-1",
+            ),
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    issue_current_parser.add_argument("--run-id", required=True, help="Run identifier to read.")
+    issue_current_parser.set_defaults(func=_issue_current_command)
 
     memory_parser = subparsers.add_parser(
         "memory",
@@ -317,6 +322,8 @@ def _run_command(args: argparse.Namespace) -> int:
             start_new=args.new,
             step=args.step,
             issue_seed_path=issue_seed_path,
+            model_override=args.model,
+            reasoning_effort_override=args.thinking,
         ),
         display_factory=_build_display_factory(sys.stdout),
     )
@@ -333,6 +340,8 @@ def _resume_command(args: argparse.Namespace) -> int:
             edit_issue=args.edit,
             restart=args.restart,
             step=args.step,
+            model_override=args.model,
+            reasoning_effort_override=args.thinking,
         ),
         display_factory=_build_display_factory(sys.stdout),
     )
@@ -346,14 +355,6 @@ def _status_command(args: argparse.Namespace) -> int:
         repo_root=workspace.workspace_root,
         run_id=args.run_id,
     )
-    print(result.message)
-    return 0
-
-
-def _workspace_sync_command(args: argparse.Namespace) -> int:
-    del args
-    workspace = resolve_workspace()
-    result = sync_workspace_builtins(workspace=workspace)
     print(result.message)
     return 0
 
@@ -372,6 +373,17 @@ def _issue_note_command(args: argparse.Namespace) -> int:
     print(
         f"Appended note for run `{result.run_id}` to `{result.issue_file}`. "
         f"Saved snapshot `{result.snapshot_file}`."
+    )
+    return 0
+
+
+def _issue_current_command(args: argparse.Namespace) -> int:
+    workspace = resolve_workspace()
+    print(
+        render_issue_current_view(
+            repo_root=workspace.workspace_root,
+            run_id=args.run_id,
+        ).rstrip()
     )
     return 0
 

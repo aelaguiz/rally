@@ -7,7 +7,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/aelaguiz/rally/badge)](https://scorecard.dev/viewer/?uri=github.com/aelaguiz/rally)
 
 [Doctrine](https://github.com/aelaguiz/doctrine) · [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
-[Design](docs/RALLY_MASTER_DESIGN.md) · [Versioning](docs/VERSIONING.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
+[Design](docs/RALLY_MASTER_DESIGN.md) · [Porting Guide](docs/RALLY_PORTING_GUIDE.md) · [Versioning](docs/VERSIONING.md) · [Changelog](CHANGELOG.md) · [Support](SUPPORT.md) · [Security](SECURITY.md)
 
 Build strong, stable coding-agent workflows from plain repo files.
 
@@ -83,6 +83,12 @@ Release history lives in [CHANGELOG.md](CHANGELOG.md).
 
 ## Use Rally In Another Repo
 
+If you are porting an existing agent system into Rally, read
+[docs/RALLY_PORTING_GUIDE.md](docs/RALLY_PORTING_GUIDE.md) first.
+It explains what should move into `flow.yaml`, `home:issue.md`, setup scripts,
+skills, and shared prompt owners, with example-driven guidance about what to
+remove, what to keep, and where Rally expects the truth to live.
+
 Your host repo is the Rally workspace. Add the fixed top-level folders:
 
 ```text
@@ -104,9 +110,6 @@ requires-python = ">=3.14"
 [tool.rally.workspace]
 version = 1
 
-[tool.doctrine.compile]
-additional_prompt_roots = ["stdlib/rally/prompts"]
-
 [tool.doctrine.emit]
 
 [[tool.doctrine.emit.targets]]
@@ -115,18 +118,18 @@ entrypoint = "flows/demo/prompts/AGENTS.prompt"
 output_dir = "flows/demo/build/agents"
 ```
 
-Author your flow under `flows/demo/`, then sync Rally's built-ins into the
-workspace:
+Author your flow under `flows/demo/`, then use Rally's build and run path:
 
 ```bash
-rally workspace sync
+rally run demo
 ```
 
-That writes Rally-owned built-ins into `stdlib/rally/`,
-`skills/rally-kernel/`, and `skills/rally-memory/`.
 Do not point support files at `../rally/stdlib/...`.
-Rally copies the support files into the host workspace so Doctrine emit stays
-inside the project root.
+During Rally-managed builds, Rally resolves its stdlib and built-in skills
+from the source checkout or installed package and passes the stdlib prompt
+root into Doctrine. Host repos should not add Rally's stdlib under
+`additional_prompt_roots`, and they should not vendor Rally-owned built-ins
+unless they mean to own that copy on purpose.
 
 If your flow needs stable launch env vars, put them in `flow.yaml` instead of
 relying only on the shell that launches `rally`:
@@ -139,6 +142,7 @@ agents:
   01_scope_lead:
     timeout_sec: 900
     allowed_skills: []
+    system_skills: []
     allowed_mcps: []
 runtime:
   adapter: codex
@@ -156,22 +160,17 @@ script, to the prompt-input command, and to the adapter launch. That means
 during preflight. Flow values win over duplicate shell env vars. Rally still
 keeps its own `RALLY_*` keys and adapter keys reserved.
 
-If you want a manual build before the first run, emit from the host repo after
-the sync:
-
-```bash
-uv run python -m doctrine.emit_docs --pyproject pyproject.toml --target demo
-```
-
-Then run the flow:
+Use `rally run` as the supported build-and-run path:
 
 ```bash
 rally run demo
 rally run demo --from-file ./issue.md
 ```
 
-`rally run` and `rally resume` still refresh those built-ins before each
-start or resume.
+`rally run` rebuilds the flow before launch.
+`rally resume` rebuilds it before resume.
+There is no host-side `workspace sync` step and no host-side
+`doctrine.emit_docs` step for Rally stdlib imports in the supported path.
 If you already wrote the starting issue somewhere else, `--from-file` copies
 that file into the new run's `home/issue.md` and starts from there.
 If you want one agent turn at a time, use `--step`:
@@ -190,14 +189,11 @@ rally status
 rally status DMO-1
 ```
 
-In most host repos, treat the synced built-ins as generated framework files and
-ignore them in git unless you are choosing to vendor them on purpose:
-
-```gitignore
-stdlib/rally/
-skills/rally-kernel/
-skills/rally-memory/
-```
+Host repos should not add `stdlib/rally/` or `skills/rally-*` just to make
+Rally work, because Rally does not write those framework-owned paths during
+managed builds and runs.
+If you choose to vendor a Rally built-in on purpose, that copy is host-owned
+and Rally will not keep it in sync.
 
 If Rally opens `home:issue.md`, write the issue there and resume:
 
@@ -292,7 +288,9 @@ Rally already has:
 - repo-local run homes, issue history, logs, and restartable runs
 - strict `handoff`, `done`, `blocker`, and `sleep` turn results
 - repo-local searchable memory
-- allowlisted skills and MCP materialization into the run home
+- allowlisted skills (flow-local and stdlib, see
+  [docs/SKILL_SCOPING.md](docs/SKILL_SCOPING.md)) and MCP materialization
+  into the run home
 - two demo flows:
   - `poem_loop`
   - `software_engineering_demo`

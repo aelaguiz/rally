@@ -40,33 +40,18 @@ The current checked-in CLI is small and explicit.
 Help output is still plain `argparse`, but it now includes quick examples and
 short next-step hints for the main operator paths.
 
-### `rally workspace sync`
+### No `rally workspace sync`
+
+Rally no longer exposes a copy command for framework-owned stdlib or built-in
+skills.
 
 Current shape:
 
-```bash
-rally workspace sync
-```
-
-What it does today:
-
-- resolves the current Rally workspace from `pyproject.toml`
-- syncs Rally-owned built-ins into the workspace at
-  `stdlib/rally/`, `skills/rally-kernel/`, and `skills/rally-memory/`
-- prints one short result line with the synced paths
-- does not create a run
-- does not create `runs/active/<run-id>/`
-- does not prepare a run home
-- does not launch an adapter
-
-Current limits:
-
-- it only syncs Rally-owned built-ins
-- it does not rebuild a flow or skill
-- it does not replace `rally run` or `rally resume`
-
-If the current workspace is the Rally source repo itself, the command is a
-no-op and says the workspace already owns those built-ins.
+- `rally run <flow>` and `rally resume <run-id>` are the front doors
+- those commands rebuild flow assets before launch
+- Rally resolves its stdlib and built-in skills from the source checkout or
+  installed package instead of copying them into the host workspace
+- missing built-ins or reserved host shadowing fail loudly before any agent turn
 
 ### `rally status`
 
@@ -82,6 +67,7 @@ What it does today:
 - with no `run-id`, lists active runs only
 - with `run-id`, shows one compact readable summary for either an active or archived run
 - prints the flow, status, current agent, turn, update time, issue path, and next-action hint
+- shows saved model and thinking overrides when `run.yaml` stores them
 - shows blocker reason, done summary, sleep details, and last result kind when those fields exist
 - keeps the command read-only and filesystem-first
 
@@ -95,7 +81,7 @@ Current limits:
 Current shape:
 
 ```bash
-rally run <flow_name> [--new] [--step] [--from-file <path>]
+rally run <flow_name> [--new] [--step] [--from-file <path>] [--model <name>] [--thinking <level>]
 ```
 
 What it does today:
@@ -107,6 +93,7 @@ What it does today:
 - when `--new` is passed, asks before it archives the current active run for the same flow
 - when `--step` is passed, runs one turn and then stops as `paused`
 - when `--from-file` is passed, reads that file and copies its text into the new run's `home/issue.md`
+- when `--model` or `--thinking` is passed, overlays that value onto the flow's adapter args and saves it in `run.yaml`
 - creates the run shell under `runs/active/<run-id>/home/`
 - opens the editor for a missing or blank `home/issue.md` on a real TTY when an editor is available
 - strips the starter prompt back out before saving the issue
@@ -117,7 +104,6 @@ What it does today:
   turn starts
 - activates the current agent's live `home/skills/` tree before that turn
 - runs flow setup only the first time the run home becomes ready
-- loads any flow-declared runtime prompt-input sections before each turn
 - blocks `handoff` or `done` when a flow-declared guarded git repo is missing,
   not a git work tree, or dirty
 - opens a live color stream on a TTY
@@ -153,7 +139,7 @@ adds one `Rally Paused` ledger block, and leaves the next agent as current.
 Current shape:
 
 ```bash
-rally resume <run-id> [--edit|--restart] [--step]
+rally resume <run-id> [--edit|--restart] [--step] [--model <name>] [--thinking <level>]
 ```
 
 What it does today:
@@ -163,6 +149,7 @@ What it does today:
 - when `--edit` is passed, opens the current `home/issue.md` in place before Rally tries the turn
 - when `--restart` is passed, asks before Rally archives the old run and starts a fresh run from the original issue
 - when `--step` is passed, runs one turn and then stops as `paused`
+- when `--model` or `--thinking` is passed, updates the saved override in `run.yaml` before Rally starts the turn
 - opens the same issue editor path as `rally run` when `home/issue.md` is missing or blank on a real TTY
 - refuses archived runs
 - refuses done runs for plain resume
@@ -177,7 +164,6 @@ What it does today:
   and adapter-owned bootstrap files before the next turn starts
 - activates the current agent's live `home/skills/` tree before that turn
 - does not rerun flow setup after the run home is already ready
-- reloads any flow-declared runtime prompt-input sections before each turn
 - blocks `handoff` or `done` when a flow-declared guarded git repo is missing,
   not a git work tree, or dirty
 - prints the resulting run status line plus the usual next command
@@ -197,6 +183,15 @@ issue into a fresh run with a new run id, and starts that new run from turn 0.
 If `--step` is passed and the turn hands off, Rally leaves the next agent as
 current, marks the run `paused`, and waits for the operator to resume.
 
+Model and thinking override rules today:
+
+- `--model` maps to `runtime.adapter_args.model`
+- `--thinking` maps to `runtime.adapter_args.reasoning_effort`
+- the current command flag wins first
+- otherwise `rally resume` reuses the saved override from `run.yaml`
+- otherwise Rally uses the value from `flow.yaml`
+- `rally resume --restart` carries saved overrides into the fresh run unless the restart command passes new flags
+
 ### `runtime.max_command_turns`
 
 Each flow now sets `runtime.max_command_turns` in `flow.yaml`.
@@ -208,28 +203,6 @@ The cap is checked before the next turn starts.
 If Rally hits it, Rally keeps the next agent as current, writes a clear
 `Rally Blocked` record, and tells the operator why it stopped.
 
-### `runtime.prompt_input_command`
-
-A flow may declare one `runtime.prompt_input_command` in `flow.yaml`.
-
-What Rally does today:
-
-- runs that command before each turn
-- runs it from the flow root, not from the run home
-- expects one JSON object whose top-level keys become appended prompt-input
-  section titles
-- passes current run facts through env vars:
-  - `RALLY_AGENT_KEY`
-  - `RALLY_AGENT_SLUG`
-  - `RALLY_CLI_BIN`
-  - `RALLY_FLOW_CODE`
-  - `RALLY_ISSUE_PATH`
-  - `RALLY_RUN_HOME`
-  - `RALLY_RUN_ID`
-  - `RALLY_WORKSPACE_DIR`
-- also passes any optional `runtime.env` values from `flow.yaml`
-- lets `runtime.env` override duplicate shell env vars
-
 ### `runtime.env`
 
 A flow may declare one optional `runtime.env` map in `flow.yaml`.
@@ -237,8 +210,7 @@ A flow may declare one optional `runtime.env` map in `flow.yaml`.
 What Rally does today:
 
 - accepts a flat string map only
-- applies it during startup host-input checks, the setup script,
-  prompt-input command, and adapter launches
+- applies it during startup host-input checks, the setup script, and adapter launches
 - expands rooted Rally paths such as `workspace:fixtures/project` before launch
 - lets `runtime.env` satisfy `host_inputs.required_env`
 - lets `host_inputs.required_files` and `required_directories` resolve
@@ -248,9 +220,6 @@ What Rally does today:
 - does not copy those flow-only env vars into `logs/adapter_launch/*.json`
 - writes one `INPUTS` lifecycle event before the command and one `INPUTS OK`
   or failure event after it
-
-Today Rally uses that path in `software_engineering_demo` to feed grounding
-with current branch facts, carry-forward source, and review-basis facts.
 
 ### `runtime.guarded_git_repos`
 
@@ -265,6 +234,22 @@ What Rally does today:
 - leaves the current agent as current so the operator can inspect the same turn
 
 Today `software_engineering_demo` uses this to guard `repos/demo_repo`.
+
+### `rally issue current`
+
+Current shape:
+
+```bash
+rally issue current --run-id <run-id>
+```
+
+What it does today:
+
+- reads the run's `home/issue.md`
+- prints the opening issue plus the newest `Rally Turn Result` and newest `Rally Note`
+- prints a `Rally Blocked` section only when that blocker is still the newest shared state
+- reminds the caller to open `home:issue.md` only when older history or the full block text is needed
+- stays read-only
 
 ### `rally issue note`
 
@@ -346,6 +331,9 @@ The CLI error model is already simple:
 ## Issue Ledger And Snapshots
 
 Rally writes both the issue ledger and `logs/events.jsonl`.
+`logs/events.jsonl` is still the stable `RunEvent` log, but it now also keeps
+non-rendered mirror rows for raw adapter JSON and the final payload Rally
+loaded from `last_message.json`.
 
 `src/rally/services/issue_ledger.py` enforces a narrow contract:
 
@@ -353,6 +341,7 @@ Rally writes both the issue ledger and `logs/events.jsonl`.
 - the `id` in `run.yaml` must match the requested run id
 - Rally only writes to the run's `home/issue.md`
 - Rally rejects any other `issue_file` path even if `run.yaml` names it
+- `rally issue current` is the bounded read path for the live opening issue plus the newest shared state
 
 The issue file starts with the operator brief exactly as entered.
 Rally does not also write a shared `operator_brief.md` sidecar or accept a
@@ -364,11 +353,14 @@ original issue for `resume --restart`.
 After that, Rally appends:
 
 - note blocks from `rally issue note`
-- review-note blocks from `rally runtime review` when Rally consumes a review-native final response
 - `resume --edit` diff blocks when the operator changed `home/issue.md`
 - run-start records
-- turn-result records, including `Agent Issues: ...` when a shared final response sends that passive field
-- paused, blocked, or done status records when they apply
+- one `Rally Turn Result` record for each successful turn, including an `Agent Issues: ...` line when a shared final response sends that passive field
+- paused records and early-failure blocker records when they apply
+
+The shared read-first path is now `rally issue current --run-id <run-id>`.
+That command keeps the opening issue and newest shared state easy to reread
+without forcing every turn to reopen the full append-only ledger first.
 
 Rally writes one Markdown thematic break, `---`, between Rally-owned blocks.
 It does not add a leading divider at the top of the file.
@@ -384,7 +376,7 @@ The current Rally note block format is:
 - Run ID: `<run-id>`
 - Turn: `<turn-number>`
 - Time: `<utc-iso8601>`
-- Source: `rally issue note` or `rally runtime review`
+- Source: `rally issue note`
 - Field kind: `producer_handoff`  optional on `rally issue note` blocks
 - Field lane: `producer`  optional on `rally issue note` blocks
 
@@ -392,8 +384,12 @@ The current Rally note block format is:
 ```
 
 Turn-scoped runtime blocks use the same optional `- Turn:` metadata line.
-That includes `Rally Turn Result`, `Rally Done`, `Rally Blocked`, and
-`Rally Sleeping` when the block belongs to one active turn.
+That includes `Rally Turn Result` and any turn-scoped `Rally Blocked` record
+when the turn failed before Rally had a valid final JSON result.
+`Rally Turn Result` keeps the quick summary lines and adds a fenced pretty JSON
+copy of the full final message under them.
+Review turns also keep structured review lines there, such as verdict,
+reviewed artifact, and findings first.
 Non-turn blocks such as `Rally Run Started`, `Rally Archived`, and
 `user edited issue.md` stay unnumbered.
 
@@ -453,7 +449,8 @@ claude -p \
 The runtime also:
 
 - injects the refreshed run-home `AGENTS.md` readback directly on stdin
-- appends runtime prompt inputs when the flow declares a prompt-input command
+- appends the generated previous-turn appendix on stdin when the compiled
+  contract asks for prior outputs
 - merges optional flow `runtime.env` values before startup host-input checks,
   setup, and adapter launch
 - keeps Codex project-doc discovery off inside the adapter
@@ -483,6 +480,7 @@ Current logging is richer, but still file-first.
 What exists today:
 
 - `run.yaml`
+  - stable run identity plus optional `model_override` and `reasoning_effort_override`
 - `state.yaml`
 - `home/issue.md`
 - `issue_history/` full snapshots after Rally-owned issue writes
@@ -497,6 +495,8 @@ What exists today:
 - `home/sessions/<agent>/turn-<n>/exec.jsonl`
 - `home/sessions/<agent>/turn-<n>/stderr.log`
 - `home/sessions/<agent>/turn-<n>/last_message.json`
+- `home/sessions/<agent>/turn-<n>/previous_turn_inputs.md` when the turn used
+  previous-turn readback
 
 What does not exist yet:
 
@@ -510,7 +510,7 @@ same event stream.
 
 That event stream now covers:
 
-- Rally lifecycle events such as run create, resume, home prep, setup, prompt-input load, launch, and final turn status
+- Rally lifecycle events such as run create, resume, home prep, setup, launch, and final turn status
 - first-class memory rows for `search`, `use`, `save`, and `refresh`
 - adapter session start or resume events
 - assistant output lines when an adapter emits text chunks
@@ -518,10 +518,14 @@ That event stream now covers:
 - tool start, success, and failure summaries when an adapter exposes them
 - token-use summaries
 - stderr lines, warnings, and hard errors
+- raw adapter stdout JSON rows as `RAWJSON` debug events
+- one `FINALJSON` debug event for each payload Rally loaded from
+  `last_message.json`
 
-Unknown adapter JSON events still stay in the raw per-turn `exec.jsonl` file.
-Rally keeps them out of the live stream unless they look like warnings or
-errors.
+Those raw JSON mirror rows stay out of the live stream and
+`logs/rendered.log`.
+`home/sessions/<agent>/turn-<n>/exec.jsonl` still keeps the exact per-turn
+stdout transcript.
 
 ## Renderer Rules
 

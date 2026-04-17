@@ -85,6 +85,7 @@ def resolve_rooted_path(
     workspace_root: Path | None = None,
     flow_root: Path | None = None,
     run_home: Path | None = None,
+    stdlib_root: Path | None = None,
     env: Mapping[str, str] | None = None,
     context: str,
 ) -> Path:
@@ -111,9 +112,8 @@ def resolve_rooted_path(
             context=context,
         )
     if rooted_path.root == STDLIB_ROOT:
-        workspace_base = _require_base_path(workspace_root, label="workspace root", context=context)
         return _resolve_under_root(
-            base_path=workspace_base / "stdlib" / "rally",
+            base_path=_require_base_path(stdlib_root, label="Rally stdlib root", context=context),
             rooted_path=rooted_path,
             context=context,
         )
@@ -126,6 +126,7 @@ def expand_rooted_string(
     workspace_root: Path | None = None,
     flow_root: Path | None = None,
     run_home: Path | None = None,
+    stdlib_root: Path | None = None,
     env: Mapping[str, str] | None = None,
     allowed_roots: Collection[PathRoot] = INTERNAL_PATH_ROOTS,
     context: str,
@@ -145,6 +146,7 @@ def expand_rooted_string(
             workspace_root=workspace_root,
             flow_root=flow_root,
             run_home=run_home,
+            stdlib_root=stdlib_root,
             env=env,
             context=context,
         )
@@ -157,6 +159,7 @@ def expand_rooted_value(
     workspace_root: Path | None = None,
     flow_root: Path | None = None,
     run_home: Path | None = None,
+    stdlib_root: Path | None = None,
     env: Mapping[str, str] | None = None,
     allowed_roots: Collection[PathRoot] = INTERNAL_PATH_ROOTS,
     context: str,
@@ -168,6 +171,7 @@ def expand_rooted_value(
             workspace_root=workspace_root,
             flow_root=flow_root,
             run_home=run_home,
+            stdlib_root=stdlib_root,
             env=env,
             allowed_roots=allowed_roots,
             context=context,
@@ -180,6 +184,7 @@ def expand_rooted_value(
                 workspace_root=workspace_root,
                 flow_root=flow_root,
                 run_home=run_home,
+                stdlib_root=stdlib_root,
                 env=env,
                 allowed_roots=allowed_roots,
                 context=context,
@@ -194,6 +199,7 @@ def expand_rooted_value(
                 workspace_root=workspace_root,
                 flow_root=flow_root,
                 run_home=run_home,
+                stdlib_root=stdlib_root,
                 env=env,
                 allowed_roots=allowed_roots,
                 context=f"{context}.{key}",

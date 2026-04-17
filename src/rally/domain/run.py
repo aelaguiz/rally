@@ -20,6 +20,8 @@ class RunRequest:
     start_new: bool = False
     step: bool = False
     issue_seed_path: Path | None = None
+    model_override: str | None = None
+    reasoning_effort_override: str | None = None
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,8 @@ class ResumeRequest:
     edit_issue: bool = False
     restart: bool = False
     step: bool = False
+    model_override: str | None = None
+    reasoning_effort_override: str | None = None
 
 
 @dataclass(frozen=True)
@@ -39,6 +43,8 @@ class RunRecord:
     start_agent_key: str
     created_at: str
     issue_file: str = "home/issue.md"
+    model_override: str | None = None
+    reasoning_effort_override: str | None = None
 
 
 @dataclass(frozen=True)

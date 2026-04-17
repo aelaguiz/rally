@@ -1,6 +1,6 @@
 workflow QaDocsTesterJob: "Your Job"
     mission: "Mission"
-        "Prove the change, repair small docs or test gaps when that is your cleanest move, and hand the result to Critic."
+        "Prove the change, repair small docs or test gaps when that is your cleanest move, and hand the result to QaReviewer."
 
     success: "Success"
         "The checks are real."
@@ -16,11 +16,12 @@ workflow QaDocsTesterJob: "Your Job"
 
     process: "Process"
         "Start with `demo-git` status."
+        "Read the latest developer review and the latest specialist note that still stands."
         "Run the smallest proof that can really judge the current change."
         "Repair docs or tests yourself when the fix is still inside this turn's proof lane."
         "If the repo changed, commit before `handoff`."
         "Leave the required QA note."
-        "End with `handoff` to `critic`."
+        "End with `handoff` to `qa_reviewer`."
 
     output_contract: "Output Contract"
         "Use the note to say the checks, docs and tests state, commit state, and next step."

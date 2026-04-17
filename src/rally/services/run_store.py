@@ -43,6 +43,8 @@ def create_run(
     *,
     repo_root: Path,
     flow: FlowDefinition,
+    model_override: str | None = None,
+    reasoning_effort_override: str | None = None,
     now: datetime | None = None,
 ) -> RunRecord:
     timestamp = _render_time(now)
@@ -64,6 +66,8 @@ def create_run(
         adapter_name=flow.adapter.name,
         start_agent_key=flow.start_agent_key,
         created_at=timestamp,
+        model_override=model_override,
+        reasoning_effort_override=reasoning_effort_override,
     )
     state = RunState(
         status=RunStatus.PENDING,
@@ -142,12 +146,19 @@ def load_run_record(*, run_dir: Path) -> RunRecord:
         start_agent_key=_require_string(payload, "start_agent_key", context=str(run_dir / "run.yaml")),
         created_at=_require_string(payload, "created_at", context=str(run_dir / "run.yaml")),
         issue_file=_require_string(payload, "issue_file", context=str(run_dir / "run.yaml")),
+        model_override=_optional_string(payload, "model_override"),
+        reasoning_effort_override=_optional_string(payload, "reasoning_effort_override"),
     )
 
 
 def write_run_record(*, run_dir: Path, record: RunRecord) -> Path:
     path = run_dir / "run.yaml"
-    _write_yaml_map(path, asdict(record))
+    payload = asdict(record)
+    if record.model_override is None:
+        payload.pop("model_override", None)
+    if record.reasoning_effort_override is None:
+        payload.pop("reasoning_effort_override", None)
+    _write_yaml_map(path, payload)
     return path
 
 

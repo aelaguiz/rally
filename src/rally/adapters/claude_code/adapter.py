@@ -29,6 +29,7 @@ from rally.domain.flow import FlowAgent, FlowDefinition
 from rally.domain.rooted_path import INTERNAL_PATH_ROOTS, expand_rooted_value
 from rally.domain.run import RunRecord
 from rally.errors import RallyConfigError
+from rally.services.builtin_assets import resolve_rally_builtin_assets
 from rally.services.flow_env import build_flow_subprocess_env
 from rally.services.run_events import RunEventRecorder
 from rally.services.workspace import WorkspaceContext
@@ -216,7 +217,7 @@ class ClaudeCodeAdapter(RallyAdapter):
             "--allowedTools",
             ",".join(_ALLOWED_BUILTIN_TOOLS),
             "--json-schema",
-            agent.compiled.final_output.schema_file.read_text(encoding="utf-8"),
+            agent.compiled.final_output.generated_schema_file.read_text(encoding="utf-8"),
         ]
         model = flow.adapter.args.get("model")
         if isinstance(model, str) and model.strip():
@@ -423,6 +424,13 @@ def _stream_claude_code_invocation(
                 if key.data == "stdout":
                     _append_text(artifacts.exec_jsonl_file, line)
                     stdout_chunks.append(line)
+                    recorder.emit_adapter_json(
+                        source="claude_code",
+                        raw_line=line,
+                        turn_index=turn_index,
+                        agent_key=agent.key,
+                        agent_slug=agent.slug,
+                    )
                     for draft in parser.consume_stdout_line(line):
                         recorder.emit_draft(draft)
                     continue
@@ -493,6 +501,13 @@ def _replay_stdout_lines(
     if append_to_file and stdout_text:
         artifacts.exec_jsonl_file.write_text(stdout_text, encoding="utf-8")
     for line in stdout_text.splitlines(keepends=True):
+        recorder.emit_adapter_json(
+            source="claude_code",
+            raw_line=line,
+            turn_index=parser.turn_index,
+            agent_key=parser.agent_key,
+            agent_slug=parser.agent_slug,
+        )
         for draft in parser.consume_stdout_line(line):
             recorder.emit_draft(draft)
 
@@ -653,6 +668,7 @@ def _expand_mcp_payload(
         workspace_root=workspace_root,
         flow_root=flow.root_dir,
         run_home=run_home,
+        stdlib_root=resolve_rally_builtin_assets(workspace_root=workspace_root).stdlib_root,
         allowed_roots=INTERNAL_PATH_ROOTS,
         context=context,
         example="home:repos/demo_repo",

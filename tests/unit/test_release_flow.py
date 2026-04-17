@@ -8,9 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from rally._release_flow.parsing import (
-    load_compiled_contract_version,
     load_doctrine_floor,
     load_doctrine_package_line,
+    load_final_output_contract_version,
     load_package_metadata_version,
     load_workspace_version,
 )
@@ -75,7 +75,7 @@ class ReleaseFlowTests(unittest.TestCase):
         self.assertIn("Requested release version: v0.2.0", worksheet)
         self.assertIn("Package metadata status: ready (`0.2.0`)", worksheet)
         self.assertIn("Current workspace manifest version: 1", worksheet)
-        self.assertIn("Current compiled contract version: 1", worksheet)
+        self.assertIn("Current final-output contract version: 1", worksheet)
         self.assertIn("Current minimum Doctrine release: v1.0.2", worksheet)
         self.assertIn("Current supported Doctrine package line: doctrine-agents>=1.0.2,<2", worksheet)
         self.assertIn("Changelog entry status: ready (`v0.2.0 - 2026-04-14`)", worksheet)
@@ -94,7 +94,7 @@ class ReleaseFlowTests(unittest.TestCase):
     def test_load_support_surface_versions_from_repo_truth(self) -> None:
         self.assertEqual(load_package_metadata_version(self.root), "0.1.0")
         self.assertEqual(load_workspace_version(self.root), 1)
-        self.assertEqual(load_compiled_contract_version(self.root), 1)
+        self.assertEqual(load_final_output_contract_version(self.root), 1)
         self.assertEqual(load_doctrine_floor(self.root), "v1.0.2")
         self.assertEqual(load_doctrine_package_line(self.root), "doctrine-agents>=1.0.2,<2")
 
@@ -471,7 +471,7 @@ class ReleaseFlowTests(unittest.TestCase):
                 Current public Rally release version: {public_release}
                 Current Rally package version: {package_version}
                 Current workspace manifest version: 1
-                Current compiled agent contract version: 1
+                Current final-output contract version: 1
                 Current minimum Doctrine release: {doctrine_floor}
                 Current supported Doctrine package line: {doctrine_package_line}
                 """
@@ -483,7 +483,7 @@ class ReleaseFlowTests(unittest.TestCase):
         (self.root / "src" / "rally" / "services" / "flow_loader.py").write_text(
             textwrap.dedent(
                 f"""\
-                SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS = frozenset({{{contract_version}}})
+                SUPPORTED_FINAL_OUTPUT_CONTRACT_VERSIONS = frozenset({{{contract_version}}})
                 """
             ),
             encoding="utf-8",

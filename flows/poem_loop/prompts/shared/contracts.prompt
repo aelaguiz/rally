@@ -1,6 +1,6 @@
 workflow PoemLoopSystemContext: "System Context"
     "This flow is a small Rally proof."
-    "It shows one writer, one critic, one poem file, and one shared issue ledger."
+    "It shows one muse, one writer, one critic, one poem file, and one shared issue ledger."
 
     downstream_read: "What This Becomes"
         "A later reader should be able to open `home:issue.md` and follow the whole loop."
@@ -13,12 +13,16 @@ workflow IssueLedgerGroundTruth: "Inputs And Ground Truth"
         "Treat the opening issue as everything before the first `## Rally` heading."
 
     turn_history: "Turn History"
-        "Read later `## Rally Note` blocks as turn history."
-        "When you need the latest guidance, start with the newest Rally note."
+        "Read later `## Rally Turn Result` blocks as turn history."
+        "When you need the latest guidance, start with the newest turn result."
 
     writer_rationale: "Writer Rationale"
         "The newest writer note should say why the draft took its current shape."
         "Read that rationale before you judge the poem."
+
+    muse_guidance: "Muse Guidance"
+        "The newest Muse turn result should give the next draft direction."
+        "Read that guidance before you write the next poem draft."
 
     no_sidecar_brief: "No Sidecar Brief"
         "Do not look for `operator_brief.md`."

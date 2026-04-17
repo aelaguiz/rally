@@ -29,6 +29,24 @@ class RunStoreTests(unittest.TestCase):
             run_yaml = (repo_root / "runs" / "active" / record.id / "run.yaml").read_text(encoding="utf-8")
             self.assertNotIn("brief_file", run_yaml)
             self.assertIn("issue_file: home/issue.md", run_yaml)
+            self.assertNotIn("model_override", run_yaml)
+            self.assertNotIn("reasoning_effort_override", run_yaml)
+
+    def test_create_run_round_trips_saved_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+
+            record = create_run(
+                repo_root=repo_root,
+                flow=flow,
+                model_override="gpt-5.4-mini",
+                reasoning_effort_override="high",
+            )
+            loaded = load_run_record(run_dir=repo_root / "runs" / "active" / record.id)
+
+            self.assertEqual(loaded.model_override, "gpt-5.4-mini")
+            self.assertEqual(loaded.reasoning_effort_override, "high")
 
     def test_load_run_record_tolerates_legacy_brief_field(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -121,30 +139,37 @@ class RunStoreTests(unittest.TestCase):
 
 def _demo_flow(*, repo_root: Path) -> FlowDefinition:
     flow_root = repo_root / "flows" / "demo"
-    prompt_path = flow_root / "prompts" / "AGENTS.prompt"
     markdown_path = flow_root / "build" / "agents" / "scope_lead" / "AGENTS.md"
-    contract_path = flow_root / "build" / "agents" / "scope_lead" / "AGENTS.contract.json"
+    metadata_file = flow_root / "build" / "agents" / "scope_lead" / "final_output.contract.json"
     final_output = FinalOutputContract(
         exists=True,
+        contract_version=1,
         declaration_key="DemoTurnResult",
         declaration_name="DemoTurnResult",
-        format_mode="json_schema",
+        format_mode="json_object",
         schema_profile="OpenAIStructuredOutput",
-        schema_file=repo_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
-        example_file=repo_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json",
+        generated_schema_file=flow_root
+        / "build"
+        / "agents"
+        / "scope_lead"
+        / "schemas"
+        / "rally_turn_result.schema.json",
+        metadata_file=metadata_file,
     )
     agent = FlowAgent(
         key="01_scope_lead",
         slug="scope_lead",
         timeout_sec=60,
         allowed_skills=(),
+        system_skills=(),
+        external_skills=(),
         allowed_mcps=(),
         compiled=CompiledAgentContract(
             name="ScopeLead",
             slug="scope_lead",
-            entrypoint=prompt_path,
+            entrypoint=flow_root / "prompts" / "AGENTS.prompt",
             markdown_path=markdown_path,
-            contract_path=contract_path,
+            metadata_file=metadata_file,
             contract_version=1,
             final_output=final_output,
         ),
@@ -154,7 +179,6 @@ def _demo_flow(*, repo_root: Path) -> FlowDefinition:
         code="DMO",
         root_dir=flow_root,
         flow_file=flow_root / "flow.yaml",
-        prompt_entrypoint=prompt_path,
         build_agents_dir=flow_root / "build" / "agents",
         setup_home_script=None,
         start_agent_key=agent.key,
@@ -163,7 +187,7 @@ def _demo_flow(*, repo_root: Path) -> FlowDefinition:
         runtime_env={},
         host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
         agents={agent.key: agent},
-        adapter=AdapterConfig(name="codex", prompt_input_command=None, args={}),
+        adapter=AdapterConfig(name="codex", args={}),
     )
 
 

@@ -24,7 +24,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 0)
         help_text = stdout.getvalue()
         self.assertIn("Run filesystem-first Rally workflows from the repo root.", help_text)
-        self.assertIn("rally workspace sync", help_text)
+        self.assertNotIn("rally workspace sync", help_text)
         self.assertIn("rally run demo --from-file ./issue.md", help_text)
         self.assertIn("rally status", help_text)
         self.assertIn("status              Show active runs or inspect one run.", help_text)
@@ -39,9 +39,25 @@ class CliTests(unittest.TestCase):
         help_text = stdout.getvalue()
         self.assertIn("Create a Rally run shell for one flow", help_text)
         self.assertIn("--from-file", help_text)
+        self.assertIn("--model", help_text)
+        self.assertIn("--thinking", help_text)
         self.assertIn("rally run demo --from-file ./issue.md", help_text)
+        self.assertIn("rally run demo --model gpt-5.4 --thinking high", help_text)
         self.assertIn("rally run demo --step", help_text)
         self.assertIn("Next: Rally will either start the run", help_text)
+
+    def test_resume_help_includes_override_flags(self) -> None:
+        stdout = io.StringIO()
+
+        with self.assertRaises(SystemExit) as raised, redirect_stdout(stdout):
+            main(["resume", "--help"])
+
+        self.assertEqual(raised.exception.code, 0)
+        help_text = stdout.getvalue()
+        self.assertIn("Resume one Rally run by id.", help_text)
+        self.assertIn("--model", help_text)
+        self.assertIn("--thinking", help_text)
+        self.assertIn("rally resume DMO-1 --model gpt-5.4 --thinking low", help_text)
 
     def test_status_help_includes_examples(self) -> None:
         stdout = io.StringIO()
@@ -104,6 +120,23 @@ class CliTests(unittest.TestCase):
         self.assertEqual(run_flow_mock.call_args.kwargs["request"].flow_name, "demo")
         self.assertFalse(run_flow_mock.call_args.kwargs["request"].start_new)
         self.assertTrue(run_flow_mock.call_args.kwargs["request"].step)
+
+    def test_run_command_passes_model_and_thinking_overrides_to_runner(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.run_flow",
+            return_value=SimpleNamespace(message="Run `DMO-4` created."),
+        ) as run_flow_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["run", "demo", "--model", "gpt-5.4-mini", "--thinking", "high"])
+
+        self.assertEqual(exit_code, 0)
+        request = run_flow_mock.call_args.kwargs["request"]
+        self.assertEqual(request.flow_name, "demo")
+        self.assertEqual(request.model_override, "gpt-5.4-mini")
+        self.assertEqual(request.reasoning_effort_override, "high")
 
     def test_run_command_passes_from_file_to_runner_as_absolute_path(self) -> None:
         stdout = io.StringIO()
@@ -201,6 +234,23 @@ class CliTests(unittest.TestCase):
         self.assertFalse(resume_run_mock.call_args.kwargs["request"].restart)
         self.assertTrue(resume_run_mock.call_args.kwargs["request"].step)
 
+    def test_resume_command_passes_model_and_thinking_overrides_to_runner(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.resume_run",
+            return_value=SimpleNamespace(message="Run `DMO-1` resumed."),
+        ) as resume_run_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["resume", "DMO-1", "--model", "sonnet", "--thinking", "low"])
+
+        self.assertEqual(exit_code, 0)
+        request = resume_run_mock.call_args.kwargs["request"]
+        self.assertEqual(request.run_id, "DMO-1")
+        self.assertEqual(request.model_override, "sonnet")
+        self.assertEqual(request.reasoning_effort_override, "low")
+
     def test_resume_command_rejects_edit_and_restart_together(self) -> None:
         stderr = io.StringIO()
 
@@ -242,38 +292,54 @@ class CliTests(unittest.TestCase):
         self.assertEqual(show_status_mock.call_args.kwargs["repo_root"], workspace.workspace_root)
         self.assertEqual(show_status_mock.call_args.kwargs["run_id"], "DMO-1")
 
-    def test_workspace_sync_command_prints_synced_paths(self) -> None:
-        stdout = io.StringIO()
-        workspace = self._workspace(Path("/tmp/repo"))
+    def test_workspace_sync_command_is_removed(self) -> None:
+        stderr = io.StringIO()
 
-        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
-            "rally.cli.sync_workspace_builtins",
-            return_value=SimpleNamespace(
-                message="Synced Rally built-ins into `/tmp/repo`: `stdlib/rally`, `skills/rally-kernel`, `skills/rally-memory`."
-            ),
-        ) as sync_mock:
-            with redirect_stdout(stdout):
-                exit_code = main(["workspace", "sync"])
+        with self.assertRaises(SystemExit) as raised, redirect_stderr(stderr):
+            main(["workspace", "sync"])
 
-        self.assertEqual(exit_code, 0)
-        self.assertIn("Synced Rally built-ins into `/tmp/repo`", stdout.getvalue())
-        self.assertEqual(sync_mock.call_args.kwargs["workspace"], workspace)
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("invalid choice", stderr.getvalue())
 
-    def test_workspace_sync_command_prints_source_workspace_noop_message(self) -> None:
-        stdout = io.StringIO()
-        workspace = self._workspace(Path("/tmp/repo"))
+    def test_issue_current_prints_bounded_current_view(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            issue_file = self._write_run(repo_root=repo_root, run_id="FLW-1")
+            issue_file.write_text(
+                textwrap.dedent(
+                    """\
+                    # Brief
 
-        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
-            "rally.cli.sync_workspace_builtins",
-            return_value=SimpleNamespace(
-                message="Workspace `/tmp/repo` already owns Rally built-ins. Nothing to sync."
-            ),
-        ):
-            with redirect_stdout(stdout):
-                exit_code = main(["workspace", "sync"])
+                    Fix the pagination bug.
 
-        self.assertEqual(exit_code, 0)
-        self.assertIn("already owns Rally built-ins", stdout.getvalue())
+                    ---
+
+                    ## Rally Note
+                    - Run ID: `FLW-1`
+                    - Source: `rally issue note`
+
+                    ### Note
+                    - latest context
+                    """
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+
+            with patch("rally.cli.resolve_workspace", return_value=self._workspace(repo_root)):
+                with redirect_stdout(stdout):
+                    exit_code = main(["issue", "current", "--run-id", "FLW-1"])
+
+            # The shared read path should show the live request and newest note
+            # without making the caller reread the full append-only ledger.
+            self.assertEqual(exit_code, 0)
+            rendered = stdout.getvalue()
+            self.assertIn("# Rally Issue Current View", rendered)
+            self.assertIn("## Opening Issue", rendered)
+            self.assertIn("Fix the pagination bug.", rendered)
+            self.assertIn("## Latest Rally Note", rendered)
+            self.assertIn("latest context", rendered)
+            self.assertIn("## Full Ledger", rendered)
 
     def test_issue_note_reads_stdin(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

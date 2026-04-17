@@ -19,8 +19,8 @@ CURRENT_DOCTRINE_PACKAGE_LINE_RE = re.compile(
     r"^Current supported Doctrine package line:\s*`?(?P<value>[^`\n]+)`?\s*$",
     re.MULTILINE,
 )
-COMPILED_CONTRACT_VERSION_RE = re.compile(
-    r"SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS\s*=\s*frozenset\(\{(?P<versions>[^}]*)\}\)"
+FINAL_OUTPUT_CONTRACT_VERSION_RE = re.compile(
+    r"SUPPORTED_FINAL_OUTPUT_CONTRACT_VERSIONS\s*=\s*frozenset\(\{(?P<versions>[^}]*)\}\)"
 )
 CHANGELOG_SECTION_RE = re.compile(r"^##\s+(?P<title>.+?)\s*$", re.MULTILINE)
 
@@ -71,7 +71,7 @@ class ReleasePlan:
     requested_package_version: str
     package_version_status: str
     current_workspace_version: int
-    current_compiled_contract_version: int
+    current_final_output_contract_version: int
     current_doctrine_floor: str
     current_doctrine_package_line: str
     previous_stable_tag: ReleaseTag | None

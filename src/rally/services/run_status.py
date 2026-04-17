@@ -80,6 +80,10 @@ def _render_run_details(*, repo_root: Path, snapshot: _RunSnapshot) -> str:
         f"Updated: `{snapshot.state.updated_at}`",
         f"Issue File: `{_render_repo_relative_path(path=issue_path, repo_root=repo_root)}`",
     ]
+    if snapshot.record.model_override is not None:
+        lines.append(f"Model Override: `{snapshot.record.model_override}`")
+    if snapshot.record.reasoning_effort_override is not None:
+        lines.append(f"Thinking Override: `{snapshot.record.reasoning_effort_override}`")
     if snapshot.state.last_turn_kind is not None:
         lines.append(f"Last Result: `{snapshot.state.last_turn_kind}`")
     if snapshot.state.blocker_reason is not None:

@@ -85,7 +85,7 @@ This is the canonical split between Doctrine and Rally.
 ### Rally owns
 
 - the standard library contents under `stdlib/rally/`
-- the workspace built-in sync path through `rally workspace sync`
+- the built-in asset resolver that chooses source-checkout versus installed-package assets
 - flow runtime contract under `flows/*/flow.yaml`
 - the run model, run ids, logs, sessions, and locks
 - home preparation and home materialization
@@ -93,6 +93,7 @@ This is the canonical split between Doctrine and Rally.
 - CLI behavior
 - issue-log ordering and snapshots
 - the shared `rally issue note` surface
+- the shared `rally issue current` surface
 - the Rally kernel skill
 - the Rally memory skill
 - repo-local memory files, QMD state, and memory indexing
@@ -144,8 +145,8 @@ Each runnable flow lives under `flows/<flow-slug>/`.
 The canonical runtime contract for a flow is `flows/<flow-slug>/flow.yaml`.
 That file declares runtime facts, not instruction prose.
 It also carries runtime limits such as `runtime.max_command_turns`, plus
-runtime hooks such as one setup script, one prompt-input reducer, one optional
-`runtime.env` map, and guarded git repo paths.
+runtime hooks such as one setup script, one optional `runtime.env` map, and
+guarded git repo paths.
 
 Every runnable flow has three stable identities:
 
@@ -178,6 +179,7 @@ Examples:
 - the three-hundred-forty-second run of `CDR` is `CDR-342`
 
 `run.yaml` is the stable identity record for a run.
+It may also store saved operator overrides for model and thinking.
 `state.yaml` is the compact machine-readable current summary.
 
 Rally should keep one active run per flow unless the operator asks to replace it on purpose.
@@ -204,10 +206,10 @@ After that:
 - repos, artifacts, env files, and adapter-local state live there
 - agents do not escape home
 
-A flow may also declare one prompt-input reducer that runs before each turn and
-one guarded-git list that Rally checks before it accepts `handoff` or `done`.
+A flow may also declare one guarded-git list that Rally checks before it
+accepts `handoff` or `done`.
 If a flow sets `runtime.env`, Rally uses those env vars during startup host
-input checks, setup, prompt input, and adapter launches. That means
+input checks, setup, and adapter launches. That means
 `runtime.env` can satisfy `host_inputs.required_env` and `host:$VAR` paths
 before setup runs. Flow values win over duplicate shell env vars.
 
@@ -234,7 +236,7 @@ It should:
 - begin with the operator's brief exactly as entered
 - remain append-only after that initial brief
 - add one hidden `<!-- RALLY_ORIGINAL_ISSUE_END -->` marker before the first Rally-owned block
-- hold setup notes, serialized notes, normalized final-turn response records, and runner-generated status records
+- hold setup notes, serialized notes, one `Rally Turn Result` record for each successful turn, and runner-generated lifecycle or early-failure status records
 - use one Markdown `---` divider between Rally-owned blocks after that marker
 - add `- Turn: \`N\`` on turn-scoped blocks without asking the agent to manage that line
 
@@ -255,23 +257,30 @@ They may carry flat string note fields when later turns need stable labels.
 
 The structured final turn result is the only turn-ending control surface.
 It tells Rally whether to route, stop, block, or ask for sleep.
-The shared non-review JSON always carries the same five control keys:
+Rally copies that full final JSON into the matching `Rally Turn Result` block.
+The shared producer base carries four common Rally control keys:
 
 - `kind`
-- `next_owner`
 - `summary`
 - `reason`
 - `sleep_duration_seconds`
 
-Fields that do not apply are `null` on the classic shared shape.
-That shared shape may also carry optional passive diagnostics in `agent_issues`.
-Agents should send one short issue summary there, or the literal `none` when no issue applies.
-`agent_issues` never changes route, done, blocker, or sleep behavior.
-A non-review flow can opt out of that default by declaring its own output shape
-over the shared schema. That stays a prompt-contract choice, not a runtime
-flag.
-Review-native turns may use control-ready Doctrine review JSON instead of the shared non-review object.
-If the result uses `kind: handoff`, that is only the label of the route-to-next-owner branch in the classic shared result.
+Fields that do not apply are `null` on the shared base shape.
+The shared base shape may also carry optional passive diagnostics in
+`agent_issues`. Agents should send one short issue summary there, or the
+literal `none` when no issue applies. `agent_issues` never changes route,
+done, blocker, or sleep behavior.
+Flow-specific producer outputs inherit that base shape, add a typed route field
+such as `next_route`, and let Doctrine emit the real route selector metadata in
+`final_output.contract.json`.
+Rally reads producer handoffs from that emitted route metadata, not from a
+payload `next_owner` copy.
+A non-review flow can also opt out of the shared base by declaring its own
+output shape over the shared schema. That stays a prompt-contract choice,
+not a runtime flag.
+Review-native turns still use control-ready Doctrine review JSON and may carry
+`next_owner` there because Doctrine review routing is still review-owned.
+If the result uses `kind: handoff`, that is only the routed handoff mode.
 Rally now keeps running across handoffs inside one `run` or `resume`
 command until it reaches a real stop point.
 Sleep requests are recorded, then blocked, until true sleep support lands.
@@ -295,15 +304,16 @@ It should start with:
 - one shared note path
 - one shared memory contract
 - one mandatory Rally kernel skill
-- one mandatory Rally memory skill
+- one optional Rally memory skill
 
 The Rally kernel skill should:
 
 - teach agents to use the shared `rally issue note` CLI surface for durable notes
+- teach agents to use the shared `rally issue current` CLI surface for bounded shared-ledger reads
 - teach agents how to shape schema-valid end-of-turn JSON
 - remain helper-shaped rather than becoming a second runtime
 
-The Rally memory skill should:
+The optional Rally memory skill should:
 
 - teach agents to use `rally memory search`, `rally memory use`, `rally memory save`, and `rally memory refresh`
 - keep memory as explicit CLI behavior instead of hidden prompt-only magic
@@ -421,11 +431,11 @@ These are the stable runtime surfaces the design depends on:
 | `issue_history/` | full-file ledger snapshots |
 | `runs/memory/entries/` | durable cross-run memory markdown truth |
 | `runs/memory/qmd/` | repo-local QMD index and cache root |
-| `logs/events.jsonl` | structured run telemetry |
+| `logs/events.jsonl` | structured run telemetry plus non-rendered raw and final JSON mirror rows |
 | `logs/agents/` | per-agent event mirrors |
 | `logs/rendered.log` | plain operator transcript |
 | `logs/adapter_launch/` | proof of the launch contract per turn |
-| `home/agents/` | per-run copy of compiled agent outputs, refreshed on each start or resume |
+| `home/agents/` | per-run copy of compiled agent packages, refreshed on each start or resume |
 | `home/skills/` | live adapter-facing skill tree for the current agent, refreshed before each turn |
 | `home/mcps/` | materialized allowed MCP capabilities, refreshed on each start or resume |
 | `home/sessions/<agent>/skills/` | stable per-agent skill views, refreshed on each start or resume |
@@ -437,10 +447,11 @@ The operator surface should stay small.
 Conceptually it is:
 
 ```bash
-rally run <flow> [--new] [--step] [--from-file <path>]
-rally resume <FLOW_CODE>-<n> [--edit|--restart] [--step]
+rally run <flow> [--new] [--step] [--from-file <path>] [--model <name>] [--thinking <level>]
+rally resume <FLOW_CODE>-<n> [--edit|--restart] [--step] [--model <name>] [--thinking <level>]
 rally status [<FLOW_CODE>-<n>]
 rally archive <FLOW_CODE>-<n>
+rally issue current --run-id <FLOW_CODE>-<n>
 rally issue note --run-id <FLOW_CODE>-<n> [--field key=value ...]
 rally memory search --run-id <FLOW_CODE>-<n> --query "<text>"
 rally memory use --run-id <FLOW_CODE>-<n> <memory-id>
@@ -452,10 +463,13 @@ rally memory refresh --run-id <FLOW_CODE>-<n>
 a TTY and a plain text fallback when the output is not interactive. That
 startup view should show the run id, flow, flow code, model, thinking level,
 adapter, start agent, and agent count.
+When the operator passes `--model` or `--thinking`, that command should use
+the override first, then save it in `run.yaml` for later resume.
+If no new flag is passed, a saved run override should win over `flow.yaml`.
 `rally --help` should teach the happy path in plain English with a few short
 examples instead of only listing command names.
 Before either command starts the next turn, Rally should rebuild that flow's
-compiled agents through the paired Doctrine emit target and refresh the
+compiled agent packages through the paired Doctrine emit target and refresh the
 run-home `home/agents/` copy from the rebuilt readback.
 `rally run` creates the run shell first. If `home/issue.md` is missing or
 blank on a real TTY, Rally should open the editor, seed a short issue prompt,
@@ -483,12 +497,20 @@ Paused runs should resume with plain `rally resume`, and `rally resume --step`
 should take one more turn and pause again if the flow hands off.
 `rally status` should stay read-only, list active runs when no id is passed,
 and show one run summary with the likely next command when an id is passed.
+That one-run view should also show saved model and thinking overrides when
+they exist.
 `rally resume --restart` should ask before it archives the current active run,
 recover the original issue from the earliest issue snapshot when it can, start
 a fresh run with a new run id, and seed that new run's `home/issue.md` with
 only the recovered original issue. The new `Rally Run Started` block should
 use source `rally resume --restart` and include `Restarted From: <old-run-id>`.
+Saved model and thinking overrides should carry into that fresh run unless the
+restart command passes new ones.
 Done runs may restart even though they cannot resume.
+
+`rally issue current` should print the opening issue plus the newest shared
+state blocks without rereading the full append-only ledger.
+That is the small shared read path agents and operators should reach for first.
 
 `rally issue note` is the shared durable-note write surface for both agents and operators.
 When Rally launched the active turn, the CLI should add the current turn
@@ -574,6 +596,7 @@ The communication model locks these rules:
 
 - no human handoff
 - no separate authored handoff object
+- bounded shared-ledger reads through `rally issue current`
 - serialized notes through the Rally kernel skill plus `rally issue note`
 - strict final JSON as the only turn-ending control path
 - `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_TURN_NUMBER` injected on every Rally-managed launch
@@ -593,7 +616,7 @@ At a high level, the runtime doc owns:
 
 - the first real `src/rally/` runtime package
 - the first real `rally` CLI entrypoint
-- the `rally workspace sync` front door for host-local built-ins
+- the resolver-backed build and run path for Rally-owned built-ins
 - the shared adapter boundary
 - one real Codex adapter path
 - one real Claude adapter path
@@ -661,7 +684,7 @@ These notes are still useful, but they no longer need to dominate the doc.
 - One semantic ledger plus minimal rebuildable sidecars is the right v1 center of gravity.
 - There should be no DB as source of truth in v1.
 - `home/issue.md` is the only agent-to-agent communication layer.
-- Only `AGENTS.md` is formalized as Rally's runtime instruction contract; other emitted artifacts may exist, but they are compiler-owned readback rather than Rally-authored workflow law.
+- `AGENTS.md` is the main instruction readback. When Doctrine emits previous-turn input requests, Rally also appends one generated `previous_turn_inputs.md` appendix for that turn.
 - Canonical numbered agent keys are identity, not execution order.
 - Sessions should stay per agent and per run, and resume should be delta-oriented rather than a fresh-world reinjection.
 - The renderer should be history-backed from structured logs, not just a dumb tail of stdout.

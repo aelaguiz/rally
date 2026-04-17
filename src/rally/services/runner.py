@@ -1,18 +1,19 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
 import os
 import shlex
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable, Sequence
 
 from rally.adapters.base import AdapterInvocation, AdapterReadinessFailure
 from rally.adapters.registry import get_adapter
-from rally.domain.flow import FlowAgent, FlowDefinition
+from rally.domain.flow import AdapterConfig, FlowAgent, FlowDefinition
 from rally.domain.run import ResumeRequest, RunRecord, RunRequest, RunState, RunStatus
 from rally.domain.turn_result import (
     BlockerTurnResult,
@@ -23,8 +24,7 @@ from rally.domain.turn_result import (
 )
 from rally.errors import RallyConfigError, RallyError, RallyStateError, RallyUsageError
 from rally.services.flow_build import ensure_flow_assets_built
-from rally.services.final_response_loader import load_agent_final_response
-from rally.services.flow_env import build_flow_subprocess_env
+from rally.services.final_response_loader import LoadedReviewTruth, load_agent_final_response
 from rally.services.flow_loader import load_flow_code, load_flow_definition
 from rally.services.guarded_git_repos import check_guarded_git_repos, render_guarded_git_repo_blocker
 from rally.services.home_materializer import activate_agent_skills, materialize_run_home, prepare_run_home_shell
@@ -33,6 +33,7 @@ from rally.services.issue_editor import (
     resolve_interactive_issue_editor,
 )
 from rally.services.issue_ledger import append_issue_edit_diff, append_issue_event, load_original_issue_text
+from rally.services.previous_turn_inputs import render_previous_turn_appendix
 from rally.services.run_events import EventConsumer, RunEventRecorder
 from rally.services.run_store import (
     archive_run,
@@ -43,10 +44,10 @@ from rally.services.run_store import (
     flow_lock,
     load_run_record,
     load_run_state,
+    write_run_record,
     write_run_state,
 )
 from rally.services.workspace import WorkspaceContext, workspace_context_from_root
-from rally.services.workspace_sync import sync_workspace_builtins
 
 SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
 DisplayFactory = Callable[[RunRecord, FlowDefinition], EventConsumer]
@@ -73,6 +74,18 @@ class _TurnExecutionOutcome:
     command_result: RunCommandResult | None
 
 
+@dataclass(frozen=True)
+class _AdapterOverrides:
+    model_override: str | None = None
+    reasoning_effort_override: str | None = None
+
+
+@dataclass(frozen=True)
+class _ResolvedFlowConfig:
+    flow: FlowDefinition
+    overrides: _AdapterOverrides
+
+
 def run_flow(
     *,
     workspace: WorkspaceContext | None = None,
@@ -86,9 +99,14 @@ def run_flow(
     flow_code = load_flow_code(repo_root=repo_root, flow_name=request.flow_name)
 
     with flow_lock(repo_root=repo_root, flow_code=flow_code):
-        sync_workspace_builtins(workspace=workspace_context)
         ensure_flow_assets_built(workspace=workspace_context, flow_name=request.flow_name)
         flow = load_flow_definition(repo_root=repo_root, flow_name=request.flow_name)
+        resolved_flow = _resolve_effective_flow(
+            flow=flow,
+            model_override=request.model_override,
+            reasoning_effort_override=request.reasoning_effort_override,
+        )
+        flow = resolved_flow.flow
         issue_seed = _load_issue_seed(
             issue_seed_path=request.issue_seed_path,
         )
@@ -100,6 +118,8 @@ def run_flow(
         run_record = create_run(
             repo_root=repo_root,
             flow=flow,
+            model_override=resolved_flow.overrides.model_override,
+            reasoning_effort_override=resolved_flow.overrides.reasoning_effort_override,
         )
         result = _execute_new_run(
             workspace=workspace_context,
@@ -151,9 +171,20 @@ def resume_run(
     run_record = load_run_record(run_dir=run_dir)
 
     with flow_lock(repo_root=repo_root, flow_code=run_record.flow_code):
-        sync_workspace_builtins(workspace=workspace_context)
         ensure_flow_assets_built(workspace=workspace_context, flow_name=run_record.flow_name)
         flow = load_flow_definition(repo_root=repo_root, flow_name=run_record.flow_name)
+        resolved_flow = _resolve_effective_flow(
+            flow=flow,
+            model_override=request.model_override,
+            reasoning_effort_override=request.reasoning_effort_override,
+            saved_model_override=run_record.model_override,
+            saved_reasoning_effort_override=run_record.reasoning_effort_override,
+        )
+        flow = resolved_flow.flow
+        updated_run_record = _run_record_with_overrides(run_record=run_record, overrides=resolved_flow.overrides)
+        if updated_run_record != run_record:
+            write_run_record(run_dir=run_dir, record=updated_run_record)
+            run_record = updated_run_record
         if request.restart:
             return _restart_run(
                 workspace=workspace_context,
@@ -288,7 +319,12 @@ def _restart_run(
     )
     archive_run(repo_root=repo_root, run_id=run_record.id)
 
-    new_run = create_run(repo_root=repo_root, flow=flow)
+    new_run = create_run(
+        repo_root=repo_root,
+        flow=flow,
+        model_override=run_record.model_override,
+        reasoning_effort_override=run_record.reasoning_effort_override,
+    )
     restarted_result = _execute_new_run(
         workspace=workspace,
         repo_root=repo_root,
@@ -314,6 +350,50 @@ def _restart_run(
         status=restarted_result.status,
         current_agent_key=restarted_result.current_agent_key,
         message=f"Restarted run `{run_record.id}` as `{new_run.id}`.\n{restarted_result.message}",
+    )
+
+
+def _resolve_effective_flow(
+    *,
+    flow: FlowDefinition,
+    model_override: str | None = None,
+    reasoning_effort_override: str | None = None,
+    saved_model_override: str | None = None,
+    saved_reasoning_effort_override: str | None = None,
+) -> _ResolvedFlowConfig:
+    overrides = _AdapterOverrides(
+        model_override=_select_override(command_value=model_override, saved_value=saved_model_override),
+        reasoning_effort_override=_select_override(
+            command_value=reasoning_effort_override,
+            saved_value=saved_reasoning_effort_override,
+        ),
+    )
+    adapter_args = dict(flow.adapter.args)
+    if overrides.model_override is not None:
+        adapter_args["model"] = overrides.model_override
+    if overrides.reasoning_effort_override is not None:
+        adapter_args["reasoning_effort"] = overrides.reasoning_effort_override
+    get_adapter(flow.adapter.name).validate_args(args=adapter_args)
+    return _ResolvedFlowConfig(
+        flow=replace(
+            flow,
+            adapter=AdapterConfig(name=flow.adapter.name, args=adapter_args),
+        ),
+        overrides=overrides,
+    )
+
+
+def _select_override(*, command_value: str | None, saved_value: str | None) -> str | None:
+    if command_value is None:
+        return saved_value
+    return command_value.strip()
+
+
+def _run_record_with_overrides(*, run_record: RunRecord, overrides: _AdapterOverrides) -> RunRecord:
+    return replace(
+        run_record,
+        model_override=overrides.model_override,
+        reasoning_effort_override=overrides.reasoning_effort_override,
     )
 
 
@@ -787,6 +867,7 @@ def _execute_single_turn(
         agent=agent,
         recorder=recorder,
         turn_index=turn_index,
+        previous_turn_inputs_file=artifacts.previous_turn_inputs_file,
     )
 
     invocation = adapter.invoke(
@@ -867,15 +948,14 @@ def _execute_single_turn(
         compiled_agent=agent.compiled,
         last_message_file=artifacts.last_message_file,
     )
+    recorder.emit_final_json(
+        payload=loaded_final_response.payload,
+        payload_file=artifacts.last_message_file,
+        turn_index=turn_index,
+        agent_key=agent.key,
+        agent_slug=agent.slug,
+    )
     turn_result = loaded_final_response.turn_result
-    if loaded_final_response.review_note_markdown is not None:
-        _append_review_note(
-            repo_root=repo_root,
-            run_id=run_record.id,
-            agent=agent,
-            turn_index=turn_index,
-            note_markdown=loaded_final_response.review_note_markdown,
-        )
     if isinstance(turn_result, SleepTurnResult):
         blocked_state = RunState(
             status=RunStatus.BLOCKED,
@@ -899,9 +979,10 @@ def _execute_single_turn(
             run_id=run_record.id,
             agent=agent,
             turn_result=turn_result,
+            payload=loaded_final_response.payload,
+            review_truth=loaded_final_response.review_truth,
             agent_issues=loaded_final_response.agent_issues,
             turn_index=turn_index,
-            append_sleep_record=False,
         )
         write_run_state(run_dir=run_dir, state=blocked_state)
         recorder.emit(
@@ -913,17 +994,6 @@ def _execute_single_turn(
             turn_index=turn_index,
             agent_key=agent.key,
             agent_slug=agent.slug,
-        )
-        append_issue_event(
-            repo_root=repo_root,
-            run_id=run_record.id,
-            title="Rally Blocked",
-            source="rally runtime",
-            detail_lines=(
-                f"Agent: `{agent.key}`",
-                f"Reason: {blocked_state.blocker_reason}",
-            ),
-            turn_index=turn_index,
         )
         return _TurnExecutionOutcome(
             state=blocked_state,
@@ -979,6 +1049,8 @@ def _execute_single_turn(
         run_id=run_record.id,
         agent=agent,
         turn_result=turn_result,
+        payload=loaded_final_response.payload,
+        review_truth=loaded_final_response.review_truth,
         agent_issues=loaded_final_response.agent_issues,
         turn_index=turn_index,
     )
@@ -1145,21 +1217,27 @@ def _build_agent_prompt(
     agent: FlowAgent,
     recorder: RunEventRecorder,
     turn_index: int,
+    previous_turn_inputs_file: Path,
 ) -> str:
+    # Rally keeps compiler-owned prompt text as the base, then appends one
+    # deterministic previous-turn appendix when the emitted `io` contract asks
+    # for it. There is no second prompt layer and no prose summarizer here.
     compiled_markdown = (run_home / "agents" / agent.slug / "AGENTS.md").read_text(encoding="utf-8").rstrip()
-    prompt_inputs = _load_prompt_inputs(
-        workspace=workspace,
-        flow=flow,
-        run_record=run_record,
+    previous_turn_appendix = render_previous_turn_appendix(
+        workspace_root=workspace.workspace_root,
         run_home=run_home,
+        flow=flow,
         agent=agent,
-        recorder=recorder,
         turn_index=turn_index,
+    ).rstrip()
+    previous_turn_inputs_file.parent.mkdir(parents=True, exist_ok=True)
+    previous_turn_inputs_file.write_text(
+        previous_turn_appendix + ("\n" if previous_turn_appendix else ""),
+        encoding="utf-8",
     )
-    parts = [compiled_markdown]
-    if prompt_inputs:
-        parts.append(_render_prompt_inputs(prompt_inputs))
-    return "\n\n".join(parts).rstrip() + "\n"
+    if not previous_turn_appendix:
+        return compiled_markdown + "\n"
+    return compiled_markdown + "\n\n" + previous_turn_appendix + "\n"
 
 
 @dataclass(frozen=True)
@@ -1242,117 +1320,6 @@ def _block_for_guarded_git_repos(
     )
 
 
-def _load_prompt_inputs(
-    *,
-    workspace: WorkspaceContext,
-    flow: FlowDefinition,
-    run_record: RunRecord,
-    run_home: Path,
-    agent: FlowAgent,
-    recorder: RunEventRecorder,
-    turn_index: int,
-) -> dict[str, object]:
-    command_path = flow.adapter.prompt_input_command
-    if command_path is None:
-        return {}
-
-    recorder.emit(
-        source="rally",
-        kind="lifecycle",
-        code="INPUTS",
-        message=f"Loading runtime prompt inputs for `{agent.key}`.",
-        turn_index=turn_index,
-        agent_key=agent.key,
-        agent_slug=agent.slug,
-    )
-    completed = subprocess.run(
-        [sys.executable, str(command_path)],
-        cwd=flow.root_dir,
-        env=build_flow_subprocess_env(
-            flow=flow,
-            workspace=workspace,
-            run_home=run_home,
-            extra_env={
-                "RALLY_AGENT_KEY": agent.key,
-                "RALLY_AGENT_SLUG": agent.slug,
-                "RALLY_CLI_BIN": str(workspace.cli_bin.resolve()),
-                "RALLY_FLOW_CODE": run_record.flow_code,
-                "RALLY_ISSUE_PATH": str((run_home / "issue.md").resolve()),
-                "RALLY_RUN_HOME": str(run_home.resolve()),
-                "RALLY_RUN_ID": run_record.id,
-                "RALLY_WORKSPACE_DIR": str(workspace.workspace_root.resolve()),
-            },
-        ),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        stderr = completed.stderr.strip() or completed.stdout.strip() or "prompt input command failed"
-        recorder.emit(
-            source="rally",
-            kind="warning",
-            code="ERROR",
-            message=f"Prompt input command failed: {stderr}",
-            level="error",
-            turn_index=turn_index,
-            agent_key=agent.key,
-            agent_slug=agent.slug,
-        )
-        raise RallyStateError(f"Prompt input command failed for `{agent.key}`: {stderr}")
-
-    raw_output = completed.stdout.strip()
-    if not raw_output:
-        recorder.emit(
-            source="rally",
-            kind="lifecycle",
-            code="INPUTS",
-            message=f"No runtime prompt inputs for `{agent.key}`.",
-            turn_index=turn_index,
-            agent_key=agent.key,
-            agent_slug=agent.slug,
-        )
-        return {}
-    try:
-        payload = json.loads(raw_output)
-    except json.JSONDecodeError as exc:
-        recorder.emit(
-            source="rally",
-            kind="warning",
-            code="ERROR",
-            message="Prompt input command returned invalid JSON.",
-            level="error",
-            turn_index=turn_index,
-            agent_key=agent.key,
-            agent_slug=agent.slug,
-        )
-        raise RallyStateError("Prompt input command did not return valid JSON.") from exc
-    if not isinstance(payload, dict):
-        raise RallyStateError("Prompt input command must return one JSON object.")
-    recorder.emit(
-        source="rally",
-        kind="lifecycle",
-        code="INPUTS OK",
-        message=f"Loaded {len(payload)} runtime prompt input section(s).",
-        turn_index=turn_index,
-        agent_key=agent.key,
-        agent_slug=agent.slug,
-    )
-    return payload
-
-
-def _render_prompt_inputs(payload: dict[str, object]) -> str:
-    sections = ["## Runtime Prompt Inputs"]
-    for key, value in payload.items():
-        sections.append(f"### {key}")
-        if isinstance(value, str):
-            sections.append(value.rstrip())
-            continue
-        sections.append("```json")
-        sections.append(json.dumps(value, indent=2, sort_keys=True))
-        sections.append("```")
-    return "\n\n".join(section for section in sections if section)
-
 def _state_from_turn_result(
     *,
     flow: FlowDefinition,
@@ -1405,9 +1372,11 @@ def _emit_turn_result_event(
     state: RunState,
     turn_result: TurnResult,
 ) -> None:
+    event_data: dict[str, object] = {"result_kind": turn_result.kind.value}
     if isinstance(turn_result, HandoffTurnResult):
         message = f"Handed off to `{state.current_agent_key}`."
         code = "HANDOFF"
+        event_data["next_owner"] = turn_result.next_owner
     elif isinstance(turn_result, DoneTurnResult):
         message = f"Run `{run_record.id}` is done: {turn_result.summary}"
         code = "DONE"
@@ -1430,7 +1399,7 @@ def _emit_turn_result_event(
         turn_index=turn_index,
         agent_key=agent.key,
         agent_slug=agent.slug,
-        data={"result_kind": turn_result.kind.value},
+        data=event_data,
     )
 
 
@@ -1440,13 +1409,59 @@ def _append_issue_records_for_turn_result(
     run_id: str,
     agent: FlowAgent,
     turn_result: TurnResult,
+    payload: Mapping[str, object],
+    review_truth: LoadedReviewTruth | None,
     agent_issues: str | None,
     turn_index: int,
-    append_sleep_record: bool = True,
 ) -> None:
+    detail_lines = _turn_result_issue_detail_lines(
+        agent=agent,
+        turn_result=turn_result,
+        review_truth=review_truth,
+        agent_issues=agent_issues,
+    )
+
+    append_issue_event(
+        repo_root=repo_root,
+        run_id=run_id,
+        title="Rally Turn Result",
+        source="rally runtime",
+        detail_lines=detail_lines,
+        body=_render_turn_result_payload_markdown(payload=payload),
+        turn_index=turn_index,
+    )
+
+
+def _turn_result_issue_detail_lines(
+    *,
+    agent: FlowAgent,
+    turn_result: TurnResult,
+    review_truth: LoadedReviewTruth | None,
+    agent_issues: str | None,
+) -> list[str]:
     detail_lines = [f"Agent: `{agent.key}`", f"Result: `{turn_result.kind.value}`"]
     if agent_issues is not None:
         detail_lines.append(f"Agent Issues: {agent_issues}")
+    if review_truth is not None:
+        detail_lines.append(f"Review Verdict: `{review_truth.verdict}`")
+        if review_truth.reviewed_artifact is not None:
+            detail_lines.append(f"Reviewed Artifact: `{review_truth.reviewed_artifact}`")
+        if review_truth.readback is not None:
+            detail_lines.append(f"Findings First: {review_truth.readback}")
+        elif review_truth.analysis is not None:
+            detail_lines.append(f"Review Summary: {review_truth.analysis}")
+        if review_truth.current_artifact is not None:
+            detail_lines.append(f"Current Artifact: `{review_truth.current_artifact}`")
+        if review_truth.next_owner is not None:
+            detail_lines.append(f"Next Owner: `{review_truth.next_owner}`")
+        if review_truth.blocked_gate is not None:
+            detail_lines.append(f"Blocked Gate: {review_truth.blocked_gate}")
+        if review_truth.failing_gates:
+            detail_lines.append(
+                "Failing Gates: " + ", ".join(f"`{gate}`" for gate in review_truth.failing_gates)
+            )
+        return detail_lines
+
     if isinstance(turn_result, HandoffTurnResult):
         detail_lines.append(f"Next Owner: `{turn_result.next_owner}`")
     if isinstance(turn_result, DoneTurnResult):
@@ -1456,65 +1471,12 @@ def _append_issue_records_for_turn_result(
     if isinstance(turn_result, SleepTurnResult):
         detail_lines.append(f"Reason: {turn_result.reason}")
         detail_lines.append(f"Sleep Seconds: `{turn_result.sleep_duration_seconds}`")
-
-    append_issue_event(
-        repo_root=repo_root,
-        run_id=run_id,
-        title="Rally Turn Result",
-        source="rally runtime",
-        detail_lines=detail_lines,
-        turn_index=turn_index,
-    )
-    if isinstance(turn_result, BlockerTurnResult):
-        append_issue_event(
-            repo_root=repo_root,
-            run_id=run_id,
-            title="Rally Blocked",
-            source="rally runtime",
-            detail_lines=(f"Agent: `{agent.key}`", f"Reason: {turn_result.reason}"),
-            turn_index=turn_index,
-        )
-    if isinstance(turn_result, SleepTurnResult) and append_sleep_record:
-        append_issue_event(
-            repo_root=repo_root,
-            run_id=run_id,
-            title="Rally Sleeping",
-            source="rally runtime",
-            detail_lines=(
-                f"Agent: `{agent.key}`",
-                f"Reason: {turn_result.reason}",
-                f"Sleep Seconds: `{turn_result.sleep_duration_seconds}`",
-            ),
-            turn_index=turn_index,
-        )
-    if isinstance(turn_result, DoneTurnResult):
-        append_issue_event(
-            repo_root=repo_root,
-            run_id=run_id,
-            title="Rally Done",
-            source="rally runtime",
-            detail_lines=(f"Agent: `{agent.key}`", f"Summary: {turn_result.summary}"),
-            turn_index=turn_index,
-        )
+    return detail_lines
 
 
-def _append_review_note(
-    *,
-    repo_root: Path,
-    run_id: str,
-    agent: FlowAgent,
-    turn_index: int,
-    note_markdown: str,
-) -> None:
-    append_issue_event(
-        repo_root=repo_root,
-        run_id=run_id,
-        title="Rally Note",
-        source="rally runtime review",
-        detail_lines=(f"Agent: `{agent.key}`",),
-        body=note_markdown,
-        turn_index=turn_index,
-    )
+def _render_turn_result_payload_markdown(*, payload: Mapping[str, object]) -> str:
+    rendered_payload = json.dumps(payload, indent=2)
+    return f"```json\n{rendered_payload}\n```"
 
 
 def _emit_step_pause_event(
@@ -1624,12 +1586,15 @@ def _resolve_next_agent(*, flow: FlowDefinition, next_owner: str) -> FlowAgent:
     try:
         return flow.agent_by_slug(next_owner)
     except KeyError:
-        try:
-            return flow.agent(next_owner)
-        except KeyError as exc:
-            raise RallyStateError(
-                f"Turn result handed off to unknown owner `{next_owner}`."
-            ) from exc
+        pass
+    try:
+        return flow.agent(next_owner)
+    except KeyError:
+        pass
+    for agent in flow.agents.values():
+        if agent.compiled.name == next_owner:
+            return agent
+    raise RallyStateError(f"Turn result handed off to unknown owner `{next_owner}`.")
 
 
 def _render_status_message(*, run_record: RunRecord, state: RunState, turn_result: TurnResult) -> str:

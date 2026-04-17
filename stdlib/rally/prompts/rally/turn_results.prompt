@@ -1,29 +1,97 @@
-json schema RallyTurnResultSchema: "Rally Turn Result Schema"
-    profile: OpenAIStructuredOutput
-    file: "schemas/rally_turn_result.schema.json"
+# Keep the shared control core in one base family so flows can extend it
+# without cloning field meaning.
+
+# Base schema: the shared producer control fields Rally reads on every turn.
+# A flow that can hand off must add its own `route field` and bind it with
+# `final_output.route:`. That keeps route member names flow-owned and lets
+# Rally route from Doctrine's emitted contract instead of a copied payload key.
+output schema BaseRallyTurnResultSchema: "Base Rally Turn Result Schema"
+    field kind: "Kind"
+        type: string
+        enum:
+            handoff
+            done
+            blocker
+            sleep
+        note: "Turn result kind."
+
+    field summary: "Summary"
+        type: string
+        nullable
+        min_length: 1
+        note: "Short summary when `kind` is `done`."
+
+    field reason: "Reason"
+        type: string
+        nullable
+        min_length: 1
+        note: "Reason when `kind` is `blocker` or `sleep`."
+
+    field sleep_duration_seconds: "Sleep Duration Seconds"
+        type: integer
+        nullable
+        minimum: 1
+        note: "Seconds to wait when `kind` is `sleep`."
+
+    field agent_issues: "Agent Issues"
+        type: string
+        nullable
+        min_length: 1
+        note: "Optional passive diagnostics. One short issue summary or the literal `none`. Never changes control flow."
 
 
-output shape RallyTurnResultJson: "Rally Turn Result JSON"
+# Concrete schema: Rally's stock turn result.
+# It inherits every base field so flow-specific schemas can also inherit the
+# same base and override only the parts they own.
+# Group the plain inherited fields when nothing local sits between them.
+output schema RallyTurnResultSchema[BaseRallyTurnResultSchema]: "Rally Turn Result Schema"
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
+
+
+# Base shape: the JSON wrapper around the reusable schema.
+# `field_notes` explains how Rally reads the fields without changing schema
+# validation rules.
+output shape BaseRallyTurnResultJson: "Base Rally Turn Result JSON"
     kind: JsonObject
-    schema: RallyTurnResultSchema
-    example_file: "examples/rally_turn_result.example.json"
+    schema: BaseRallyTurnResultSchema
 
-    explanation: "What `kind` Means"
-        "This is Rally's shared non-review turn-result shape."
-        "Review-native turns may declare a different final JSON that Rally reads from compiled review metadata."
-        "`kind` tells Rally what to do next."
-        "Always send the five control keys."
-        "Use `null` for control fields that do not apply."
-        "`agent_issues` is optional diagnostics only. When you send it, use one short issue summary or the literal `none`. It never changes route, done, blocker, or sleep behavior."
-        "If the final JSON includes `next_owner`, use the owner key, not the display name."
-        "Use keys like `change_engineer`."
-        "Use `handoff` with `next_owner`."
-        "Use `done` with `summary` to finish the run."
-        "Use `blocker` with `reason` to stop the run cleanly."
-        "Use `sleep` with `reason` and `sleep_duration_seconds` to pause the run and wake the same owner later."
+    field_notes: "Field Notes"
+        bullets rules:
+            "Always send every control field in this schema."
+            "Use `null` for control fields that do not apply."
+            "`kind` tells Rally what to do next."
+            "Use `done` with `summary`, `blocker` with `reason`, and `sleep` with `reason` plus `sleep_duration_seconds`."
+            "If this flow can hand off, add a flow-owned `route field` on the concrete schema."
+            "Bind that route field with `final_output.route:` on the agent."
+            "Use `handoff` only when that flow-owned route field selects a branch."
+            "`agent_issues` is optional passive diagnostics. When you send it, use one short issue summary or the literal `none`. It never changes route, done, blocker, or sleep behavior."
 
 
-output RallyTurnResult: "Rally Turn Result"
+# Concrete shape: same JSON kind and notes, with the concrete schema swapped in.
+# The `override schema` line is the key Doctrine move that keeps examples,
+# notes, and field meaning shared.
+# Grouped inherit is legal here too, but the explicit lines keep the schema
+# override easy to scan in the middle.
+output shape RallyTurnResultJson[BaseRallyTurnResultJson]: "Rally Turn Result JSON"
+    inherit kind
+    override schema: RallyTurnResultSchema
+    inherit field_notes
+
+
+# Base output: the reusable final-response target.
+# Flows extend this output when they need Rally control plus extra readback
+# fields in the same final JSON.
+output BaseRallyTurnResult: "Base Rally Turn Result"
     target: TurnResponse
-    shape: RallyTurnResultJson
+    shape: BaseRallyTurnResultJson
     requirement: Required
+
+
+# Stock output: the common final JSON for producer turns.
+# It inherits the target and required status, then points at the stock shape.
+# Keep the explicit order here for the same reason: the shape override reads
+# better when the inherited slots stay spelled out around it.
+output RallyTurnResult[BaseRallyTurnResult]: "Rally Turn Result"
+    inherit target
+    override shape: RallyTurnResultJson
+    inherit requirement

@@ -12,11 +12,23 @@ from rally.adapters.registry import get_adapter
 from rally.domain.flow import (
     AdapterConfig,
     CompiledAgentContract,
+    EmittedOutputContract,
     FieldPath,
     FinalOutputContract,
     FlowAgent,
     FlowDefinition,
     FlowHostInputs,
+    IoContract,
+    IoSchemaContract,
+    IoShapeContract,
+    IoTargetContract,
+    OutputBindingContract,
+    PreviousTurnInputContract,
+    RouteBranchContract,
+    RouteChoiceMemberContract,
+    RouteContract,
+    RouteSelectorContract,
+    RouteTargetContract,
     ReviewContract,
     ReviewFinalResponseContract,
     ReviewOutcomeContract,
@@ -28,7 +40,6 @@ from rally.domain.rooted_path import (
     FLOW_ROOT,
     HOME_ROOT,
     HOST_ROOT,
-    STDLIB_ROOT,
     WORKSPACE_ROOT,
     PathRoot,
     RootedPath,
@@ -37,8 +48,17 @@ from rally.domain.rooted_path import (
     resolve_rooted_path,
 )
 from rally.errors import RallyConfigError
+from rally.services.agent_skill_validation import validate_flow_agent_skill_surfaces
+from rally.services.skill_bundles import (
+    split_external_skill_name,
+    validate_system_skill_name,
+)
+from rally.services.workspace import (
+    ExternalSkillRoot,
+    load_external_skill_roots_for_repo_root,
+)
 
-SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS = frozenset({1})
+SUPPORTED_FINAL_OUTPUT_CONTRACT_VERSIONS = frozenset({1})
 _FLOW_RUNTIME_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _FLOW_RUNTIME_ENV_ALLOWED_ROOTS = frozenset({HOME_ROOT, FLOW_ROOT, WORKSPACE_ROOT, HOST_ROOT})
 _RESERVED_FLOW_RUNTIME_ENV_KEYS = frozenset({"CODEX_HOME", "ENABLE_CLAUDEAI_MCP_SERVERS"})
@@ -65,8 +85,13 @@ def load_flow_definition(
         build_agents_dir=build_agents_dir,
     )
 
+    external_skill_roots = _load_workspace_external_skill_roots(repo_root=repo_root)
+
     agents_payload = _require_mapping(payload, "agents", context="flow.yaml")
     agents: dict[str, FlowAgent] = {}
+    allowed_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
+    system_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
+    external_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
     for agent_key, agent_payload in agents_payload.items():
         if not isinstance(agent_key, str):
             raise RallyConfigError(f"`agents` keys in `{flow_file}` must be strings.")
@@ -76,18 +101,44 @@ def load_flow_definition(
         if compiled is None:
             raise RallyConfigError(
                 f"Compiled agent contract missing for flow agent `{agent_key}`. "
-                f"Expected `{build_agents_dir / expected_slug / 'AGENTS.contract.json'}`."
+                f"Expected `{build_agents_dir / expected_slug / 'final_output.contract.json'}`."
             )
+        allowed_skills = _require_string_list(agent_mapping, "allowed_skills", context=f"agent `{agent_key}`")
+        system_skills = _require_system_skills(agent_mapping, agent_key=agent_key)
+        external_skills = _require_external_skills(
+            agent_mapping,
+            agent_key=agent_key,
+            external_skill_roots=external_skill_roots,
+        )
+        _reject_skill_tier_overlap(
+            agent_key=agent_key,
+            allowed_skills=allowed_skills,
+            system_skills=system_skills,
+            external_skills=external_skills,
+        )
+        allowed_skills_by_agent_key[agent_key] = allowed_skills
+        system_skills_by_agent_key[agent_key] = system_skills
+        external_skills_by_agent_key[agent_key] = external_skills
         agents[agent_key] = FlowAgent(
             key=agent_key,
             # The compiled contract slug is the carried source of truth once the
             # loader has validated it against the flow-owned agent key.
             slug=compiled.slug,
             timeout_sec=_require_int(agent_mapping, "timeout_sec", context=f"agent `{agent_key}`"),
-            allowed_skills=_require_string_list(agent_mapping, "allowed_skills", context=f"agent `{agent_key}`"),
+            allowed_skills=allowed_skills,
+            system_skills=system_skills,
+            external_skills=external_skills,
             allowed_mcps=_require_string_list(agent_mapping, "allowed_mcps", context=f"agent `{agent_key}`"),
             compiled=compiled,
         )
+
+    validate_flow_agent_skill_surfaces(
+        flow_file=flow_file,
+        build_agents_dir=build_agents_dir,
+        allowed_skills_by_agent_key=allowed_skills_by_agent_key,
+        system_skills_by_agent_key=system_skills_by_agent_key,
+        external_skills_by_agent_key=external_skills_by_agent_key,
+    )
 
     start_agent_key = _require_string(payload, "start_agent", context="flow.yaml")
     if start_agent_key not in agents:
@@ -108,25 +159,11 @@ def load_flow_definition(
     runtime_env = _load_runtime_env(runtime_payload=runtime_payload)
     adapter_args = _require_mapping(runtime_payload, "adapter_args", context="runtime")
     get_adapter(adapter_name).validate_args(args=adapter_args)
-    prompt_input_command_raw = runtime_payload.get("prompt_input_command")
-    prompt_input_command = None
-    if prompt_input_command_raw is not None:
-        if not isinstance(prompt_input_command_raw, str) or not prompt_input_command_raw:
-            raise RallyConfigError("`runtime.prompt_input_command` must be a non-empty string when present.")
-        prompt_input_command = _resolve_rooted_existing_file(
-            raw_value=prompt_input_command_raw,
-            repo_root=repo_root,
-            flow_root=flow_root,
-            context="runtime.prompt_input_command",
-            allowed_roots={FLOW_ROOT},
-            example="flow:setup/prompt_inputs.py",
+    if "prompt_input_command" in runtime_payload:
+        raise RallyConfigError(
+            "Rally does not support `runtime.prompt_input_command`. "
+            "Expose runtime truth through files, setup, tools, or `rally issue current`."
         )
-    prompt_entrypoint = _resolve_repo_relative_file(
-        repo_root=repo_root,
-        relative_path=f"flows/{flow_name}/prompts/AGENTS.prompt",
-        context="flow prompt entrypoint",
-    )
-
     setup_home_script_raw = payload.get("setup_home_script")
     setup_home_script = None
     if setup_home_script_raw is not None:
@@ -147,7 +184,6 @@ def load_flow_definition(
         code=flow_code,
         root_dir=flow_root,
         flow_file=flow_file,
-        prompt_entrypoint=prompt_entrypoint,
         build_agents_dir=build_agents_dir,
         setup_home_script=setup_home_script,
         start_agent_key=start_agent_key,
@@ -156,7 +192,7 @@ def load_flow_definition(
         runtime_env=runtime_env,
         host_inputs=host_inputs,
         agents=agents,
-        adapter=AdapterConfig(name=adapter_name, prompt_input_command=prompt_input_command, args=adapter_args),
+        adapter=AdapterConfig(name=adapter_name, args=adapter_args),
     )
 
 
@@ -193,20 +229,23 @@ def _load_compiled_agents(
         raise RallyConfigError(f"Compiled agent directory is missing: `{build_agents_dir}`.")
 
     compiled_agents: dict[str, CompiledAgentContract] = {}
+    # Each directory under `build/agents/` is one compiler-owned package.
+    # Rally loads the required runtime pair and leaves any extra peer files in
+    # place for authored instructions to open when needed.
     for agent_dir in sorted(build_agents_dir.iterdir()):
         if not agent_dir.is_dir():
             continue
         markdown_path = agent_dir / "AGENTS.md"
-        contract_path = agent_dir / "AGENTS.contract.json"
-        if not markdown_path.is_file() or not contract_path.is_file():
+        metadata_file = agent_dir / "final_output.contract.json"
+        if not markdown_path.is_file() or not metadata_file.is_file():
             raise RallyConfigError(
-                f"Compiled agent directory `{agent_dir}` must contain both `AGENTS.md` and `AGENTS.contract.json`."
+                f"Compiled agent directory `{agent_dir}` must contain both `AGENTS.md` and `final_output.contract.json`."
             )
         contract = _load_compiled_agent_contract(
             repo_root=repo_root,
             agent_dir=agent_dir,
             markdown_path=markdown_path,
-            contract_path=contract_path,
+            metadata_file=metadata_file,
         )
         if contract.slug in compiled_agents:
             raise RallyConfigError(
@@ -278,100 +317,98 @@ def _load_compiled_agent_contract(
     repo_root: Path,
     agent_dir: Path,
     markdown_path: Path,
-    contract_path: Path,
+    metadata_file: Path,
 ) -> CompiledAgentContract:
-    payload = _load_json_mapping(contract_path)
-    contract_version = _require_int(payload, "contract_version", context=str(contract_path))
-    if contract_version not in SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS:
+    payload = _load_json_mapping(metadata_file)
+    contract_version = _require_int(payload, "contract_version", context=str(metadata_file))
+    if contract_version not in SUPPORTED_FINAL_OUTPUT_CONTRACT_VERSIONS:
         raise RallyConfigError(
-            f"Unsupported compiled agent contract version `{contract_version}` in `{contract_path}`."
+            f"Unsupported final-output contract version `{contract_version}` in `{metadata_file}`."
         )
 
-    agent_payload = _require_mapping(payload, "agent", context=str(contract_path))
-    slug = _require_string(agent_payload, "slug", context=f"{contract_path} agent")
+    agent_payload = _require_mapping(payload, "agent", context=str(metadata_file))
+    slug = _require_string(agent_payload, "slug", context=f"{metadata_file} agent")
     if slug != agent_dir.name:
         raise RallyConfigError(
-            f"Compiled agent slug mismatch for `{contract_path}`: directory is `{agent_dir.name}` but contract says `{slug}`."
+            f"Compiled agent slug mismatch for `{metadata_file}`: directory is `{agent_dir.name}` but contract says `{slug}`."
         )
 
-    final_output_payload = _require_mapping(payload, "final_output", context=str(contract_path))
+    final_output_payload = _require_mapping(payload, "final_output", context=str(metadata_file))
     if not final_output_payload.get("exists"):
         raise RallyConfigError(
-            f"Compiled agent `{slug}` does not declare a final output in `{contract_path}`."
+            f"Compiled agent `{slug}` does not declare a final output in `{metadata_file}`."
         )
 
-    schema_file = _resolve_rooted_existing_file(
-        raw_value=_require_string(final_output_payload, "schema_file", context=f"{contract_path} final_output"),
-        repo_root=repo_root,
-        flow_root=agent_dir.parents[2],
-        context=f"{contract_path} final_output.schema_file",
-        allowed_roots={FLOW_ROOT, STDLIB_ROOT},
-        example="flow:schemas/review.schema.json",
-    )
-    example_file = _resolve_rooted_existing_file(
-        raw_value=_require_string(final_output_payload, "example_file", context=f"{contract_path} final_output"),
-        repo_root=repo_root,
-        flow_root=agent_dir.parents[2],
-        context=f"{contract_path} final_output.example_file",
-        allowed_roots={FLOW_ROOT, STDLIB_ROOT},
-        example="flow:examples/review.example.json",
+    generated_schema_file = _resolve_agent_relative_existing_file(
+        agent_dir=agent_dir,
+        raw_value=_require_string(
+            final_output_payload,
+            "emitted_schema_relpath",
+            context=f"{metadata_file} final_output",
+        ),
+        context=f"{metadata_file} final_output.emitted_schema_relpath",
     )
 
-    format_mode = _require_string(final_output_payload, "format_mode", context=f"{contract_path} final_output")
-    if format_mode != "json_schema":
+    format_mode = _require_string(final_output_payload, "format_mode", context=f"{metadata_file} final_output")
+    if format_mode != "json_object":
         raise RallyConfigError(
-            f"Compiled agent `{slug}` must use `json_schema` final output mode, found `{format_mode}`."
+            f"Compiled agent `{slug}` must use `json_object` final output mode, found `{format_mode}`."
         )
 
     final_output = FinalOutputContract(
         exists=True,
+        contract_version=contract_version,
         declaration_key=_require_string(
             final_output_payload,
             "declaration_key",
-            context=f"{contract_path} final_output",
+            context=f"{metadata_file} final_output",
         ),
         declaration_name=_require_string(
             final_output_payload,
             "declaration_name",
-            context=f"{contract_path} final_output",
+            context=f"{metadata_file} final_output",
         ),
         format_mode=format_mode,
         schema_profile=_require_string(
             final_output_payload,
             "schema_profile",
-            context=f"{contract_path} final_output",
+            context=f"{metadata_file} final_output",
         ),
-        schema_file=schema_file,
-        example_file=example_file,
+        generated_schema_file=generated_schema_file,
+        metadata_file=metadata_file,
     )
-    review = _load_review_contract(payload=payload, contract_path=contract_path)
+    route = _load_route_contract(payload=payload, contract_path=metadata_file)
+    io = _load_io_contract(payload=payload, contract_path=metadata_file)
+    review = _load_review_contract(payload=payload, contract_path=metadata_file)
     if review is None:
-        _validate_turn_result_schema(schema_file)
+        _validate_turn_result_schema(schema_file=generated_schema_file, route=route, slug=slug)
     else:
         _validate_review_native_contract(
             slug=slug,
-            contract_path=contract_path,
+            contract_path=metadata_file,
             final_output=final_output,
             review=review,
         )
 
     return CompiledAgentContract(
-        name=_require_string(agent_payload, "name", context=f"{contract_path} agent"),
+        name=_require_string(agent_payload, "name", context=f"{metadata_file} agent"),
         slug=slug,
         entrypoint=_resolve_repo_relative_file(
             repo_root=repo_root,
-            relative_path=_require_string(agent_payload, "entrypoint", context=f"{contract_path} agent"),
-            context=f"{contract_path} agent.entrypoint",
+            relative_path=_require_string(agent_payload, "entrypoint", context=f"{metadata_file} agent"),
+            context=f"{metadata_file} agent.entrypoint",
         ),
         markdown_path=markdown_path,
-        contract_path=contract_path,
+        metadata_file=metadata_file,
         contract_version=contract_version,
         final_output=final_output,
+        io=io,
+        route=route,
         review=review,
     )
 
 
-def _validate_turn_result_schema(schema_file: Path) -> None:
+def _validate_turn_result_schema(*, schema_file: Path, route: RouteContract | None, slug: str) -> None:
     payload = _load_json_mapping(schema_file)
     properties = payload.get("properties")
     required = payload.get("required")
@@ -379,14 +416,67 @@ def _validate_turn_result_schema(schema_file: Path) -> None:
         raise RallyConfigError(
             f"Turn-result schema `{schema_file}` must declare object properties and required fields."
         )
-    expected_fields = {"kind", "next_owner", "summary", "reason", "sleep_duration_seconds"}
-    if set(required) != expected_fields:
+    expected_fields = {"kind", "summary", "reason", "sleep_duration_seconds"}
+    missing_required_fields = expected_fields - set(required)
+    if missing_required_fields:
         raise RallyConfigError(
-            f"Turn-result schema `{schema_file}` must require {sorted(expected_fields)}."
+            f"Turn-result schema `{schema_file}` must require {sorted(missing_required_fields)}."
         )
-    kind_field = properties.get("kind")
-    if not isinstance(kind_field, Mapping):
-        raise RallyConfigError(f"Turn-result schema `{schema_file}` must define `properties.kind`.")
+    missing_property_fields = sorted(field_name for field_name in expected_fields if field_name not in properties)
+    if missing_property_fields:
+        raise RallyConfigError(
+            f"Turn-result schema `{schema_file}` must define properties {missing_property_fields}."
+        )
+    if route is not None and route.exists:
+        if route.selector is None:
+            raise RallyConfigError(
+                f"Compiled producer agent `{slug}` routes work but `{schema_file}` has no emitted `route.selector` truth."
+            )
+        _validate_selector_field_path(
+            schema_file=schema_file,
+            properties=properties,
+            required=required,
+            selector=route.selector,
+        )
+
+
+def _validate_selector_field_path(
+    *,
+    schema_file: Path,
+    properties: Mapping[str, Any],
+    required: list[object],
+    selector: RouteSelectorContract,
+) -> None:
+    if selector.surface != "final_output":
+        raise RallyConfigError(
+            f"Turn-result schema `{schema_file}` uses unsupported route selector surface `{selector.surface}`."
+        )
+    current_properties = properties
+    current_required = set(item for item in required if isinstance(item, str))
+    for index, part in enumerate(selector.field_path):
+        if part not in current_properties:
+            raise RallyConfigError(
+                f"Turn-result schema `{schema_file}` is missing route selector field `{'.'.join(selector.field_path)}`."
+            )
+        if part not in current_required:
+            raise RallyConfigError(
+                f"Turn-result schema `{schema_file}` must require route selector field `{'.'.join(selector.field_path)}`."
+            )
+        field_payload = current_properties[part]
+        if index == len(selector.field_path) - 1:
+            return
+        if not isinstance(field_payload, Mapping):
+            raise RallyConfigError(
+                f"Turn-result schema `{schema_file}` cannot descend into route selector field `{'.'.join(selector.field_path)}`."
+            )
+        nested_properties = field_payload.get("properties")
+        nested_required = field_payload.get("required")
+        if not isinstance(nested_properties, Mapping) or not isinstance(nested_required, list):
+            raise RallyConfigError(
+                f"Turn-result schema `{schema_file}` route selector field `{'.'.join(selector.field_path)}` must stay inside nested object properties."
+            )
+        current_properties = nested_properties
+        current_required = set(item for item in nested_required if isinstance(item, str))
 
 
 def _validate_review_native_contract(
@@ -520,6 +610,397 @@ def _iter_review_outcomes(
     return tuple(pairs)
 
 
+def _load_route_contract(
+    *,
+    payload: Mapping[str, Any],
+    contract_path: Path,
+) -> RouteContract | None:
+    raw_route = payload.get("route")
+    if raw_route is None:
+        return None
+    route_payload = _require_mapping(payload, "route", context=str(contract_path))
+    selector_payload = route_payload.get("selector")
+    selector = None
+    if selector_payload is not None:
+        selector_mapping = _require_mapping(route_payload, "selector", context=f"{contract_path} route")
+        selector = RouteSelectorContract(
+            surface=_require_string(selector_mapping, "surface", context=f"{contract_path} route.selector"),
+            field_path=_require_field_path_list(
+                selector_mapping,
+                "field_path",
+                context=f"{contract_path} route.selector",
+            ),
+            null_behavior=_require_string(
+                selector_mapping,
+                "null_behavior",
+                context=f"{contract_path} route.selector",
+            ),
+        )
+
+    return RouteContract(
+        exists=_require_bool(route_payload, "exists", context=f"{contract_path} route"),
+        behavior=_require_string(route_payload, "behavior", context=f"{contract_path} route"),
+        has_unrouted_branch=_require_bool(
+            route_payload,
+            "has_unrouted_branch",
+            context=f"{contract_path} route",
+        ),
+        unrouted_review_verdicts=_require_string_list(
+            route_payload,
+            "unrouted_review_verdicts",
+            context=f"{contract_path} route",
+        ),
+        branches=_load_route_branches(route_payload=route_payload, contract_path=contract_path),
+        selector=selector,
+    )
+
+
+def _load_io_contract(
+    *,
+    payload: Mapping[str, Any],
+    contract_path: Path,
+) -> IoContract | None:
+    raw_io = payload.get("io")
+    if raw_io is None:
+        return None
+    io_payload = _require_mapping(payload, "io", context=str(contract_path))
+    return IoContract(
+        previous_turn_inputs=_load_previous_turn_inputs(io_payload=io_payload, contract_path=contract_path),
+        outputs=_load_io_outputs(io_payload=io_payload, contract_path=contract_path),
+        output_bindings=_load_output_bindings(io_payload=io_payload, contract_path=contract_path),
+    )
+
+
+def _load_previous_turn_inputs(
+    *,
+    io_payload: Mapping[str, Any],
+    contract_path: Path,
+) -> tuple[PreviousTurnInputContract, ...]:
+    raw_inputs = io_payload.get("previous_turn_inputs")
+    if not isinstance(raw_inputs, list):
+        raise RallyConfigError(f"`previous_turn_inputs` must be a list in `{contract_path}` io.")
+    inputs: list[PreviousTurnInputContract] = []
+    for index, raw_input in enumerate(raw_inputs):
+        input_payload = _require_mapping_value(
+            raw_input,
+            context=f"{contract_path} io.previous_turn_inputs[{index}]",
+        )
+        inputs.append(
+            PreviousTurnInputContract(
+                input_key=_require_string(
+                    input_payload,
+                    "input_key",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                input_name=_require_string(
+                    input_payload,
+                    "input_name",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                selector_kind=_require_string(
+                    input_payload,
+                    "selector_kind",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                selector_text=_require_string(
+                    input_payload,
+                    "selector_text",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                resolved_declaration_key=_require_optional_string(
+                    input_payload,
+                    "resolved_declaration_key",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                resolved_declaration_name=_require_optional_string(
+                    input_payload,
+                    "resolved_declaration_name",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                derived_contract_mode=_require_string(
+                    input_payload,
+                    "derived_contract_mode",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                requirement=_require_string(
+                    input_payload,
+                    "requirement",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                target=_load_optional_io_target(
+                    payload=input_payload,
+                    key="target",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                shape=_load_optional_io_shape(
+                    payload=input_payload,
+                    key="shape",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                schema=_load_optional_io_schema(
+                    payload=input_payload,
+                    key="schema",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+                binding_path=_load_optional_field_path_list(
+                    payload=input_payload,
+                    key="binding_path",
+                    context=f"{contract_path} io.previous_turn_inputs[{index}]",
+                ),
+            )
+        )
+    return tuple(inputs)
+
+
+def _load_io_outputs(
+    *,
+    io_payload: Mapping[str, Any],
+    contract_path: Path,
+) -> tuple[EmittedOutputContract, ...]:
+    raw_outputs = io_payload.get("outputs")
+    if not isinstance(raw_outputs, list):
+        raise RallyConfigError(f"`outputs` must be a list in `{contract_path}` io.")
+    outputs: list[EmittedOutputContract] = []
+    for index, raw_output in enumerate(raw_outputs):
+        output_payload = _require_mapping_value(
+            raw_output,
+            context=f"{contract_path} io.outputs[{index}]",
+        )
+        outputs.append(
+            EmittedOutputContract(
+                declaration_key=_require_string(
+                    output_payload,
+                    "declaration_key",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                declaration_name=_require_string(
+                    output_payload,
+                    "declaration_name",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                title=_require_string(
+                    output_payload,
+                    "title",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                target=_load_required_io_target(
+                    payload=output_payload,
+                    key="target",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                derived_contract_mode=_require_string(
+                    output_payload,
+                    "derived_contract_mode",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                readback_mode=_require_string(
+                    output_payload,
+                    "readback_mode",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                requires_final_output=_require_bool(
+                    output_payload,
+                    "requires_final_output",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                shape=_load_optional_io_shape(
+                    payload=output_payload,
+                    key="shape",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+                schema=_load_optional_io_schema(
+                    payload=output_payload,
+                    key="schema",
+                    context=f"{contract_path} io.outputs[{index}]",
+                ),
+            )
+        )
+    return tuple(outputs)
+
+
+def _load_output_bindings(
+    *,
+    io_payload: Mapping[str, Any],
+    contract_path: Path,
+) -> tuple[OutputBindingContract, ...]:
+    raw_bindings = io_payload.get("output_bindings")
+    if not isinstance(raw_bindings, list):
+        raise RallyConfigError(f"`output_bindings` must be a list in `{contract_path}` io.")
+    bindings: list[OutputBindingContract] = []
+    for index, raw_binding in enumerate(raw_bindings):
+        binding_payload = _require_mapping_value(
+            raw_binding,
+            context=f"{contract_path} io.output_bindings[{index}]",
+        )
+        bindings.append(
+            OutputBindingContract(
+                binding_path=_require_field_path_list(
+                    binding_payload,
+                    "binding_path",
+                    context=f"{contract_path} io.output_bindings[{index}]",
+                ),
+                declaration_key=_require_string(
+                    binding_payload,
+                    "declaration_key",
+                    context=f"{contract_path} io.output_bindings[{index}]",
+                ),
+            )
+        )
+    return tuple(bindings)
+
+
+def _load_required_io_target(
+    *,
+    payload: Mapping[str, Any],
+    key: str,
+    context: str,
+) -> IoTargetContract:
+    target = _load_optional_io_target(payload=payload, key=key, context=context)
+    if target is None:
+        raise RallyConfigError(f"`{key}` must be a mapping in {context}.")
+    return target
+
+
+def _load_optional_io_target(
+    *,
+    payload: Mapping[str, Any],
+    key: str,
+    context: str,
+) -> IoTargetContract | None:
+    raw_target = payload.get(key)
+    if raw_target is None:
+        return None
+    target_payload = _require_mapping(payload, key, context=context)
+    config_payload = _require_mapping(target_payload, "config", context=f"{context}.{key}")
+    return IoTargetContract(
+        key=_require_string(target_payload, "key", context=f"{context}.{key}"),
+        title=_require_string(target_payload, "title", context=f"{context}.{key}"),
+        config=dict(config_payload),
+    )
+
+
+def _load_optional_io_shape(
+    *,
+    payload: Mapping[str, Any],
+    key: str,
+    context: str,
+) -> IoShapeContract | None:
+    raw_shape = payload.get(key)
+    if raw_shape is None:
+        return None
+    shape_payload = _require_mapping(payload, key, context=context)
+    return IoShapeContract(
+        name=_require_string(shape_payload, "name", context=f"{context}.{key}"),
+        title=_require_string(shape_payload, "title", context=f"{context}.{key}"),
+    )
+
+
+def _load_optional_io_schema(
+    *,
+    payload: Mapping[str, Any],
+    key: str,
+    context: str,
+) -> IoSchemaContract | None:
+    raw_schema = payload.get(key)
+    if raw_schema is None:
+        return None
+    schema_payload = _require_mapping(payload, key, context=context)
+    return IoSchemaContract(
+        name=_require_string(schema_payload, "name", context=f"{context}.{key}"),
+        title=_require_string(schema_payload, "title", context=f"{context}.{key}"),
+        profile=_require_string(schema_payload, "profile", context=f"{context}.{key}"),
+    )
+
+
+def _load_route_branches(
+    *,
+    route_payload: Mapping[str, Any],
+    contract_path: Path,
+) -> tuple[RouteBranchContract, ...]:
+    raw_branches = route_payload.get("branches")
+    if not isinstance(raw_branches, list):
+        raise RallyConfigError(f"`branches` must be a list in `{contract_path}` route.")
+    branches: list[RouteBranchContract] = []
+    for index, raw_branch in enumerate(raw_branches):
+        branch_payload = _require_mapping_value(
+            raw_branch,
+            context=f"{contract_path} route.branches[{index}]",
+        )
+        target_payload = _require_mapping(
+            branch_payload,
+            "target",
+            context=f"{contract_path} route.branches[{index}]",
+        )
+        choice_members_payload = branch_payload.get("choice_members")
+        if not isinstance(choice_members_payload, list):
+            raise RallyConfigError(
+                f"`choice_members` must be a list in `{contract_path}` route.branches[{index}]."
+            )
+        choice_members: list[RouteChoiceMemberContract] = []
+        for member_index, raw_member in enumerate(choice_members_payload):
+            member_payload = _require_mapping_value(
+                raw_member,
+                context=f"{contract_path} route.branches[{index}].choice_members[{member_index}]",
+            )
+            choice_members.append(
+                RouteChoiceMemberContract(
+                    member_key=_require_string(
+                        member_payload,
+                        "member_key",
+                        context=f"{contract_path} route.branches[{index}].choice_members[{member_index}]",
+                    ),
+                    member_title=_require_string(
+                        member_payload,
+                        "member_title",
+                        context=f"{contract_path} route.branches[{index}].choice_members[{member_index}]",
+                    ),
+                    member_wire=_require_string(
+                        member_payload,
+                        "member_wire",
+                        context=f"{contract_path} route.branches[{index}].choice_members[{member_index}]",
+                    ),
+                )
+            )
+        branches.append(
+            RouteBranchContract(
+                target=RouteTargetContract(
+                    key=_require_string(
+                        target_payload,
+                        "key",
+                        context=f"{contract_path} route.branches[{index}].target",
+                    ),
+                    name=_require_string(
+                        target_payload,
+                        "name",
+                        context=f"{contract_path} route.branches[{index}].target",
+                    ),
+                    title=_require_string(
+                        target_payload,
+                        "title",
+                        context=f"{contract_path} route.branches[{index}].target",
+                    ),
+                    module_parts=_require_string_list(
+                        target_payload,
+                        "module_parts",
+                        context=f"{contract_path} route.branches[{index}].target",
+                    ),
+                ),
+                label=_require_string(
+                    branch_payload,
+                    "label",
+                    context=f"{contract_path} route.branches[{index}]",
+                ),
+                summary=_require_string(
+                    branch_payload,
+                    "summary",
+                    context=f"{contract_path} route.branches[{index}]",
+                ),
+                choice_members=tuple(choice_members),
+            )
+        )
+    return tuple(branches)
+
+
 def _require_field_paths(
     payload: Mapping[str, Any],
     key: str,
@@ -540,6 +1021,34 @@ def _require_field_paths(
     return paths
 
 
+def _require_field_path_list(
+    payload: Mapping[str, Any],
+    key: str,
+    *,
+    context: str,
+) -> FieldPath:
+    value = payload.get(key)
+    if not isinstance(value, list) or not value:
+        raise RallyConfigError(f"`{key}` must be a non-empty string list in {context}.")
+    parts: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item:
+            raise RallyConfigError(f"`{key}[{index}]` must be a non-empty string in {context}.")
+        parts.append(item)
+    return tuple(parts)
+
+
+def _load_optional_field_path_list(
+    *,
+    payload: Mapping[str, Any],
+    key: str,
+    context: str,
+) -> FieldPath | None:
+    if payload.get(key) is None:
+        return None
+    return _require_field_path_list(payload, key, context=context)
+
+
 def _load_yaml_mapping(path: Path) -> Mapping[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         payload = yaml.safe_load(handle)
@@ -554,6 +1063,20 @@ def _load_json_mapping(path: Path) -> Mapping[str, Any]:
     if not isinstance(payload, Mapping):
         raise RallyConfigError(f"`{path}` must contain a top-level object.")
     return payload
+
+
+def _resolve_agent_relative_existing_file(*, agent_dir: Path, raw_value: str, context: str) -> Path:
+    raw_path = Path(raw_value)
+    if raw_path.is_absolute():
+        raise RallyConfigError(f"{context} must be relative to the compiled agent directory: `{raw_value}`.")
+    candidate = (agent_dir / raw_path).resolve()
+    try:
+        candidate.relative_to(agent_dir.resolve())
+    except ValueError as exc:
+        raise RallyConfigError(f"{context} must not escape its compiled agent directory: `{raw_value}`.") from exc
+    if not candidate.is_file():
+        raise RallyConfigError(f"{context} does not exist: `{candidate}`.")
+    return candidate
 
 
 def _resolve_repo_relative_file(*, repo_root: Path, relative_path: str, context: str) -> Path:
@@ -619,6 +1142,106 @@ def _require_string_list(payload: Mapping[str, Any], key: str, *, context: str) 
     if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
         raise RallyConfigError(f"`{key}` must be a list of non-empty strings in {context}.")
     return tuple(value)
+
+
+def _require_system_skills(
+    agent_mapping: Mapping[str, Any],
+    *,
+    agent_key: str,
+) -> tuple[str, ...]:
+    system_skills = _require_string_list(
+        agent_mapping,
+        "system_skills",
+        context=f"agent `{agent_key}`",
+    )
+    seen: set[str] = set()
+    for skill_name in system_skills:
+        if skill_name in seen:
+            raise RallyConfigError(
+                f"`system_skills` for agent `{agent_key}` must not repeat `{skill_name}`."
+            )
+        seen.add(skill_name)
+        validate_system_skill_name(skill_name)
+    return system_skills
+
+
+def _reject_skill_tier_overlap(
+    *,
+    agent_key: str,
+    allowed_skills: tuple[str, ...],
+    system_skills: tuple[str, ...],
+    external_skills: tuple[str, ...] = (),
+) -> None:
+    allowed_set = set(allowed_skills)
+    system_set = set(system_skills)
+    external_unqualified = {split_external_skill_name(name)[1] for name in external_skills}
+
+    pairs: tuple[tuple[str, set[str], str, set[str]], ...] = (
+        ("allowed_skills", allowed_set, "system_skills", system_set),
+        ("allowed_skills", allowed_set, "external_skills", external_unqualified),
+        ("system_skills", system_set, "external_skills", external_unqualified),
+    )
+    for left_name, left_set, right_name, right_set in pairs:
+        overlap = sorted(left_set & right_set)
+        if not overlap:
+            continue
+        joined = ", ".join(f"`{name}`" for name in overlap)
+        raise RallyConfigError(
+            f"Agent `{agent_key}` lists {joined} in both `{left_name}` and `{right_name}`. "
+            "A skill belongs to exactly one tier."
+        )
+
+
+def _load_workspace_external_skill_roots(*, repo_root: Path) -> tuple[ExternalSkillRoot, ...]:
+    """Best-effort load of the workspace's external skill root registry.
+
+    Synthetic test fixtures often build a `repo_root` without a `pyproject.toml`.
+    Treat that as "no external skill roots registered" rather than failing —
+    the live flow loader only cares about external skills when a flow actually
+    references them, and that case is validated per-reference.
+    """
+    return load_external_skill_roots_for_repo_root(repo_root=repo_root)
+
+
+def _require_external_skills(
+    agent_mapping: Mapping[str, Any],
+    *,
+    agent_key: str,
+    external_skill_roots: tuple[ExternalSkillRoot, ...],
+) -> tuple[str, ...]:
+    # `external_skills` is optional: the tier is invisible-by-absence. When it
+    # is present we validate strictly — every entry must be `<alias>:<skill>`
+    # and every alias must be registered in `pyproject.toml`.
+    raw_value = agent_mapping.get("external_skills")
+    if raw_value is None:
+        return ()
+    if not isinstance(raw_value, list) or any(
+        not isinstance(item, str) or not item for item in raw_value
+    ):
+        raise RallyConfigError(
+            f"`external_skills` must be a list of non-empty strings in agent `{agent_key}`."
+        )
+
+    aliases_by_name = {entry.alias: entry for entry in external_skill_roots}
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw_entry in raw_value:
+        entry = raw_entry.strip()
+        if entry in seen:
+            raise RallyConfigError(
+                f"`external_skills` for agent `{agent_key}` must not repeat `{entry}`."
+            )
+        seen.add(entry)
+        alias, skill_name = split_external_skill_name(entry)
+        if alias not in aliases_by_name:
+            available = ", ".join(f"`{name}`" for name in sorted(aliases_by_name)) or "(none)"
+            raise RallyConfigError(
+                f"Unknown external skill root alias `{alias}` in `external_skills` for agent "
+                f"`{agent_key}`. Registered aliases: {available}. Register it under "
+                "`[tool.rally.workspace.external_skill_roots]` in pyproject.toml."
+            )
+        normalized.append(f"{alias}:{skill_name}")
+    return tuple(normalized)
 
 
 def _require_unique_string_list(
@@ -719,7 +1342,7 @@ def _resolve_rooted_existing_file(
     allowed_roots: set[PathRoot],
     example: str,
 ) -> Path:
-    if raw_value.startswith("flows/") or raw_value.startswith("stdlib/rally/"):
+    if raw_value.startswith("flows/"):
         return _resolve_repo_relative_file(
             repo_root=repo_root,
             relative_path=raw_value,

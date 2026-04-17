@@ -24,6 +24,8 @@ _RALLY_BLOCK_TITLES = (
     "Rally Archived",
     "Rally Sleeping",
 )
+_RALLY_BLOCK_TITLE_PATTERN = "|".join(re.escape(title) for title in _RALLY_BLOCK_TITLES)
+_RALLY_BLOCK_PATTERN = re.compile(rf"(?:\A|\n\n---\n\n)(## (?P<title>{_RALLY_BLOCK_TITLE_PATTERN})\n)")
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,55 @@ class IssueNoteAppendResult:
     run_id: str
     issue_file: Path
     snapshot_file: Path
+
+
+@dataclass(frozen=True)
+class IssueLedgerBlock:
+    title: str
+    markdown: str
+
+
+@dataclass(frozen=True)
+class IssueCurrentView:
+    run_id: str
+    opening_issue: str
+    latest_turn_result: str | None
+    latest_note: str | None
+    latest_blocked: str | None
+
+    def render_markdown(self) -> str:
+        sections = [
+            "# Rally Issue Current View",
+            f"- Run ID: `{self.run_id}`",
+            "- Full Ledger: `home:issue.md`",
+            "",
+            "## Opening Issue",
+            self.opening_issue.rstrip() if self.opening_issue.strip() else "_No opening issue text._",
+            "",
+            "## Latest Rally Turn Result",
+            self.latest_turn_result.rstrip()
+            if self.latest_turn_result is not None
+            else "_No `Rally Turn Result` block yet._",
+            "",
+            "## Latest Rally Note",
+            self.latest_note.rstrip() if self.latest_note is not None else "_No `Rally Note` block yet._",
+        ]
+        if self.latest_blocked is not None:
+            sections.extend(
+                (
+                    "",
+                    "## Current Rally Blocked",
+                    self.latest_blocked.rstrip(),
+                )
+            )
+        sections.extend(
+            (
+                "",
+                "## Full Ledger",
+                "Open `home:issue.md` only when you need older history or the full block text.",
+            )
+        )
+        return "\n".join(sections).rstrip() + "\n"
 
 
 def append_issue_note(
@@ -79,6 +130,8 @@ def append_issue_edit_diff(
         body=_render_issue_edit_diff(before_text=before_text, after_text=after_text),
         now=now,
     )
+
+
 def append_issue_event(
     *,
     repo_root: Path,
@@ -138,7 +191,39 @@ def load_original_issue_text(*, repo_root: Path, run_id: str) -> str:
     return original_text
 
 
+def load_issue_current_view(*, repo_root: Path, run_id: str) -> IssueCurrentView:
+    issue_file = _resolve_issue_file(repo_root=repo_root, run_id=run_id)
+    if not issue_file.is_file():
+        raise RallyStateError(f"Issue log does not exist: `{issue_file}`.")
+
+    issue_text = issue_file.read_text(encoding="utf-8")
+    blocks = _list_rally_blocks(issue_text)
+    latest_blocked = blocks[-1].markdown if blocks and blocks[-1].title == "Rally Blocked" else None
+    return IssueCurrentView(
+        run_id=run_id,
+        opening_issue=extract_current_issue_text(issue_text),
+        latest_turn_result=_latest_block_markdown(blocks=blocks, title="Rally Turn Result"),
+        latest_note=_latest_block_markdown(blocks=blocks, title="Rally Note"),
+        latest_blocked=latest_blocked,
+    )
+
+
+def render_issue_current_view(*, repo_root: Path, run_id: str) -> str:
+    return load_issue_current_view(repo_root=repo_root, run_id=run_id).render_markdown()
+
+
+def load_current_issue_text(*, repo_root: Path, run_id: str) -> str:
+    issue_file = _resolve_issue_file(repo_root=repo_root, run_id=run_id)
+    if not issue_file.is_file():
+        raise RallyStateError(f"Issue log does not exist: `{issue_file}`.")
+    return extract_current_issue_text(issue_file.read_text(encoding="utf-8"))
+
+
 def extract_original_issue_text(issue_text: str) -> str:
+    return extract_current_issue_text(issue_text)
+
+
+def extract_current_issue_text(issue_text: str) -> str:
     marker_index = issue_text.find(ORIGINAL_ISSUE_END_MARKER)
     if marker_index >= 0:
         return _normalize_original_issue_text(issue_text[:marker_index])
@@ -309,6 +394,28 @@ def _find_first_rally_block_start(issue_text: str) -> int | None:
         if issue_text.startswith(f"## {title}\n"):
             candidates.append(0)
     return min(candidates) if candidates else None
+
+
+def _list_rally_blocks(issue_text: str) -> list[IssueLedgerBlock]:
+    matches = list(_RALLY_BLOCK_PATTERN.finditer(issue_text))
+    blocks: list[IssueLedgerBlock] = []
+    for index, match in enumerate(matches):
+        block_start = match.start(1)
+        block_end = matches[index + 1].start() if index + 1 < len(matches) else len(issue_text)
+        blocks.append(
+            IssueLedgerBlock(
+                title=match.group("title"),
+                markdown=issue_text[block_start:block_end].rstrip("\n"),
+            )
+        )
+    return blocks
+
+
+def _latest_block_markdown(*, blocks: list[IssueLedgerBlock], title: str) -> str | None:
+    for block in reversed(blocks):
+        if block.title == title:
+            return block.markdown
+    return None
 
 
 def _normalize_original_issue_text(issue_text: str) -> str:

@@ -30,7 +30,6 @@ def normalize_flow_code(flow_code: str) -> str:
 @dataclass(frozen=True)
 class AdapterConfig:
     name: str
-    prompt_input_command: Path | None
     args: Mapping[str, object]
 
     def __post_init__(self) -> None:
@@ -40,12 +39,118 @@ class AdapterConfig:
 @dataclass(frozen=True)
 class FinalOutputContract:
     exists: bool
+    contract_version: int
     declaration_key: str | None
     declaration_name: str | None
     format_mode: str | None
     schema_profile: str | None
-    schema_file: Path | None
-    example_file: Path | None
+    generated_schema_file: Path | None
+    metadata_file: Path | None
+
+
+@dataclass(frozen=True)
+class IoTargetContract:
+    key: str
+    title: str
+    config: Mapping[str, object]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "config", MappingProxyType(dict(self.config)))
+
+
+@dataclass(frozen=True)
+class IoShapeContract:
+    name: str
+    title: str
+
+
+@dataclass(frozen=True)
+class IoSchemaContract:
+    name: str
+    title: str
+    profile: str
+
+
+@dataclass(frozen=True)
+class PreviousTurnInputContract:
+    input_key: str
+    input_name: str
+    selector_kind: str
+    selector_text: str
+    resolved_declaration_key: str | None
+    resolved_declaration_name: str | None
+    derived_contract_mode: str
+    requirement: str
+    target: IoTargetContract | None = None
+    shape: IoShapeContract | None = None
+    schema: IoSchemaContract | None = None
+    binding_path: FieldPath | None = None
+
+
+@dataclass(frozen=True)
+class EmittedOutputContract:
+    declaration_key: str
+    declaration_name: str
+    title: str
+    target: IoTargetContract
+    derived_contract_mode: str
+    readback_mode: str
+    requires_final_output: bool
+    shape: IoShapeContract | None = None
+    schema: IoSchemaContract | None = None
+
+
+@dataclass(frozen=True)
+class OutputBindingContract:
+    binding_path: FieldPath
+    declaration_key: str
+
+
+@dataclass(frozen=True)
+class IoContract:
+    previous_turn_inputs: tuple[PreviousTurnInputContract, ...]
+    outputs: tuple[EmittedOutputContract, ...]
+    output_bindings: tuple[OutputBindingContract, ...]
+
+
+@dataclass(frozen=True)
+class RouteChoiceMemberContract:
+    member_key: str
+    member_title: str
+    member_wire: str
+
+
+@dataclass(frozen=True)
+class RouteTargetContract:
+    key: str
+    name: str
+    title: str
+    module_parts: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RouteBranchContract:
+    target: RouteTargetContract
+    label: str
+    summary: str
+    choice_members: tuple[RouteChoiceMemberContract, ...]
+
+
+@dataclass(frozen=True)
+class RouteSelectorContract:
+    surface: str
+    field_path: FieldPath
+    null_behavior: str
+
+
+@dataclass(frozen=True)
+class RouteContract:
+    exists: bool
+    behavior: str
+    has_unrouted_branch: bool
+    unrouted_review_verdicts: tuple[str, ...]
+    branches: tuple[RouteBranchContract, ...]
+    selector: RouteSelectorContract | None = None
 
 
 @dataclass(frozen=True)
@@ -92,9 +197,11 @@ class CompiledAgentContract:
     slug: str
     entrypoint: Path
     markdown_path: Path
-    contract_path: Path
+    metadata_file: Path
     contract_version: int
     final_output: FinalOutputContract
+    io: IoContract | None = None
+    route: RouteContract | None = None
     review: ReviewContract | None = None
 
 
@@ -104,6 +211,8 @@ class FlowAgent:
     slug: str
     timeout_sec: int
     allowed_skills: tuple[str, ...]
+    system_skills: tuple[str, ...]
+    external_skills: tuple[str, ...]
     allowed_mcps: tuple[str, ...]
     compiled: CompiledAgentContract
 
@@ -121,7 +230,6 @@ class FlowDefinition:
     code: str
     root_dir: Path
     flow_file: Path
-    prompt_entrypoint: Path
     build_agents_dir: Path
     setup_home_script: Path | None
     start_agent_key: str

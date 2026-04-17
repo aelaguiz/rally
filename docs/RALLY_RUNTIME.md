@@ -39,7 +39,7 @@ Rally can now:
 - drive authored flows to real handoff, done, blocker, or sleep states through
   one shared run model
 
-The current repo also ships built-in Rally memory on top of that runtime:
+The current repo also ships Rally memory support on top of that runtime:
 
 - shared Doctrine memory contract
 - repo-local markdown memory truth
@@ -52,16 +52,20 @@ logging contract.
 
 What ships today:
 
-- per-command Doctrine rebuild for the current flow before Rally loads compiled
-  agents
-- flow loading plus compiled `AGENTS.contract.json` checks
+- per-command Doctrine rebuild for the current flow before Rally loads
+  compiled agent packages
+- flow loading plus compiled agent-package checks:
+  the required runtime pair `AGENTS.md` plus `final_output.contract.json`,
+  plus emitted schema files and additive `io` metadata referenced by that
+  contract
 - one shared adapter boundary under `src/rally/adapters/base.py` and
   `src/rally/adapters/registry.py`
 - supported adapters: `codex` and `claude_code`
 - one active run per flow with a flow lock
 - shared issue-first home prep plus adapter-owned bootstrap refresh on every
   start or resume
-- one shared prompt path
+- one shared prompt assembly path: `AGENTS.md` plus an optional generated
+  previous-turn appendix when the compiled contract asks for it
 - one shared final JSON path at `last_message.json`
 - shared session-artifact paths under `home/sessions/<agent>/`
 - shared launch proof under `logs/adapter_launch/`
@@ -72,31 +76,40 @@ What ships today:
   `SKILL.md` and Doctrine `prompts/SKILL.prompt` both supported
 - per-agent skill views refreshed under `home/sessions/<agent>/skills/` and
   the live `home/skills/` tree activated per turn from that prebuilt view
-- flow-level `setup_home_script`, `runtime.prompt_input_command`,
-  `runtime.env`, and `runtime.guarded_git_repos`
+- flow-level `setup_home_script`, `runtime.env`, and
+  `runtime.guarded_git_repos`
 - dirty guarded-repo failures that block `handoff` or `done` loud instead of
   letting Rally claim a clean finish
-- `rally workspace sync`
 - `rally run`
 - `rally run --from-file <path>`
 - `rally run --new`
 - `rally run --step`
+- `rally run --model <name>`
+- `rally run --thinking <level>`
 - `rally resume`
 - `rally resume --edit`
 - `rally resume --restart`
 - `rally resume --step`
+- `rally resume --model <name>`
+- `rally resume --thinking <level>`
 - `rally status`
-- workspace built-ins can sync before a manual Doctrine emit or before the
-  first run without creating run state
+- current-command model and thinking flags that win over saved run overrides
+- saved run overrides that win over `flow.yaml` until the operator changes them
+- restart behavior that carries saved overrides into the fresh run unless the restart command passes new ones
+- Rally resolves built-in stdlib and built-in skills during build and run
+- host workspaces do not need Rally-owned built-in copies before the first run
 - live operator stream on a TTY with plain fallback off TTY
 - CLI help with short examples and next-step hints
 - chained multi-turn execution across handoffs
 - one-turn manual stepping that stops as `paused` instead of `blocked`
 - per-flow `runtime.max_command_turns`
+- per-run CLI model and thinking overrides saved in `run.yaml`
 - `home/issue.md` plus `issue_history/`
 - the opening brief lives in `home/issue.md`, not a shared sidecar brief file
 - `rally issue note --field key=value`
-- shared issue-ledger input and shared `rally-memory` guidance in the Rally stdlib
+- `rally issue current`
+- shared issue-ledger input in the Rally stdlib
+- optional Rally memory contract in the Rally stdlib
 - `rally memory search`
 - `rally memory use`
 - `rally memory save`
@@ -132,13 +145,19 @@ What is not shipped yet:
 - Memory is context only.
 - Notes may carry flat string header fields for stable labels.
 - Final JSON is the only turn-ending control path.
-- Many turns use the shared non-review Rally turn result with five control keys and optional passive `agent_issues`.
+- Many turns use the shared Rally turn result base with four control keys plus optional passive `agent_issues`.
+- Producer schemas may add Doctrine-owned readback keys, including a typed route field when the flow hands off.
 - A non-review flow can opt out locally by declaring its own output shape over the shared schema. That stays a prompt-contract choice, not a runtime flag.
 - Review-native turns may use control-ready Doctrine review JSON instead.
 - all four memory commands are visible Rally events.
 - agent-run memory commands should render as memory rows, not generic shell rows.
-- `AGENTS.md` is injected instruction readback only.
-- `AGENTS.contract.json` is the compiler-owned metadata file Rally loads.
+- `AGENTS.md` is the main injected instruction readback.
+- When the compiled contract emits `io.previous_turn_inputs`, Rally also injects
+  one generated `## Previous Turn Inputs` appendix built from exact prior turn
+  artifacts.
+- `final_output.contract.json` is the compiler-owned metadata file Rally loads.
+- Emitted schema files under `schemas/` are the payload wire contract.
+- Other files in the compiled package stay compiler-owned peer artifacts.
 - There is no separate handoff artifact.
 - Shared runtime owns prompt assembly, home policy, state routing, and the
   final JSON read path.
@@ -150,18 +169,24 @@ What is not shipped yet:
 The current checked-in runtime surface is:
 
 - `src/rally/services/flow_build.py`
-  - rebuilds one flow's compiled agents through Doctrine
+  - rebuilds one flow's compiled agent packages through Doctrine
+  - trusts Doctrine for optional peer files such as `SOUL.md`
 - `src/rally/services/flow_loader.py`
   - loads `flow.yaml`
   - validates supported adapter names and adapter args through the registry
-  - validates `runtime.max_command_turns`, prompt-input commands, `runtime.env`,
-    and guarded repo paths
-  - requires compiled `build/agents/*`
-  - requires `AGENTS.contract.json`
-  - validates flow codes, `runtime.max_command_turns`,
-    `runtime.prompt_input_command`, `runtime.env`,
+  - validates `runtime.max_command_turns`, `runtime.env`, and guarded repo paths
+  - treats each `build/agents/<slug>/` directory as one compiled agent package
+  - requires `AGENTS.md`, emitted schema files, and
+    `final_output.contract.json`
+  - loads emitted route selector metadata and emitted `io.previous_turn_inputs`
+  - validates flow codes, `runtime.max_command_turns`, `runtime.env`,
     `runtime.guarded_git_repos`, and the shared turn-result schema
   - carries the compiled slug forward as the source-of-truth agent identity after validation
+- `src/rally/services/previous_turn_inputs.py`
+  - resolves exact previous-turn inputs from emitted `io` metadata plus the
+    prior turn artifacts
+  - keeps structured previous outputs as JSON and readable outputs as text
+  - fails loud on unsupported note-backed reopen or contract mismatches
 - `src/rally/services/skill_bundles.py`
   - resolves markdown skill roots from `SKILL.md`
   - resolves Doctrine skill roots from `prompts/SKILL.prompt`
@@ -171,6 +196,9 @@ The current checked-in runtime surface is:
   - ships real `resume`
   - ships `resume --edit`
   - ships `resume --restart`
+  - lets the operator override model and thinking on `run` or `resume`
+  - keeps those overrides in `run.yaml` for later resume or restart
+  - ships `issue current`
   - ships `issue note`, including repeatable `--field key=value`
   - ships `memory search`, `memory use`, `memory save`, and `memory refresh`
   - stamps `- Turn: \`N\`` on in-turn notes automatically when Rally launched that turn
@@ -190,6 +218,7 @@ The current checked-in runtime surface is:
 - `src/rally/services/run_store.py`
   - allocates run ids
   - writes `run.yaml` and `state.yaml`
+  - persists optional saved model and thinking overrides in `run.yaml`
   - finds active and archived runs
   - enforces one active run per flow
   - owns flow locks
@@ -197,7 +226,7 @@ The current checked-in runtime surface is:
   - prepares the shared run-home layout
   - enforces non-empty `home/issue.md`
   - syncs built-in framework assets
-  - copies compiled agents, refreshes per-agent skill views under
+  - copies whole compiled agent packages, refreshes per-agent skill views under
     `home/sessions/<agent>/skills/`, and copies allowlisted MCPs
   - calls `adapter.prepare_home(...)`
   - checks startup host inputs against the effective env from shell env plus
@@ -209,6 +238,7 @@ The current checked-in runtime surface is:
   - renders the blocker text Rally writes when those checks fail
 - `src/rally/services/issue_ledger.py`
   - appends Rally-stamped notes and runtime event blocks
+  - renders the bounded current issue view for the shared read-first path
   - inserts the original-issue marker
   - snapshots the full issue log after each append
 - `src/rally/services/run_events.py`
@@ -227,7 +257,13 @@ The current checked-in runtime surface is:
   - reads one final JSON object from `last_message.json`
   - parses either the shared Rally turn result or review-native control-ready
     finals
-  - keeps passive `agent_issues` when the shared non-review shape sends it
+  - keeps the loaded payload ready for issue-ledger readback
+  - keeps passive `agent_issues` when the shared shape sends it
+- `src/rally/services/run_events.py`
+  - writes the stable `RunEvent` log under `logs/events.jsonl`
+  - mirrors raw adapter stdout JSON as non-rendered `RAWJSON` rows
+  - mirrors the loaded `last_message.json` payload as a non-rendered
+    `FINALJSON` row
 - `src/rally/adapters/base.py`
   - defines `RallyAdapter`, `AdapterSessionRecord`, `TurnArtifactPaths`, and
     `AdapterInvocation`
@@ -252,8 +288,7 @@ The current checked-in runtime surface is:
   - writes one adapter launch proof file per turn
 - `src/rally/services/flow_env.py`
   - expands optional `runtime.env` values from `flow.yaml`
-  - applies that flow env to startup host-input checks, setup, prompt-input,
-    and adapter launches
+  - applies that flow env to startup host-input checks, setup, and adapter launches
   - lets flow env override duplicate shell env while still keeping Rally and adapter keys last
 - `src/rally/adapters/codex/session_store.py`
   - saves one session id per agent
@@ -261,9 +296,10 @@ The current checked-in runtime surface is:
 - `src/rally/services/runner.py`
   - rebuilds the current flow under the flow lock before loading compiled
   agents
-  - wires run creation, resume, runtime prompt-input injection, adapter
-    launch, guarded-repo checks, result handling, state writes, and
+  - wires run creation, resume, adapter launch, guarded-repo checks, result handling, state writes, and
     issue/event logging
+  - appends the generated previous-turn appendix to the prompt when the
+    compiled contract asks for prior outputs
   - validates `run --from-file` before archive or run creation, then copies
     that text into the new run's `home/issue.md`
   - lets a blocked run retry after `resume --edit` saves a non-empty issue
@@ -273,6 +309,9 @@ The current checked-in runtime surface is:
     `resume --edit` changed the issue text
   - appends Rally-owned ledger blocks with Markdown `---` dividers and turn
     labels on turn-scoped records
+  - keeps the quick summary lines on `Rally Turn Result` blocks, including
+    structured review fields for review turns, and adds a pretty JSON copy of
+    the full final message under them
   - lets `run --step` and `resume --step` stop clean after one turn and mark
     the run as `paused`
   - keeps chaining turns after handoffs until Rally reaches `done`, `blocker`,
@@ -282,9 +321,6 @@ The current checked-in runtime surface is:
   - bootstraps a blank demo repo with a seed commit on first run
   - copies the newest archived done demo repo, including `.git`, on later runs
   - creates a new `issue/<run-id>` branch for each issue
-- `flows/software_engineering_demo/setup/prompt_inputs.py`
-  - emits current branch, clean or dirty status, recent commits,
-    carry-forward source, and review-basis facts for grounding
 - `skills/demo-git/prompts/**`
   - provides one Doctrine-authored git helper skill plus a small helper script
     and runnable reference examples for the demo repo
@@ -292,9 +328,9 @@ The current checked-in runtime surface is:
 The live smoke now proves two real paths:
 
 - the full `poem_loop` loop:
-  `poem_writer -> poem_critic -> poem_writer -> done`
+  `muse -> poem_writer -> poem_critic -> muse -> poem_writer -> poem_critic -> done`
 - the full `software_engineering_demo` loop:
-  `architect -> critic -> developer -> critic -> qa_docs_tester -> critic`
+  `architect -> architect_reviewer -> developer -> developer_reviewer -> qa_docs_tester -> qa_reviewer`
 
 Both loops now run in one Rally command unless a real stop point interrupts
 them.
@@ -346,7 +382,7 @@ The current core proof set is:
 - `tests/unit/memory/test_index.py`
 - `tests/unit/memory/test_service.py`
 - `tests/unit/memory/test_events.py`
-- `tests/unit/test_software_engineering_demo_prompt_inputs.py`
+- `tests/unit/test_flow_loader.py`
 - `uv run pytest tests/unit -q`
 - one bridge smoke proof that confirmed an empty scoped refresh does not create `~/.cache/qmd/`
 - one earlier live end-to-end `poem_loop` run on Codex

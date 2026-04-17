@@ -1,10 +1,6 @@
-import rally.base_agent
-import rally.turn_results
-
-
-enum SmokeRoute: "Smoke Route"
-    closeout: "Closeout"
-    retry: "Retry"
+import rally.base_agent as base
+import rally.review_results as review_results
+import rally.turn_results as turn_results
 
 
 input WorkBrief: "Work Brief"
@@ -21,6 +17,21 @@ input RoutingFacts: "Routing Facts"
     "Use the routing facts that say whether the smoke test needs one more step."
 
 
+input PreviousPlanAuthorTurn: "Previous Plan Author Turn"
+    source: base.RallyPreviousTurnOutput
+    requirement: Advisory
+    "Use the exact previous PlanAuthor turn JSON when RouteRepair receives a handoff."
+
+
+input RepairPlanReviewFile: "Repair Plan Review File"
+    source: File
+        path: "home:artifacts/repair_plan.md"
+    shape: MarkdownDocument
+    requirement: Required
+    basis_missing: "Basis Missing"
+    "Use the repair plan file as the review subject for the smoke test."
+
+
 output RepairPlan: "Repair Plan"
     target: File
         path: "home:artifacts/repair_plan.md"
@@ -29,134 +40,257 @@ output RepairPlan: "Repair Plan"
     "Write the repair plan to `home:artifacts/repair_plan.md`."
 
 
-output shape SmokeTurnResultJson: "Smoke Turn Result JSON"
-    kind: JsonObject
-    schema: rally.turn_results.RallyTurnResultSchema
+output schema PlanAuthorTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Plan Author Turn Result Schema"
+    route field next_route: "Next Route"
+        route_repair: "Send the smoke test to RouteRepair." -> RouteRepair
+        nullable
+        note: "Use null when PlanAuthor can finish the smoke test here."
 
-    explanation: "What `kind` Means"
-        "This smoke-test shape reuses Rally's shared control schema."
-        "`kind` tells Rally what to do next."
-        "Always send the five control keys."
-        "Use `null` for control fields that do not apply."
-        "If the final JSON includes `next_owner`, use the owner key, not the display name."
-        "Use keys like `route_repair`."
-        "Use `handoff` with `next_owner`."
-        "Use `done` with `summary` to finish the smoke test."
-        "Use `blocker` with `reason` to stop the smoke test cleanly."
-        "Use `sleep` with `reason` and `sleep_duration_seconds` to pause the smoke test and wake the same owner later."
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
-output PlanAuthorTurnResult: "Plan Author Turn Result"
-    target: TurnResponse
-    shape: SmokeTurnResultJson
-    requirement: Required
+output shape PlanAuthorTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Plan Author Turn Result JSON"
+    inherit kind
+    override schema: PlanAuthorTurnResultSchema
 
-    kind: "handoff" when route.exists
-    next_owner: route.next_owner.key when route.exists
-
-    kind: "done" when route.exists == false
-    summary: "Write one short closeout summary." when route.exists == false
-
-
-output RouteRepairDecision: "Route Repair Decision"
-    target: TurnResponse
-    shape: Comment
-    requirement: Required
-
-    route_choice: "Route Choice"
-        "Use `closeout` to finish the smoke test and `retry` to send it back for one more pass."
+    override field_notes: "Field Notes"
+        bullets rules:
+            "Always send every field in this schema."
+            "Use `null` for fields that do not apply."
+            "`kind` tells Rally what to do next."
+            "Use `handoff` only when `next_route` is `route_repair`."
+            "Use `done` with `summary` when `next_route` is null."
+            "Use `null` for `next_route` when you block or sleep."
 
 
-output RouteRepairTurnResult: "Route Repair Turn Result"
-    target: TurnResponse
-    shape: SmokeTurnResultJson
-    requirement: Required
+output PlanAuthorTurnResult[turn_results.BaseRallyTurnResult]: "Plan Author Turn Result"
+    inherit target
+    override shape: PlanAuthorTurnResultJson
+    inherit requirement
 
-    kind: "handoff"
-    next_owner: route.next_owner.key
+    next_route: "Next Route" when route.exists
+        "Use `route_repair` when the smoke test needs one more step."
 
+    no_route: "No Route" when route.exists == false
+        "Use null for `next_route` when this turn can finish here."
 
-output CloseoutTurnResult: "Closeout Turn Result"
-    target: TurnResponse
-    shape: SmokeTurnResultJson
-    requirement: Required
-
-    kind: "done"
-    summary: "Write one short closeout summary."
+    summary: "Summary" when route.exists == false
+        "Write one short closeout summary."
 
 
-agent PlanAuthor[rally.base_agent.RallyManagedBaseAgent]:
+output schema RouteRepairTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Route Repair Turn Result Schema"
+    route field next_route: "Next Route"
+        closeout: "Send the smoke test to Closeout." -> Closeout
+        retry: "Send the smoke test back to PlanAuthor." -> PlanAuthor
+        nullable
+        note: "Use null only when RouteRepair must block or sleep."
+
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
+
+
+output shape RouteRepairTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Route Repair Turn Result JSON"
+    inherit kind
+    override schema: RouteRepairTurnResultSchema
+
+    override field_notes: "Field Notes"
+        bullets rules:
+            "Always send every field in this schema."
+            "Use `null` for fields that do not apply."
+            "`kind` tells Rally what to do next."
+            "Use `handoff` when `next_route` is `closeout` or `retry`."
+            "Use null for `next_route` only when you block or sleep."
+
+
+output RouteRepairTurnResult[turn_results.BaseRallyTurnResult]: "Route Repair Turn Result"
+    inherit target
+    override shape: RouteRepairTurnResultJson
+    inherit requirement
+
+    next_route: "Next Route" when route.exists
+        "Use `closeout` to finish the smoke test now."
+        "Use `retry` to send it back for one more pass."
+
+
+output schema CloseoutTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Closeout Turn Result Schema"
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
+
+    field current_artifact: "Current Artifact"
+        type: string
+        nullable
+        min_length: 1
+        note: "Current artifact path when the smoke test closes out."
+
+    example:
+        kind: "done"
+        summary: "Repair plan is written and the smoke test is done."
+        reason: null
+        sleep_duration_seconds: null
+        agent_issues: null
+        current_artifact: "home:artifacts/repair_plan.md"
+
+
+output shape CloseoutTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Closeout Turn Result JSON"
+    inherit kind
+    override schema: CloseoutTurnResultSchema
+    inherit field_notes
+
+
+output CloseoutTurnResult[turn_results.BaseRallyTurnResult]: "Closeout Turn Result"
+    inherit target
+    override shape: CloseoutTurnResultJson
+    inherit requirement
+
+
+output schema SmokeReviewSchema[review_results.BaseRallyReviewSchema]: "Smoke Review Schema"
+    inherit {verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail}
+
+    override example:
+        verdict: "accept"
+        reviewed_artifact: "home:artifacts/repair_plan.md"
+        analysis_performed: "The repair plan is present and the smoke review can keep it."
+        findings_first: "The repair plan is ready to keep."
+        current_artifact: "home:artifacts/repair_plan.md"
+        next_owner: null
+        failure_detail: null
+
+
+# Keep the JSON shape explicit because the schema override is the main thing a
+# reader needs to spot here.
+output shape SmokeReviewJson[review_results.BaseRallyReviewJson]: "Smoke Review JSON"
+    inherit kind
+    override schema: SmokeReviewSchema
+    inherit field_notes
+
+
+output SmokeReviewResponse[review_results.BaseRallyReviewResponse]: "Smoke Review Response"
+    inherit target
+    override shape: SmokeReviewJson
+    inherit {requirement, verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail, trust_surface, standalone_read}
+
+
+output SmokeReviewFinalResponse[SmokeReviewResponse]: "Smoke Review Final Response"
+    inherit {target, shape, requirement, verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail, trust_surface, standalone_read}
+
+
+schema SmokeReviewContract: "Smoke Review Contract"
+    sections:
+        summary: "Summary"
+            "Summarize whether the repair plan is ready to keep."
+
+    gates:
+        artifact_named: "Artifact Named"
+            "Confirm the review names the repair plan path."
+
+
+review SmokeReview: "Smoke Review"
+    subject: RepairPlanReviewFile
+    contract: SmokeReviewContract
+    comment_output: SmokeReviewResponse
+
+    # Bare names mean identity binds.
+    # Keep explicit paths only where the review semantic name changes.
+    fields:
+        verdict
+        reviewed_artifact
+        analysis: analysis_performed
+        readback: findings_first
+        current_artifact
+        blocked_gate: failure_detail.blocked_gate
+        failing_gates: failure_detail.failing_gates
+        next_owner
+
+    basis_checks: "Basis Checks"
+        block "The repair plan is missing." when RepairPlanReviewFile.basis_missing
+
+    contract_checks: "Contract Checks"
+        accept "The smoke review contract passes." when contract.passes
+
+    on_accept:
+        current artifact RepairPlanReviewFile via SmokeReviewResponse.current_artifact
+
+    on_reject:
+        current artifact RepairPlanReviewFile via SmokeReviewResponse.current_artifact
+
+
+agent PlanAuthor[base.RallyManagedBaseAgent]:
     role: "Write the repair plan and either pass the smoke test forward or finish it."
-    inherit read_first
-    inherit how_to_take_a_turn
+    inherit {rally_contract, read_first, how_to_take_a_turn}
     workflow: "Plan"
         "Write `home:artifacts/repair_plan.md`."
         "Pass the smoke test to RouteRepair only when it needs one more step."
         "Otherwise finish the smoke test here."
-    inherit rally_contract
-    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
-        inherit rally_workspace_dir
-        inherit rally_run_id
-        inherit rally_flow_code
-        inherit rally_agent_slug
+    # These wrapper refs are safe on one line because each slot only forwards
+    # one declaration and adds no local prose.
+    inputs[base.RallyManagedInputs]: "Inputs"
         inherit issue_ledger
 
-        work_brief: "Work Brief"
-            WorkBrief
-
-        routing_facts: "Routing Facts"
-            RoutingFacts
-    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
+        work_brief: WorkBrief
+        routing_facts: RoutingFacts
+    outputs[base.RallyManagedOutputs]: "Outputs"
         inherit issue_note
 
-        repair_plan: "Repair Plan"
-            RepairPlan
+        # Keep `Turn Result` explicit because the wrapper title still helps the
+        # emitted readback.
+        repair_plan: RepairPlan
 
         turn_result: "Turn Result"
             PlanAuthorTurnResult
-    handoff_routing: "Handoff Routing"
-        law:
-            active when true
-            stop "Hand off or finish the smoke test."
-            route "Send the smoke test to RouteRepair." -> RouteRepair when RoutingFacts.needs_route_repair
-    final_output: PlanAuthorTurnResult
+    final_output:
+        output: PlanAuthorTurnResult
+        route: next_route
 
 
-agent RouteRepair[rally.base_agent.RallyManagedBaseAgent]:
+agent RouteRepair[base.RallyManagedBaseAgent]:
     role: "Pick the next smoke-test owner from the emitted route choice."
-    inherit read_first
-    inherit how_to_take_a_turn
+    inherit {rally_contract, read_first, how_to_take_a_turn}
     workflow: "Route Repair"
+        "Read `Previous Plan Author Turn` first so you know why PlanAuthor sent work here."
         "Choose whether the smoke test should close out now or loop back for one more pass."
-    inherit rally_contract
-    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
-        inherit issue_note
+    inputs[base.RallyManagedInputs]: "Inputs"
+        inherit issue_ledger
 
-        route_decision: "Route Decision"
-            RouteRepairDecision
+        previous_plan_author_turn: PreviousPlanAuthorTurn
+    outputs[base.RallyManagedOutputs]: "Outputs"
+        inherit issue_note
 
         turn_result: "Turn Result"
             RouteRepairTurnResult
-    handoff_routing: "Handoff Routing"
-        law:
-            route_from RouteRepairDecision.route_choice as SmokeRoute:
-                SmokeRoute.closeout:
-                    route "Send the smoke test to Closeout." -> Closeout
-                SmokeRoute.retry:
-                    route "Send the smoke test back to PlanAuthor." -> PlanAuthor
-    final_output: RouteRepairTurnResult
+    final_output:
+        output: RouteRepairTurnResult
+        route: next_route
 
 
-agent Closeout[rally.base_agent.RallyManagedBaseAgent]:
+agent Closeout[base.RallyManagedBaseAgent]:
     role: "End the smoke test with a final `done` result."
-    inherit read_first
-    inherit how_to_take_a_turn
+    inherit {rally_contract, read_first, how_to_take_a_turn}
     workflow: "Closeout"
         "End the smoke test with one final `done` result."
-    inherit rally_contract
-    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
+    outputs[base.RallyManagedOutputs]: "Outputs"
         inherit issue_note
 
         turn_result: "Turn Result"
             CloseoutTurnResult
     final_output: CloseoutTurnResult
+
+
+agent RepairPlanReviewer:
+    role: "Review the smoke repair plan and end with split review JSON."
+    review: SmokeReview
+    inputs: "Inputs"
+        RepairPlanReviewFile
+    # Keep this wrapper explicit because it carries two direct outputs under one
+    # local title.
+    outputs: "Outputs"
+        SmokeReviewResponse
+        SmokeReviewFinalResponse
+    final_output:
+        output: SmokeReviewFinalResponse
+        review_fields:
+            verdict
+            reviewed_artifact
+            analysis: analysis_performed
+            readback: findings_first
+            current_artifact
+            blocked_gate: failure_detail.blocked_gate
+            failing_gates: failure_detail.failing_gates
+            next_owner
