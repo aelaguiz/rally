@@ -15,6 +15,7 @@ from rally.domain.flow import normalize_flow_code
 from rally.domain.flow import FlowDefinition
 from rally.domain.run import RunRecord, RunState, RunStatus
 from rally.errors import RallyStateError
+from rally.services.atomic_io import write_atomic
 
 _RUN_ID_RE = re.compile(r"^(?P<flow_code>[A-Z]{3})-(?P<sequence>\d+)$")
 
@@ -235,8 +236,7 @@ def _load_yaml_map(path: Path) -> dict[str, object]:
 
 
 def _write_yaml_map(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    write_atomic(path, yaml.safe_dump(payload, sort_keys=False))
 
 
 def _render_time(now: datetime | None) -> str:
