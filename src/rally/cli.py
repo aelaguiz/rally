@@ -98,6 +98,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--thinking",
         help="Override `runtime.adapter_args.reasoning_effort` for this run and save it in `run.yaml`.",
     )
+    run_parser.add_argument(
+        "--detach",
+        action="store_true",
+        help="Start the run in the background; return immediately with the run id.",
+    )
     run_parser.set_defaults(func=_run_command)
 
     resume_parser = subparsers.add_parser(
@@ -144,6 +149,11 @@ def _build_parser() -> argparse.ArgumentParser:
     resume_parser.add_argument(
         "--thinking",
         help="Update the saved `runtime.adapter_args.reasoning_effort` override before Rally resumes this run.",
+    )
+    resume_parser.add_argument(
+        "--detach",
+        action="store_true",
+        help="Resume the run in the background; return immediately with the run id.",
     )
     resume_parser.set_defaults(func=_resume_command)
 
@@ -358,6 +368,7 @@ def _run_command(args: argparse.Namespace) -> int:
             issue_seed_path=issue_seed_path,
             model_override=args.model,
             reasoning_effort_override=args.thinking,
+            detach=args.detach,
         ),
         display_factory=_build_display_factory(sys.stdout),
     )
@@ -376,6 +387,7 @@ def _resume_command(args: argparse.Namespace) -> int:
             step=args.step,
             model_override=args.model,
             reasoning_effort_override=args.thinking,
+            detach=args.detach,
         ),
         display_factory=_build_display_factory(sys.stdout),
     )

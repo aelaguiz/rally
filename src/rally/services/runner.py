@@ -24,6 +24,7 @@ from rally.domain.turn_result import (
 )
 from rally.errors import RallyConfigError, RallyError, RallyStateError, RallyUsageError
 from rally.services.atomic_io import write_atomic
+from rally.services.detach import spawn_detached
 from rally.services.flow_build import ensure_flow_assets_built
 from rally.services.final_response_loader import LoadedReviewTruth, load_agent_final_response
 from rally.services.flow_loader import load_flow_code, load_flow_definition
@@ -143,6 +144,7 @@ def run_flow(
             },
             issue_text=issue_seed.issue_text,
             run_started_detail_lines=issue_seed.run_started_detail_lines,
+            detach=request.detach,
         )
         if issue_seed.seed_path is None:
             return result
@@ -222,6 +224,15 @@ def resume_run(
                 code="RESUME",
                 message=f"Resuming run `{run_record.id}`.",
             )
+            if request.detach:
+                parent_result = _detach_or_continue(
+                    run_dir=run_dir,
+                    run_record=run_record,
+                    flow=flow,
+                    recorder=recorder,
+                )
+                if parent_result is not None:
+                    return parent_result
             return _execute_until_stop(
                 workspace=workspace_context,
                 repo_root=repo_root,
@@ -251,6 +262,7 @@ def _execute_new_run(
     issue_text: str | None = None,
     run_start_source: str = "rally run",
     run_started_detail_lines: Sequence[str] = (),
+    detach: bool = False,
 ) -> RunCommandResult:
     run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
     recorder = _build_recorder(
@@ -274,6 +286,15 @@ def _execute_new_run(
         )
         if issue_text is not None:
             (run_dir / "home" / "issue.md").write_text(issue_text, encoding="utf-8")
+        if detach:
+            parent_result = _detach_or_continue(
+                run_dir=run_dir,
+                run_record=run_record,
+                flow=flow,
+                recorder=recorder,
+            )
+            if parent_result is not None:
+                return parent_result
         return _execute_until_stop(
             workspace=workspace,
             repo_root=repo_root,
@@ -1703,6 +1724,41 @@ def _format_adapter_readiness_failure(
 
 def _render_time() -> str:
     return datetime.now(UTC).astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _detach_or_continue(
+    *,
+    run_dir: Path,
+    run_record: RunRecord,
+    flow: FlowDefinition,
+    recorder: RunEventRecorder,
+) -> RunCommandResult | None:
+    """Double-fork to detach. Return ``None`` in the grandchild (keep running);
+    return a parent-facing ``RunCommandResult`` in the original caller.
+    """
+    handoff = spawn_detached(run_dir)
+    if handoff is None:
+        return None
+    recorder.emit(
+        source="rally",
+        kind="lifecycle",
+        code="DETACH",
+        message=(
+            f"Run `{run_record.id}` detached as pid `{handoff.child_pid}`."
+        ),
+        data={"child_pid": handoff.child_pid},
+    )
+    message = (
+        f"Run `{run_record.id}` detached (pid `{handoff.child_pid}`).\n"
+        f"Check progress with `rally status {run_record.id}` "
+        f"or stop it with `rally stop {run_record.id}`."
+    )
+    return RunCommandResult(
+        run_id=run_record.id,
+        status=RunStatus.RUNNING,
+        current_agent_key=flow.start_agent_key,
+        message=message,
+    )
 
 
 def _stamp_identity(state: RunState, *, identity: ProcessIdentity | None) -> RunState:

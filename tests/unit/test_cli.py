@@ -292,6 +292,34 @@ class CliTests(unittest.TestCase):
         self.assertEqual(show_status_mock.call_args.kwargs["repo_root"], workspace.workspace_root)
         self.assertEqual(show_status_mock.call_args.kwargs["run_id"], "DMO-1")
 
+    def test_run_command_passes_detach_flag_to_runner(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.run_flow",
+            return_value=SimpleNamespace(message="Run `DMO-3` detached."),
+        ) as run_flow_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["run", "demo", "--detach"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(run_flow_mock.call_args.kwargs["request"].detach)
+
+    def test_resume_command_passes_detach_flag_to_runner(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.resume_run",
+            return_value=SimpleNamespace(message="Run `DMO-3` detached."),
+        ) as resume_run_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["resume", "DMO-3", "--detach"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(resume_run_mock.call_args.kwargs["request"].detach)
+
     def test_stop_command_defaults_to_cooperative_request(self) -> None:
         stdout = io.StringIO()
         workspace = self._workspace(Path("/tmp/repo"))

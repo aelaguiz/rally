@@ -56,6 +56,7 @@ class RunRequest:
     issue_seed_path: Path | None = None
     model_override: str | None = None
     reasoning_effort_override: str | None = None
+    detach: bool = False
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ class ResumeRequest:
     step: bool = False
     model_override: str | None = None
     reasoning_effort_override: str | None = None
+    detach: bool = False
 
 
 @dataclass(frozen=True)
