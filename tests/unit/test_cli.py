@@ -292,6 +292,60 @@ class CliTests(unittest.TestCase):
         self.assertEqual(show_status_mock.call_args.kwargs["repo_root"], workspace.workspace_root)
         self.assertEqual(show_status_mock.call_args.kwargs["run_id"], "DMO-1")
 
+    def test_stop_command_defaults_to_cooperative_request(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.request_stop",
+            return_value=SimpleNamespace(message="Requested cooperative stop for run `DMO-1`."),
+        ) as request_stop_mock, patch(
+            "rally.cli.kill_run",
+        ) as kill_run_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["stop", "DMO-1"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("cooperative stop", stdout.getvalue())
+        self.assertEqual(request_stop_mock.call_args.kwargs["run_id"], "DMO-1")
+        self.assertEqual(
+            request_stop_mock.call_args.kwargs["repo_root"], workspace.workspace_root
+        )
+        kill_run_mock.assert_not_called()
+
+    def test_stop_command_now_flag_hard_stops_with_grace(self) -> None:
+        stdout = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.kill_run",
+            return_value=SimpleNamespace(message="Run `DMO-1` received SIGTERM and exited."),
+        ) as kill_run_mock, patch("rally.cli.request_stop") as request_stop_mock:
+            with redirect_stdout(stdout):
+                exit_code = main(["stop", "DMO-1", "--now", "--grace", "3"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("SIGTERM", stdout.getvalue())
+        self.assertEqual(kill_run_mock.call_args.kwargs["run_id"], "DMO-1")
+        self.assertEqual(kill_run_mock.call_args.kwargs["grace_seconds"], 3.0)
+        request_stop_mock.assert_not_called()
+
+    def test_stop_command_unknown_run_surfaces_usage_error(self) -> None:
+        from rally.errors import RallyUsageError
+
+        stderr = io.StringIO()
+        workspace = self._workspace(Path("/tmp/repo"))
+
+        with patch("rally.cli.resolve_workspace", return_value=workspace), patch(
+            "rally.cli.request_stop",
+            side_effect=RallyUsageError("Run `XYZ-9` does not exist."),
+        ):
+            with redirect_stderr(stderr):
+                exit_code = main(["stop", "XYZ-9"])
+
+        self.assertNotEqual(exit_code, 0)
+        self.assertIn("XYZ-9", stderr.getvalue())
+
     def test_workspace_sync_command_is_removed(self) -> None:
         stderr = io.StringIO()
 

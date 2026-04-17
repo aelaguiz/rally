@@ -32,6 +32,7 @@ __all__ = [
     "LivenessStatus",
     "ProcessIdentity",
     "capture_self",
+    "is_zombie",
     "probe",
 ]
 
@@ -84,3 +85,17 @@ def probe(identity: ProcessIdentity) -> LivenessStatus:
     # they have not yet been reaped, and any pid reuse must wait for that.
     # We deliberately do NOT filter on process.status() here.
     return LivenessStatus.ALIVE
+
+
+def is_zombie(identity: ProcessIdentity) -> bool:
+    """Return True when the pid exists but is a zombie awaiting reap.
+
+    The reconciler treats zombies as ALIVE (pid reuse is still blocked), but
+    the stop path wants to know whether the process is still executing: a
+    zombie is not, so signaling it further is pointless.
+    """
+    try:
+        process = psutil.Process(identity.pid)
+        return process.status() == psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False

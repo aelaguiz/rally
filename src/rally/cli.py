@@ -13,6 +13,7 @@ from rally.errors import RallyError, RallyUsageError
 from rally.memory.service import refresh_memory, save_memory, search_memory, use_memory
 from rally.services.issue_ledger import append_issue_note, render_issue_current_view
 from rally.services.run_status import show_status
+from rally.services.run_stop import DEFAULT_GRACE_SECONDS, kill_run, request_stop
 from rally.services.runner import resume_run, run_flow
 from rally.services.workspace import resolve_workspace
 from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display
@@ -168,6 +169,39 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run identifier to inspect. Leave this empty to list active runs.",
     )
     status_parser.set_defaults(func=_status_command)
+
+    stop_parser = subparsers.add_parser(
+        "stop",
+        help="Stop a Rally run.",
+        description=(
+            "Stop one Rally run. By default, requests a cooperative stop that "
+            "takes effect at the next turn boundary. Use `--now` to signal the "
+            "run's process directly with SIGTERM (then SIGKILL after the grace "
+            "window) for runs that have wedged."
+        ),
+        epilog=_examples(
+            "Examples",
+            (
+                "rally stop DMO-1",
+                "rally stop DMO-1 --now",
+                "rally stop DMO-1 --now --grace 5",
+            ),
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    stop_parser.add_argument("run_id", help="Run identifier to stop.")
+    stop_parser.add_argument(
+        "--now",
+        action="store_true",
+        help="Signal the run's process immediately instead of waiting for a turn boundary.",
+    )
+    stop_parser.add_argument(
+        "--grace",
+        type=float,
+        default=DEFAULT_GRACE_SECONDS,
+        help=f"Seconds to wait after SIGTERM before SIGKILL (default {DEFAULT_GRACE_SECONDS}).",
+    )
+    stop_parser.set_defaults(func=_stop_command)
 
     issue_parser = subparsers.add_parser(
         "issue",
@@ -356,6 +390,23 @@ def _status_command(args: argparse.Namespace) -> int:
         run_id=args.run_id,
     )
     print(result.message)
+    return 0
+
+
+def _stop_command(args: argparse.Namespace) -> int:
+    workspace = resolve_workspace()
+    if args.now:
+        outcome = kill_run(
+            repo_root=workspace.workspace_root,
+            run_id=args.run_id,
+            grace_seconds=args.grace,
+        )
+    else:
+        outcome = request_stop(
+            repo_root=workspace.workspace_root,
+            run_id=args.run_id,
+        )
+    print(outcome.message)
     return 0
 
 
