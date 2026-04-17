@@ -9,6 +9,7 @@ related:
   - docs/RALLY_MASTER_DESIGN.md
   - docs/RALLY_RUNTIME.md
   - docs/RALLY_CLI_AND_LOGGING.md
+  - docs/SKILL_SCOPING.md
   - src/rally/cli.py
   - src/rally/services/flow_build.py
   - src/rally/services/flow_loader.py
@@ -84,6 +85,16 @@ Operator path for host repos:
 In most host repos, there should be no framework-managed `stdlib/rally/` or
 `skills/rally-*` copy at all. If a host repo chooses to vendor those trees,
 that vendored copy becomes host-owned source on purpose.
+
+## Sharing skills across workspaces
+
+Rally has a first-class tier for referencing skill bundles that live in
+another workspace on disk — see the **External** row of the tier table in
+[SKILL_SCOPING.md](SKILL_SCOPING.md). Register the foreign root under
+`[tool.rally.workspace.external_skill_roots]` in the workspace `pyproject.toml`,
+then list qualified names like `psmobile:device-farm` under an agent's
+`external_skills:` in `flow.yaml`. This is the supported way to share skills
+across workspace repos without vendoring.
 
 ## Non-negotiables
 

@@ -212,6 +212,7 @@ class FlowAgent:
     timeout_sec: int
     allowed_skills: tuple[str, ...]
     system_skills: tuple[str, ...]
+    external_skills: tuple[str, ...]
     allowed_mcps: tuple[str, ...]
     compiled: CompiledAgentContract
 

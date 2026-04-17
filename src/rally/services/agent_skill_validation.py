@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rally.domain.flow import flow_agent_key_to_slug
 from rally.errors import RallyConfigError
-from rally.services.skill_bundles import MANDATORY_SKILL_NAMES
+from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, split_external_skill_name
 
 _SKILLS_SECTION_PREFIX = "## Skills"
 _SKILL_HEADING_PREFIX = "### "
@@ -15,10 +15,19 @@ def expected_agent_skill_names(
     *,
     allowed_skills: Iterable[str],
     system_skills: Iterable[str] = (),
+    external_skills: Iterable[str] = (),
 ) -> tuple[str, ...]:
     ordered_names: list[str] = []
     seen_names: set[str] = set()
-    for skill_name in (*MANDATORY_SKILL_NAMES, *allowed_skills, *system_skills):
+    external_unqualified = tuple(
+        split_external_skill_name(name)[1] for name in external_skills
+    )
+    for skill_name in (
+        *MANDATORY_SKILL_NAMES,
+        *allowed_skills,
+        *system_skills,
+        *external_unqualified,
+    ):
         if skill_name in seen_names:
             continue
         seen_names.add(skill_name)
@@ -32,7 +41,9 @@ def validate_flow_agent_skill_surfaces(
     build_agents_dir: Path,
     allowed_skills_by_agent_key: Mapping[str, tuple[str, ...]],
     system_skills_by_agent_key: Mapping[str, tuple[str, ...]],
+    external_skills_by_agent_key: Mapping[str, tuple[str, ...]] | None = None,
 ) -> None:
+    external_skills_by_agent_key = external_skills_by_agent_key or {}
     for agent_key, allowed_skills in allowed_skills_by_agent_key.items():
         agent_slug = flow_agent_key_to_slug(agent_key)
         markdown_path = build_agents_dir / agent_slug / "AGENTS.md"
@@ -41,11 +52,13 @@ def validate_flow_agent_skill_surfaces(
                 f"Compiled agent home is missing for `{agent_key}`. Expected `{markdown_path}`."
             )
         system_skills = system_skills_by_agent_key.get(agent_key, ())
+        external_skills = external_skills_by_agent_key.get(agent_key, ())
         _validate_agent_skill_surface(
             agent_key=agent_key,
             flow_file=flow_file,
             allowed_skills=allowed_skills,
             system_skills=system_skills,
+            external_skills=external_skills,
             markdown_path=markdown_path,
         )
 
@@ -56,11 +69,13 @@ def _validate_agent_skill_surface(
     flow_file: Path,
     allowed_skills: tuple[str, ...],
     system_skills: tuple[str, ...],
+    external_skills: tuple[str, ...],
     markdown_path: Path,
 ) -> None:
     expected = expected_agent_skill_names(
         allowed_skills=allowed_skills,
         system_skills=system_skills,
+        external_skills=external_skills,
     )
     emitted = _extract_agent_skill_names(markdown_path.read_text(encoding="utf-8"))
     if emitted == expected:
@@ -69,7 +84,7 @@ def _validate_agent_skill_surface(
         return
     raise RallyConfigError(
         f"Compiled skill readback for agent `{agent_key}` in `{markdown_path}` does not match "
-        f"`allowed_skills` + `system_skills` in `{flow_file}`. "
+        f"`allowed_skills` + `system_skills` + `external_skills` in `{flow_file}`. "
         f"Expected {_render_skill_list(expected)}; found {_render_skill_list(emitted)}. "
         "Bind the live skill surface on the concrete agent so emitted `AGENTS.md` stays "
         "aligned with the runtime allowlist."

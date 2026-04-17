@@ -419,6 +419,7 @@ def _demo_flow(
         timeout_sec=60,
         allowed_skills=(),
         system_skills=(),
+        external_skills=(),
         allowed_mcps=allowed_mcps,
         compiled=CompiledAgentContract(
             name="ScopeLead",

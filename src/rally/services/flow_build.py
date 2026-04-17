@@ -20,10 +20,17 @@ from rally.services.builtin_assets import (
 )
 from rally.services.skill_bundles import (
     MANDATORY_SKILL_NAMES,
+    resolve_external_skill_bundle_source,
     resolve_skill_bundle_source,
+    split_external_skill_name,
     validate_system_skill_name,
 )
-from rally.services.workspace import WorkspaceContext, workspace_context_from_root
+from rally.services.workspace import (
+    ExternalSkillRoot,
+    WorkspaceContext,
+    load_external_skill_roots_for_repo_root,
+    workspace_context_from_root,
+)
 
 DoctrineEmitKind = str
 
@@ -61,12 +68,26 @@ def ensure_flow_assets_built(
         raise RallyConfigError(f"Rally workspace pyproject is missing: `{config_path}`.")
 
     builtins = resolve_rally_builtin_assets(workspace=workspace_context)
-    allowed_skills_by_agent_key, system_skills_by_agent_key = (
-        _load_flow_agent_skill_tiers(repo_root=repo_root, flow_name=flow_name)
+    external_skill_roots = workspace_context.external_skill_roots
+    (
+        allowed_skills_by_agent_key,
+        system_skills_by_agent_key,
+        external_skills_by_agent_key,
+    ) = _load_flow_agent_skill_tiers(
+        repo_root=repo_root,
+        flow_name=flow_name,
+        external_skill_roots=external_skill_roots,
     )
     skill_names = _union_flow_skill_names(
         allowed_skills_by_agent_key=allowed_skills_by_agent_key,
         system_skills_by_agent_key=system_skills_by_agent_key,
+    )
+    # Rally does not own the Doctrine build graph for external skills — the
+    # external workspace must have pre-emitted `build/SKILL.md`. Here we only
+    # validate that each referenced external skill exists and is consumable.
+    _validate_external_skill_bundles(
+        external_skills_by_agent_key=external_skills_by_agent_key,
+        external_skill_roots=external_skill_roots,
     )
     expected_agent_slugs = _load_flow_agent_slugs(repo_root=repo_root, flow_name=flow_name)
     reject_reserved_builtin_skill_shadow(
@@ -111,6 +132,7 @@ def ensure_flow_assets_built(
         build_agents_dir=repo_root / "flows" / flow_name / "build" / "agents",
         allowed_skills_by_agent_key=allowed_skills_by_agent_key,
         system_skills_by_agent_key=system_skills_by_agent_key,
+        external_skills_by_agent_key=external_skills_by_agent_key,
     )
 
     if not doctrine_skill_targets:
@@ -164,7 +186,12 @@ def _load_flow_agent_skill_tiers(
     *,
     repo_root: Path,
     flow_name: str,
-) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
+    external_skill_roots: tuple[ExternalSkillRoot, ...] = (),
+) -> tuple[
+    dict[str, tuple[str, ...]],
+    dict[str, tuple[str, ...]],
+    dict[str, tuple[str, ...]],
+]:
     flow_file = repo_root / "flows" / flow_name / "flow.yaml"
     if not flow_file.is_file():
         raise RallyConfigError(f"Flow definition does not exist: `{flow_file}`.")
@@ -176,8 +203,10 @@ def _load_flow_agent_skill_tiers(
     if not isinstance(raw_agents, dict):
         raise RallyConfigError(f"`{flow_file}` must define an `agents` mapping.")
 
+    registered_aliases = {entry.alias for entry in external_skill_roots}
     allowed_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
     system_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
+    external_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
     for agent_key, raw_agent in raw_agents.items():
         if not isinstance(agent_key, str):
             raise RallyConfigError(f"`agents` keys in `{flow_file}` must be strings.")
@@ -195,6 +224,12 @@ def _load_flow_agent_skill_tiers(
             agent_key=agent_key,
             flow_file=flow_file,
         )
+        external_skills = _parse_optional_external_skills(
+            raw_agent,
+            agent_key=agent_key,
+            flow_file=flow_file,
+            registered_aliases=registered_aliases,
+        )
         seen: set[str] = set()
         for skill_name in system_skills:
             if skill_name in seen:
@@ -204,16 +239,93 @@ def _load_flow_agent_skill_tiers(
                 )
             seen.add(skill_name)
             validate_system_skill_name(skill_name)
-        overlap = sorted(set(allowed_skills) & set(system_skills))
-        if overlap:
-            joined = ", ".join(f"`{name}`" for name in overlap)
-            raise RallyConfigError(
-                f"Agent `{agent_key}` in `{flow_file}` lists {joined} in both "
-                "`allowed_skills` and `system_skills`. A skill belongs to exactly one tier."
-            )
+        allowed_set = set(allowed_skills)
+        system_set = set(system_skills)
+        external_unqualified = {
+            split_external_skill_name(name)[1] for name in external_skills
+        }
+        for left_name, left_set, right_name, right_set in (
+            ("allowed_skills", allowed_set, "system_skills", system_set),
+            ("allowed_skills", allowed_set, "external_skills", external_unqualified),
+            ("system_skills", system_set, "external_skills", external_unqualified),
+        ):
+            overlap = sorted(left_set & right_set)
+            if overlap:
+                joined = ", ".join(f"`{name}`" for name in overlap)
+                raise RallyConfigError(
+                    f"Agent `{agent_key}` in `{flow_file}` lists {joined} in both "
+                    f"`{left_name}` and `{right_name}`. A skill belongs to exactly one tier."
+                )
         allowed_skills_by_agent_key[agent_key] = allowed_skills
         system_skills_by_agent_key[agent_key] = system_skills
-    return allowed_skills_by_agent_key, system_skills_by_agent_key
+        external_skills_by_agent_key[agent_key] = external_skills
+    return (
+        allowed_skills_by_agent_key,
+        system_skills_by_agent_key,
+        external_skills_by_agent_key,
+    )
+
+
+def _parse_optional_external_skills(
+    raw_agent: dict,
+    *,
+    agent_key: str,
+    flow_file: Path,
+    registered_aliases: set[str],
+) -> tuple[str, ...]:
+    raw_value = raw_agent.get("external_skills")
+    if raw_value is None:
+        return ()
+    if not isinstance(raw_value, list) or any(
+        not isinstance(item, str) or not item for item in raw_value
+    ):
+        raise RallyConfigError(
+            f"Agent `{agent_key}` in `{flow_file}` must define `external_skills` as a list "
+            "of non-empty `<alias>:<skill>` strings (or omit it)."
+        )
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw_entry in raw_value:
+        entry = raw_entry.strip()
+        if entry in seen:
+            raise RallyConfigError(
+                f"`external_skills` for agent `{agent_key}` in `{flow_file}` must not repeat `{entry}`."
+            )
+        seen.add(entry)
+        alias, skill_name = split_external_skill_name(entry)
+        if alias not in registered_aliases:
+            available = ", ".join(f"`{name}`" for name in sorted(registered_aliases)) or "(none)"
+            raise RallyConfigError(
+                f"Unknown external skill root alias `{alias}` in `external_skills` for agent "
+                f"`{agent_key}` in `{flow_file}`. Registered aliases: {available}. Register it "
+                "under `[tool.rally.workspace.external_skill_roots]` in pyproject.toml."
+            )
+        normalized.append(f"{alias}:{skill_name}")
+    return tuple(normalized)
+
+
+def _validate_external_skill_bundles(
+    *,
+    external_skills_by_agent_key: dict[str, tuple[str, ...]],
+    external_skill_roots: tuple[ExternalSkillRoot, ...],
+) -> None:
+    roots_by_alias = {entry.alias: entry.root for entry in external_skill_roots}
+    seen: set[str] = set()
+    for qualified_names in external_skills_by_agent_key.values():
+        for qualified_name in qualified_names:
+            if qualified_name in seen:
+                continue
+            seen.add(qualified_name)
+            alias, skill_name = split_external_skill_name(qualified_name)
+            root = roots_by_alias[alias]  # alias already validated upstream
+            bundle = resolve_external_skill_bundle_source(
+                root=root,
+                alias=alias,
+                skill_name=skill_name,
+            )
+            # Verify the bundle is actually consumable (markdown frontmatter or
+            # pre-emitted Doctrine build) before Doctrine runs downstream.
+            bundle.runtime_source_dir()
 
 
 def _require_flow_agent_string_list(

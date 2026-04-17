@@ -91,6 +91,7 @@ class RunnerTests(unittest.TestCase):
                 timeout_sec=60,
                 allowed_skills=(),
                 system_skills=(),
+                external_skills=(),
                 allowed_mcps=(),
                 compiled=compiled,
             )
@@ -174,6 +175,7 @@ class RunnerTests(unittest.TestCase):
                 timeout_sec=60,
                 allowed_skills=(),
                 system_skills=(),
+                external_skills=(),
                 allowed_mcps=(),
                 compiled=CompiledAgentContract(
                     name="SourceAgent",
@@ -212,6 +214,7 @@ class RunnerTests(unittest.TestCase):
                 timeout_sec=60,
                 allowed_skills=(),
                 system_skills=(),
+                external_skills=(),
                 allowed_mcps=(),
                 compiled=CompiledAgentContract(
                     name="ReaderAgent",
@@ -384,6 +387,7 @@ class RunnerTests(unittest.TestCase):
                 timeout_sec=60,
                 allowed_skills=(),
                 system_skills=(),
+                external_skills=(),
                 allowed_mcps=(),
                 compiled=CompiledAgentContract(
                     name="SectionDossierEngineer",
@@ -483,6 +487,7 @@ class RunnerTests(unittest.TestCase):
                 timeout_sec=60,
                 allowed_skills=(),
                 system_skills=(),
+                external_skills=(),
                 allowed_mcps=(),
                 compiled=replace(route_repair_compiled, markdown_path=route_repair_markdown),
             )
@@ -492,6 +497,7 @@ class RunnerTests(unittest.TestCase):
                 timeout_sec=60,
                 allowed_skills=(),
                 system_skills=(),
+                external_skills=(),
                 allowed_mcps=(),
                 compiled=plan_author_compiled,
             )

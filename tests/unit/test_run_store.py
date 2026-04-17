@@ -162,6 +162,7 @@ def _demo_flow(*, repo_root: Path) -> FlowDefinition:
         timeout_sec=60,
         allowed_skills=(),
         system_skills=(),
+        external_skills=(),
         allowed_mcps=(),
         compiled=CompiledAgentContract(
             name="ScopeLead",

@@ -49,7 +49,14 @@ from rally.domain.rooted_path import (
 )
 from rally.errors import RallyConfigError
 from rally.services.agent_skill_validation import validate_flow_agent_skill_surfaces
-from rally.services.skill_bundles import validate_system_skill_name
+from rally.services.skill_bundles import (
+    split_external_skill_name,
+    validate_system_skill_name,
+)
+from rally.services.workspace import (
+    ExternalSkillRoot,
+    load_external_skill_roots_for_repo_root,
+)
 
 SUPPORTED_FINAL_OUTPUT_CONTRACT_VERSIONS = frozenset({1})
 _FLOW_RUNTIME_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -78,10 +85,13 @@ def load_flow_definition(
         build_agents_dir=build_agents_dir,
     )
 
+    external_skill_roots = _load_workspace_external_skill_roots(repo_root=repo_root)
+
     agents_payload = _require_mapping(payload, "agents", context="flow.yaml")
     agents: dict[str, FlowAgent] = {}
     allowed_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
     system_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
+    external_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
     for agent_key, agent_payload in agents_payload.items():
         if not isinstance(agent_key, str):
             raise RallyConfigError(f"`agents` keys in `{flow_file}` must be strings.")
@@ -95,13 +105,20 @@ def load_flow_definition(
             )
         allowed_skills = _require_string_list(agent_mapping, "allowed_skills", context=f"agent `{agent_key}`")
         system_skills = _require_system_skills(agent_mapping, agent_key=agent_key)
+        external_skills = _require_external_skills(
+            agent_mapping,
+            agent_key=agent_key,
+            external_skill_roots=external_skill_roots,
+        )
         _reject_skill_tier_overlap(
             agent_key=agent_key,
             allowed_skills=allowed_skills,
             system_skills=system_skills,
+            external_skills=external_skills,
         )
         allowed_skills_by_agent_key[agent_key] = allowed_skills
         system_skills_by_agent_key[agent_key] = system_skills
+        external_skills_by_agent_key[agent_key] = external_skills
         agents[agent_key] = FlowAgent(
             key=agent_key,
             # The compiled contract slug is the carried source of truth once the
@@ -110,6 +127,7 @@ def load_flow_definition(
             timeout_sec=_require_int(agent_mapping, "timeout_sec", context=f"agent `{agent_key}`"),
             allowed_skills=allowed_skills,
             system_skills=system_skills,
+            external_skills=external_skills,
             allowed_mcps=_require_string_list(agent_mapping, "allowed_mcps", context=f"agent `{agent_key}`"),
             compiled=compiled,
         )
@@ -119,6 +137,7 @@ def load_flow_definition(
         build_agents_dir=build_agents_dir,
         allowed_skills_by_agent_key=allowed_skills_by_agent_key,
         system_skills_by_agent_key=system_skills_by_agent_key,
+        external_skills_by_agent_key=external_skills_by_agent_key,
     )
 
     start_agent_key = _require_string(payload, "start_agent", context="flow.yaml")
@@ -1151,15 +1170,78 @@ def _reject_skill_tier_overlap(
     agent_key: str,
     allowed_skills: tuple[str, ...],
     system_skills: tuple[str, ...],
+    external_skills: tuple[str, ...] = (),
 ) -> None:
-    overlap = sorted(set(allowed_skills) & set(system_skills))
-    if not overlap:
-        return
-    joined = ", ".join(f"`{name}`" for name in overlap)
-    raise RallyConfigError(
-        f"Agent `{agent_key}` lists {joined} in both `allowed_skills` and `system_skills`. "
-        "A skill belongs to exactly one tier."
+    allowed_set = set(allowed_skills)
+    system_set = set(system_skills)
+    external_unqualified = {split_external_skill_name(name)[1] for name in external_skills}
+
+    pairs: tuple[tuple[str, set[str], str, set[str]], ...] = (
+        ("allowed_skills", allowed_set, "system_skills", system_set),
+        ("allowed_skills", allowed_set, "external_skills", external_unqualified),
+        ("system_skills", system_set, "external_skills", external_unqualified),
     )
+    for left_name, left_set, right_name, right_set in pairs:
+        overlap = sorted(left_set & right_set)
+        if not overlap:
+            continue
+        joined = ", ".join(f"`{name}`" for name in overlap)
+        raise RallyConfigError(
+            f"Agent `{agent_key}` lists {joined} in both `{left_name}` and `{right_name}`. "
+            "A skill belongs to exactly one tier."
+        )
+
+
+def _load_workspace_external_skill_roots(*, repo_root: Path) -> tuple[ExternalSkillRoot, ...]:
+    """Best-effort load of the workspace's external skill root registry.
+
+    Synthetic test fixtures often build a `repo_root` without a `pyproject.toml`.
+    Treat that as "no external skill roots registered" rather than failing —
+    the live flow loader only cares about external skills when a flow actually
+    references them, and that case is validated per-reference.
+    """
+    return load_external_skill_roots_for_repo_root(repo_root=repo_root)
+
+
+def _require_external_skills(
+    agent_mapping: Mapping[str, Any],
+    *,
+    agent_key: str,
+    external_skill_roots: tuple[ExternalSkillRoot, ...],
+) -> tuple[str, ...]:
+    # `external_skills` is optional: the tier is invisible-by-absence. When it
+    # is present we validate strictly — every entry must be `<alias>:<skill>`
+    # and every alias must be registered in `pyproject.toml`.
+    raw_value = agent_mapping.get("external_skills")
+    if raw_value is None:
+        return ()
+    if not isinstance(raw_value, list) or any(
+        not isinstance(item, str) or not item for item in raw_value
+    ):
+        raise RallyConfigError(
+            f"`external_skills` must be a list of non-empty strings in agent `{agent_key}`."
+        )
+
+    aliases_by_name = {entry.alias: entry for entry in external_skill_roots}
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw_entry in raw_value:
+        entry = raw_entry.strip()
+        if entry in seen:
+            raise RallyConfigError(
+                f"`external_skills` for agent `{agent_key}` must not repeat `{entry}`."
+            )
+        seen.add(entry)
+        alias, skill_name = split_external_skill_name(entry)
+        if alias not in aliases_by_name:
+            available = ", ".join(f"`{name}`" for name in sorted(aliases_by_name)) or "(none)"
+            raise RallyConfigError(
+                f"Unknown external skill root alias `{alias}` in `external_skills` for agent "
+                f"`{agent_key}`. Registered aliases: {available}. Register it under "
+                "`[tool.rally.workspace.external_skill_roots]` in pyproject.toml."
+            )
+        normalized.append(f"{alias}:{skill_name}")
+    return tuple(normalized)
 
 
 def _require_unique_string_list(
