@@ -3,12 +3,12 @@
 This file is the canonical home for Rally versioning, release rules, and
 Doctrine compatibility guidance.
 
-Current public Rally release version: v0.1.1
-Current Rally package version: 0.1.1
+Current public Rally release version: v1.0.0
+Current Rally package version: 1.0.0
 Current workspace manifest version: 1
 Current final-output contract version: 1
-Current minimum Doctrine release: v1.0.2
-Current supported Doctrine package line: doctrine-agents>=1.0.2,<2
+Current minimum Doctrine release: v2.0.0
+Current supported Doctrine package line: doctrine-agents>=2.0.0,<3
 
 ## The Version Lines
 
@@ -218,8 +218,8 @@ forget the others. Trusted Publishing matches those values exactly.
 ## Doctrine Compatibility
 
 - Rally public releases depend on one explicit minimum Doctrine public release.
-  Today that floor is `v1.0.2`.
-- Rally's public package metadata must keep `doctrine-agents>=1.0.2,<2` until the
+  Today that floor is `v2.0.0`.
+- Rally's public package metadata must keep `doctrine-agents>=2.0.0,<3` until the
   compatibility policy changes in the same release.
 - Repo-local WIP work may use editable `../doctrine` through
   `tool.uv.sources`. Do not use the public package index as proof for a
@@ -234,8 +234,8 @@ forget the others. Trusted Publishing matches those values exactly.
   temp environments with no manual Doctrine preinstall.
 - `make verify` must keep Rally's richer host-workspace packaged-install proof
   green on top of that clean-install smoke.
-- If an older env or lockfile still points at package `doctrine`, refresh it
-  to `doctrine-agents>=1.0.2,<2`.
+- If an older env or lockfile still points at package `doctrine` or an older
+  `doctrine-agents<2` pin, refresh it to `doctrine-agents>=2.0.0,<3`.
 - Rally's release version is not Doctrine's release version and not Doctrine's
   language version.
 

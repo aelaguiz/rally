@@ -55,6 +55,28 @@ Support-surface version changes: none
 
 Use this section for work that is not public yet.
 
+## v1.0.0 - 2026-04-17
+
+Release kind: Breaking
+Release channel: stable
+Release version: v1.0.0
+Affected surfaces: Rally package metadata Doctrine floor, supported Doctrine package line, host-repo prompt compatibility inherited from Doctrine 3.0, and host-repo readers of emitted Doctrine contracts and `## Outputs` Markdown.
+Who must act: (1) host authors whose `.prompt` files still use retired Doctrine 2.x forms that Doctrine 3.0 rejects, especially `required:` or `optional:` inside `output schema` fields and route fields (Doctrine emits `E236` and `E237`); (2) downstream readers of emitted `AGENTS.contract.json`, which Doctrine 2.0 retired in favor of `final_output.contract.json` plus `schemas/<output-slug>.schema.json`; (3) downstream snapshot, parser, or scraper users of emitted `## Outputs` Markdown, the old `_ordered list_` or `_unordered list_` helper lines, and the old compiler-owned review-semantics and single-child `* Binding` wrappers; (4) host repos that still ship a `doctrine` or `doctrine-agents<2` pin alongside Rally.
+Who does not need to act: users who resolve `doctrine-agents` only through Rally's declared range, users who consume `schemas/<output-slug>.schema.json` wire shape, and users who stay on a source checkout with an editable `../doctrine` that already tracks Doctrine 3.0 syntax.
+Upgrade steps: (1) install `rally-agents` v1.0.0 so Rally pulls `doctrine-agents>=2.0.0,<3`; (2) refresh any lockfile or dependency pin that still points at `doctrine` or `doctrine-agents<2` to `doctrine-agents>=2.0.0,<3`; (3) in host `.prompt` files, replace authored `required:` and `optional:` inside `output schema` fields and route fields with `nullable` where the field may be `null` (Doctrine compile errors cite `E236` and `E237`); (4) stop reading emitted `AGENTS.contract.json` — read `final_output.contract.json` for final-output, review-control, and the new top-level `route` and `io` metadata, and read `schemas/<output-slug>.schema.json` for structured-output wire shape; (5) refresh downstream emitted-Markdown snapshots and parsers to the new `## Outputs` grouped-contract layout (no `_ordered list_` or `_unordered list_` helper lines, compacted review-semantics and single-child `* Binding` wrappers); (6) run `uv run rally run <flow>` (or the host equivalent) once after the upgrade to regenerate emitted build artifacts under the new Doctrine output shapes.
+Verification: make verify
+Support-surface version changes: minimum Doctrine release v1.0.2 -> v2.0.0; supported Doctrine package line `doctrine-agents>=1.0.2,<2` -> `doctrine-agents>=2.0.0,<3`; inherited Doctrine language 2.2 -> 3.0; emitted `AGENTS.contract.json` retired in Rally-managed host builds; emitted `schemas/<output-slug>.schema.json` is now the sole structured-output wire contract; workspace manifest 1 (unchanged); compiled contract version 1 (unchanged)
+
+### Changed
+- Raised Rally's public Doctrine floor to `doctrine-agents>=2.0.0,<3` so Rally
+  installs resolve against the Doctrine 2.0 release line and pick up the new
+  Doctrine language (3.0), retired authored `required:` and `optional:` inside
+  `output schema` fields, the new grouped `## Outputs` Markdown layout, and the
+  retired `AGENTS.contract.json` by default.
+- Updated `docs/VERSIONING.md` and `README.md` to carry the new minimum
+  Doctrine release and supported package line so host repos see the new floor
+  in one place.
+
 ## v0.1.1 - 2026-04-14
 
 Release kind: Non-breaking

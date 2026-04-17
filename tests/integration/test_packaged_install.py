@@ -215,10 +215,12 @@ class PackagedInstallTests(unittest.TestCase):
                   01_scope_lead:
                     timeout_sec: 60
                     allowed_skills: []
+                    system_skills: []
                     allowed_mcps: []
                   02_scope_reviewer:
                     timeout_sec: 60
                     allowed_skills: []
+                    system_skills: []
                     allowed_mcps: []
                 runtime:
                   adapter: codex
