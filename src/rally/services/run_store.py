@@ -14,7 +14,7 @@ import yaml
 
 from rally.domain.flow import normalize_flow_code
 from rally.domain.flow import FlowDefinition
-from rally.domain.run import RunRecord, RunState, RunStatus
+from rally.domain.run import RUN_STATE_SCHEMA_VERSION, RunRecord, RunState, RunStatus
 from rally.errors import RallyStateError
 from rally.services.atomic_io import write_atomic
 
@@ -184,6 +184,10 @@ def load_run_state(*, run_dir: Path) -> RunState:
         sleep_reason=_optional_string(payload, "sleep_reason"),
         blocker_reason=_optional_string(payload, "blocker_reason"),
         done_summary=_optional_string(payload, "done_summary"),
+        pid=_optional_positive_int(payload, "pid"),
+        process_create_time=_optional_float(payload, "process_create_time"),
+        pgid=_optional_positive_int(payload, "pgid"),
+        schema_version=_schema_version(payload),
     )
 
 
@@ -307,6 +311,33 @@ def _require_int(payload: dict[str, object], field: str, *, context: str) -> int
     value = payload.get(field)
     if not isinstance(value, int) or value < 0:
         raise RallyStateError(f"{context} requires non-negative integer field `{field}`.")
+    return value
+
+
+def _optional_positive_int(payload: dict[str, object], field: str) -> int | None:
+    value = payload.get(field)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise RallyStateError(f"Optional field `{field}` must be null or a positive integer.")
+    return value
+
+
+def _optional_float(payload: dict[str, object], field: str) -> float | None:
+    value = payload.get(field)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RallyStateError(f"Optional field `{field}` must be null or a number.")
+    return float(value)
+
+
+def _schema_version(payload: dict[str, object]) -> int:
+    value = payload.get("schema_version")
+    if value is None:
+        return 1
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise RallyStateError("Optional field `schema_version` must be a positive integer.")
     return value
 
 
