@@ -266,11 +266,18 @@ The shared producer base carries four common Rally control keys:
 - `sleep_duration_seconds`
 
 Fields that do not apply are `null` on the shared base shape.
+The shared base shape may also carry optional passive diagnostics in
+`agent_issues`. Agents should send one short issue summary there, or the
+literal `none` when no issue applies. `agent_issues` never changes route,
+done, blocker, or sleep behavior.
 Flow-specific producer outputs inherit that base shape, add a typed route field
 such as `next_route`, and let Doctrine emit the real route selector metadata in
 `final_output.contract.json`.
 Rally reads producer handoffs from that emitted route metadata, not from a
 payload `next_owner` copy.
+A non-review flow can also opt out of the shared base by declaring its own
+output shape over the shared schema. That stays a prompt-contract choice,
+not a runtime flag.
 Review-native turns still use control-ready Doctrine review JSON and may carry
 `next_owner` there because Doctrine review routing is still review-owned.
 If the result uses `kind: handoff`, that is only the routed handoff mode.
@@ -562,7 +569,7 @@ Status: the authored standard-library baseline is done in this repo.
 What this gives Rally:
 
 - the shared `rally.turn_results` contract
-- schema and example assets for that contract
+- schema and example assets for that contract, including optional passive `agent_issues`
 - the import/composition pattern Rally flows use to adopt those conventions
 
 What remains true:

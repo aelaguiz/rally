@@ -981,6 +981,7 @@ def _execute_single_turn(
             turn_result=turn_result,
             payload=loaded_final_response.payload,
             review_truth=loaded_final_response.review_truth,
+            agent_issues=loaded_final_response.agent_issues,
             turn_index=turn_index,
         )
         write_run_state(run_dir=run_dir, state=blocked_state)
@@ -1050,6 +1051,7 @@ def _execute_single_turn(
         turn_result=turn_result,
         payload=loaded_final_response.payload,
         review_truth=loaded_final_response.review_truth,
+        agent_issues=loaded_final_response.agent_issues,
         turn_index=turn_index,
     )
 
@@ -1409,12 +1411,14 @@ def _append_issue_records_for_turn_result(
     turn_result: TurnResult,
     payload: Mapping[str, object],
     review_truth: LoadedReviewTruth | None,
+    agent_issues: str | None,
     turn_index: int,
 ) -> None:
     detail_lines = _turn_result_issue_detail_lines(
         agent=agent,
         turn_result=turn_result,
         review_truth=review_truth,
+        agent_issues=agent_issues,
     )
 
     append_issue_event(
@@ -1433,8 +1437,11 @@ def _turn_result_issue_detail_lines(
     agent: FlowAgent,
     turn_result: TurnResult,
     review_truth: LoadedReviewTruth | None,
+    agent_issues: str | None,
 ) -> list[str]:
     detail_lines = [f"Agent: `{agent.key}`", f"Result: `{turn_result.kind.value}`"]
+    if agent_issues is not None:
+        detail_lines.append(f"Agent Issues: {agent_issues}")
     if review_truth is not None:
         detail_lines.append(f"Review Verdict: `{review_truth.verdict}`")
         if review_truth.reviewed_artifact is not None:

@@ -27,7 +27,7 @@ output schema ArchitectTurnResultSchema[turn_results.BaseRallyTurnResultSchema]:
         nullable
         note: "Use null only when the architect turn blocks or sleeps."
 
-    inherit {kind, summary, reason, sleep_duration_seconds}
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
 output shape ArchitectTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Architect Turn Result JSON"
@@ -58,7 +58,7 @@ output schema DeveloperTurnResultSchema[turn_results.BaseRallyTurnResultSchema]:
         nullable
         note: "Use null only when the developer turn blocks or sleeps."
 
-    inherit {kind, summary, reason, sleep_duration_seconds}
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
 output shape DeveloperTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Developer Turn Result JSON"
@@ -89,7 +89,7 @@ output schema QaDocsTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Q
         nullable
         note: "Use null only when the QA docs turn blocks or sleeps."
 
-    inherit {kind, summary, reason, sleep_duration_seconds}
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
 output shape QaDocsTurnResultJson[turn_results.BaseRallyTurnResultJson]: "QA Docs Turn Result JSON"

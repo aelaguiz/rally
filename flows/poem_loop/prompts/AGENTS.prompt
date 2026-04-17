@@ -48,7 +48,7 @@ output schema MuseTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Mus
         nullable
         note: "Use null only when Muse must block or sleep."
 
-    inherit {kind, summary, reason, sleep_duration_seconds}
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
     field poem_type: "Poem Type"
         type: string
@@ -117,7 +117,7 @@ output schema PoemWriterTurnResultSchema[turn_results.BaseRallyTurnResultSchema]
         nullable
         note: "Use null only when the writer must block or sleep."
 
-    inherit {kind, summary, reason, sleep_duration_seconds}
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
     field inspiration: "Inspiration"
         type: string

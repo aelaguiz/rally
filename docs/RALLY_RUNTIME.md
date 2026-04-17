@@ -145,8 +145,9 @@ What is not shipped yet:
 - Memory is context only.
 - Notes may carry flat string header fields for stable labels.
 - Final JSON is the only turn-ending control path.
-- Many turns use the shared five-control-key Rally turn result.
-- Producer schemas may add Doctrine-owned readback keys.
+- Many turns use the shared Rally turn result base with four control keys plus optional passive `agent_issues`.
+- Producer schemas may add Doctrine-owned readback keys, including a typed route field when the flow hands off.
+- A non-review flow can opt out locally by declaring its own output shape over the shared schema. That stays a prompt-contract choice, not a runtime flag.
 - Review-native turns may use control-ready Doctrine review JSON instead.
 - all four memory commands are visible Rally events.
 - agent-run memory commands should render as memory rows, not generic shell rows.
@@ -257,6 +258,7 @@ The current checked-in runtime surface is:
   - parses either the shared Rally turn result or review-native control-ready
     finals
   - keeps the loaded payload ready for issue-ledger readback
+  - keeps passive `agent_issues` when the shared shape sends it
 - `src/rally/services/run_events.py`
   - writes the stable `RunEvent` log under `logs/events.jsonl`
   - mirrors raw adapter stdout JSON as non-rendered `RAWJSON` rows

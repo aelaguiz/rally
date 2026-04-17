@@ -83,6 +83,7 @@ class FinalResponseLoaderTests(unittest.TestCase):
             self.assertEqual(loaded.review_truth.reviewed_artifact, "home:artifacts/poem.md")
             self.assertEqual(loaded.review_truth.readback, "The poem is ready to keep.")
             self.assertIsNone(loaded.review_truth.next_owner)
+            self.assertIsNone(loaded.agent_issues)
 
     def test_load_agent_final_response_maps_review_blocked_gate_to_blocker(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -136,6 +137,7 @@ class FinalResponseLoaderTests(unittest.TestCase):
             self.assertIsNotNone(loaded.review_truth)
             self.assertEqual(loaded.review_truth.next_owner, "poem_writer")
             self.assertEqual(loaded.review_truth.current_artifact, "home:artifacts/poem.md")
+            self.assertIsNone(loaded.agent_issues)
 
     def test_load_agent_final_response_routes_producer_handoff_from_route_selector(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -266,6 +268,53 @@ class FinalResponseLoaderTests(unittest.TestCase):
                         selector_field=("next_route",),
                         route_members={"poem_critic": "PoemCritic"},
                     ),
+                    last_message_file=last_message,
+                )
+
+    def test_load_agent_final_response_keeps_agent_issues_for_shared_turn_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            last_message = Path(temp_dir) / "last_message.json"
+            last_message.write_text(
+                """{
+  "kind": "done",
+  "next_owner": null,
+  "summary": "wrapped up",
+  "reason": null,
+  "sleep_duration_seconds": null,
+  "agent_issues": "none"
+}
+""",
+                encoding="utf-8",
+            )
+
+            loaded = load_agent_final_response(
+                compiled_agent=_shared_turn_result_agent_contract(),
+                last_message_file=last_message,
+            )
+
+            self.assertEqual(loaded.turn_result, DoneTurnResult(summary="wrapped up"))
+            self.assertEqual(loaded.agent_issues, "none")
+            self.assertIsNone(loaded.review_truth)
+
+    def test_load_agent_final_response_rejects_blank_agent_issues(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            last_message = Path(temp_dir) / "last_message.json"
+            last_message.write_text(
+                """{
+  "kind": "done",
+  "next_owner": null,
+  "summary": "wrapped up",
+  "reason": null,
+  "sleep_duration_seconds": null,
+  "agent_issues": "   "
+}
+""",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RallyStateError, "agent_issues"):
+                load_agent_final_response(
+                    compiled_agent=_shared_turn_result_agent_contract(),
                     last_message_file=last_message,
                 )
 
@@ -420,4 +469,26 @@ def _producer_agent_contract(
             ),
             branches=tuple(branches),
         ),
+    )
+
+
+def _shared_turn_result_agent_contract() -> CompiledAgentContract:
+    return CompiledAgentContract(
+        name="ScopeLead",
+        slug="scope_lead",
+        entrypoint=Path("/tmp/prompts/AGENTS.prompt"),
+        markdown_path=Path("/tmp/build/scope_lead/AGENTS.md"),
+        metadata_file=Path("/tmp/build/scope_lead/final_output.contract.json"),
+        contract_version=1,
+        final_output=FinalOutputContract(
+            exists=True,
+            contract_version=1,
+            declaration_key="rally.turn_results.RallyTurnResult",
+            declaration_name="RallyTurnResult",
+            format_mode="json_object",
+            schema_profile="OpenAIStructuredOutput",
+            generated_schema_file=Path("/tmp/schema.json"),
+            metadata_file=Path("/tmp/build/scope_lead/final_output.contract.json"),
+        ),
+        review=None,
     )

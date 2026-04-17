@@ -866,6 +866,7 @@ class FlowLoaderTests(unittest.TestCase):
         flow_code: str = "DMO",
         contract_version: int = 1,
         include_next_owner: bool = True,
+        include_agent_issues: bool = False,
         include_max_command_turns: bool = True,
         max_command_turns_yaml: str = "8",
         emitted_schema_relpath: str = "schemas/rally_turn_result.schema.json",

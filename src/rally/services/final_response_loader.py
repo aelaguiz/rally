@@ -40,6 +40,7 @@ class LoadedFinalResponse:
     payload: Mapping[str, object]
     turn_result: TurnResult
     review_truth: LoadedReviewTruth | None = None
+    agent_issues: str | None = None
 
 
 def load_turn_result(*, last_message_file: Path) -> TurnResult:
@@ -61,13 +62,18 @@ def load_agent_final_response(
     try:
         if compiled_agent.review is None:
             turn_result = _load_producer_turn_result(payload=payload, compiled_agent=compiled_agent)
-            return LoadedFinalResponse(payload=payload, turn_result=turn_result)
+            return LoadedFinalResponse(
+                payload=payload,
+                turn_result=turn_result,
+                agent_issues=_optional_agent_issues(payload),
+            )
         review_truth = _load_review_truth(payload=payload, review=compiled_agent.review)
         turn_result = _parse_review_turn_result(review_truth=review_truth)
         return LoadedFinalResponse(
             payload=payload,
             turn_result=turn_result,
             review_truth=review_truth,
+            agent_issues=_optional_agent_issues(payload),
         )
     except ValueError as exc:
         raise RallyStateError(
@@ -183,6 +189,15 @@ def _strip_json_fence(raw_text: str) -> str:
     if not lines[0].startswith("```") or lines[-1].strip() != "```":
         return raw_text
     return "\n".join(lines[1:-1]).strip()
+
+
+def _optional_agent_issues(payload: Mapping[str, object]) -> str | None:
+    value = payload.get("agent_issues")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("`agent_issues` must be a non-empty string when present.")
+    return value
 
 
 def _load_review_truth(

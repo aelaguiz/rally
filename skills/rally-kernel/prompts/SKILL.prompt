@@ -34,6 +34,7 @@ skill package RallyKernel: "Rally Kernel"
             "Write the note through Rally CLI when needed."
             "Keep the note short. Save context, exact commands, or constraints."
             "Keep `--field` labels simple. Put the human explanation in the note body, not in the field names."
+            "When the turn ends on the shared Rally turn result, you may send `agent_issues` with one short issue or `none`. It is passive diagnostics and never changes route, done, blocker, or sleep behavior."
 
     code stdin_note: "Preferred stdin form" advisory
         language: bash

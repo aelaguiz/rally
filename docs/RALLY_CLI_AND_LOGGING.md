@@ -28,6 +28,9 @@ related:
 This file keeps the concrete CLI and logging rules in one place.
 Use it with the master design and the runtime doc.
 If this file and the code disagree, the code wins.
+Non-review flows can still opt out of the shared `agent_issues` default by
+declaring their own output shape over the shared schema in prompt source. CLI
+and runtime still read one final JSON path either way.
 
 # What Rally Ships Today
 
@@ -352,7 +355,7 @@ After that, Rally appends:
 - note blocks from `rally issue note`
 - `resume --edit` diff blocks when the operator changed `home/issue.md`
 - run-start records
-- one `Rally Turn Result` record for each successful turn
+- one `Rally Turn Result` record for each successful turn, including an `Agent Issues: ...` line when a shared final response sends that passive field
 - paused records and early-failure blocker records when they apply
 
 The shared read-first path is now `rally issue current --run-id <run-id>`.

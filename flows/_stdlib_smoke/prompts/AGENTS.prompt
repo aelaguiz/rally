@@ -46,7 +46,7 @@ output schema PlanAuthorTurnResultSchema[turn_results.BaseRallyTurnResultSchema]
         nullable
         note: "Use null when PlanAuthor can finish the smoke test here."
 
-    inherit {kind, summary, reason, sleep_duration_seconds}
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
 output shape PlanAuthorTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Plan Author Turn Result JSON"
@@ -85,7 +85,7 @@ output schema RouteRepairTurnResultSchema[turn_results.BaseRallyTurnResultSchema
         nullable
         note: "Use null only when RouteRepair must block or sleep."
 
-    inherit {kind, summary, reason, sleep_duration_seconds}
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
 output shape RouteRepairTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Route Repair Turn Result JSON"
@@ -112,7 +112,7 @@ output RouteRepairTurnResult[turn_results.BaseRallyTurnResult]: "Route Repair Tu
 
 
 output schema CloseoutTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Closeout Turn Result Schema"
-    inherit {kind, summary, reason, sleep_duration_seconds}
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
     field current_artifact: "Current Artifact"
         type: string
@@ -138,10 +138,6 @@ output CloseoutTurnResult[turn_results.BaseRallyTurnResult]: "Closeout Turn Resu
     inherit target
     override shape: CloseoutTurnResultJson
     inherit requirement
-
-    kind: "done"
-    summary: "Write one short closeout summary."
-    current_artifact: "home:artifacts/repair_plan.md"
 
 
 output schema SmokeReviewSchema[review_results.BaseRallyReviewSchema]: "Smoke Review Schema"

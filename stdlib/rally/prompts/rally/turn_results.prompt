@@ -33,13 +33,19 @@ output schema BaseRallyTurnResultSchema: "Base Rally Turn Result Schema"
         minimum: 1
         note: "Seconds to wait when `kind` is `sleep`."
 
+    field agent_issues: "Agent Issues"
+        type: string
+        nullable
+        min_length: 1
+        note: "Optional passive diagnostics. One short issue summary or the literal `none`. Never changes control flow."
+
 
 # Concrete schema: Rally's stock turn result.
 # It inherits every base field so flow-specific schemas can also inherit the
 # same base and override only the parts they own.
 # Group the plain inherited fields when nothing local sits between them.
 output schema RallyTurnResultSchema[BaseRallyTurnResultSchema]: "Rally Turn Result Schema"
-    inherit {kind, summary, reason, sleep_duration_seconds}
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
 # Base shape: the JSON wrapper around the reusable schema.
@@ -51,13 +57,14 @@ output shape BaseRallyTurnResultJson: "Base Rally Turn Result JSON"
 
     field_notes: "Field Notes"
         bullets rules:
-            "Always send every field in this schema."
-            "Use `null` for fields that do not apply."
+            "Always send every control field in this schema."
+            "Use `null` for control fields that do not apply."
             "`kind` tells Rally what to do next."
             "Use `done` with `summary`, `blocker` with `reason`, and `sleep` with `reason` plus `sleep_duration_seconds`."
             "If this flow can hand off, add a flow-owned `route field` on the concrete schema."
             "Bind that route field with `final_output.route:` on the agent."
             "Use `handoff` only when that flow-owned route field selects a branch."
+            "`agent_issues` is optional passive diagnostics. When you send it, use one short issue summary or the literal `none`. It never changes route, done, blocker, or sleep behavior."
 
 
 # Concrete shape: same JSON kind and notes, with the concrete schema swapped in.
