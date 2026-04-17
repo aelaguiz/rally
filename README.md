@@ -60,7 +60,7 @@ rally --help
 ```
 
 Rally requires Python 3.14 or newer and currently supports
-`doctrine-agents>=1.0.2,<2`.
+`doctrine-agents>=2.0.0,<3`.
 The name split is on purpose:
 
 - GitHub repo and source checkout: `rally`
@@ -75,8 +75,8 @@ uv add --dev rally-agents
 uv run rally --help
 ```
 
-If you still have an older env or lockfile pinned to `doctrine`, refresh it to
-`doctrine-agents>=1.0.2,<2`.
+If you still have an older env or lockfile pinned to `doctrine` or an older
+`doctrine-agents<2` pin, refresh it to `doctrine-agents>=2.0.0,<3`.
 
 Versioning and upgrade rules live in [docs/VERSIONING.md](docs/VERSIONING.md).
 Release history lives in [CHANGELOG.md](CHANGELOG.md).
