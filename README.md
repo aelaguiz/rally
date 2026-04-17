@@ -189,6 +189,23 @@ rally status
 rally status DMO-1
 ```
 
+### Long-running flows
+
+Start a run in the background so it survives your shell, then stop or
+tail it from anywhere:
+
+```bash
+rally run demo --detach
+rally watch DMO-1 --follow
+rally stop DMO-1          # cooperative; finalizes at the next turn boundary
+rally stop DMO-1 --now    # SIGTERM, then SIGKILL after --grace seconds
+```
+
+`rally status` reconciles `state.yaml` against the live process on every
+read, so CRASHED / ORPHANED / STALE surface automatically when a detached
+run goes sideways. See [docs/RALLY_BACKGROUND_EXECUTION.md](docs/RALLY_BACKGROUND_EXECUTION.md)
+for the full model, failure matrix, and verification runbook.
+
 Host repos should not add `stdlib/rally/` or `skills/rally-*` just to make
 Rally work, because Rally does not write those framework-owned paths during
 managed builds and runs.

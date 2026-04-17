@@ -647,6 +647,10 @@ Phase 5 should still remain:
 - one-active-run-per-flow
 - repo-root-local
 - no GUI
+- run lifetime is a function of the run directory, not the invocation shell
+  (runs are detachable; liveness is reconciled from run-dir state and a
+  durable `(pid, create_time)` probe — see
+  [RALLY_BACKGROUND_EXECUTION.md](RALLY_BACKGROUND_EXECUTION.md))
 - no DB source of truth
 - no background scheduler
 

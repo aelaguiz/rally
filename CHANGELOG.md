@@ -55,6 +55,49 @@ Support-surface version changes: none
 
 Use this section for work that is not public yet.
 
+### Added
+- `rally run <flow> --detach` and `rally resume <id> --detach` start a Rally
+  run in the background via a double-fork. The parent prints the grandchild
+  pid and returns immediately; the detached worker continues the normal loop
+  with stdio redirected into `runs/active/<id>/logs/stdout.log` and
+  `stderr.log`.
+- `rally stop <run-id>` asks a run to stop at the next turn boundary by
+  writing `control/stop.requested`. The runner loop observes the file,
+  finalizes the run as `STOPPED`, appends a "Rally Stopped" entry to
+  `issue.md`, and emits a `STOPPED` event. Idempotent.
+- `rally stop <run-id> --now [--grace <secs>]` escalates to `SIGTERM`, then
+  `SIGKILL` after the grace window, targeting the run's recorded process or
+  process group.
+- `rally watch <run-id> [--since N] [--follow]` renders
+  `logs/events.jsonl` for one run; `--follow` polls for new events until the
+  run reaches a terminal status.
+- Reconciled status (CRASHED / ORPHANED / STALE) surfaces in `rally status`
+  for runs whose recorded state no longer matches the live process.
+- Per-run `heartbeat.json` (updated every 15s by a background thread) and
+  `done.json` clean-exit sentinel — their combination lets the reconciler
+  distinguish orderly termination from a crash.
+- New event codes: `DETACH`, `STOPPED`, `STOP_REQUESTED`, `HEARTBEAT`,
+  `CRASH_DETECTED`.
+
+### Changed
+- `runs/active/<id>/state.yaml` and `run.yaml` writes are now atomic
+  (tempfile + fsync + `os.replace` + directory fsync). State gains
+  `schema_version` (default 2), `pid`, `process_create_time`, and `pgid`
+  fields. `schema_version: 1` (pre-detach) state is tolerated and upgraded
+  on the next write.
+- Per-flow lock migrated from O_EXCL+PID-file to `fcntl.flock`. The lock is
+  now held on an open file description, so it automatically releases on
+  process death and survives `fork` into detached children — closing the
+  old PID lock file as a side effect used to orphan the lock.
+- `rally status` uses a reconciler that computes status from
+  `(state.yaml + heartbeat.json + done.json + probe(pid))`. Stored terminal
+  states (DONE / BLOCKED / STOPPED) remain sticky; all other computed
+  statuses are presentation-only and never persisted.
+
+### Added (deps)
+- `psutil>=6,<7` for durable `(pid, create_time)` process identity. Isolated
+  to `rally.services.process_identity`; no other module imports `psutil`.
+
 ## v1.0.0 - 2026-04-17
 
 Release kind: Breaking
