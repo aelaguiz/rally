@@ -13,6 +13,25 @@ from rally.services.builtin_assets import (
 )
 
 MANDATORY_SKILL_NAMES = ("rally-kernel",)
+# Optional stdlib skills an agent can opt into through `system_skills` in
+# flow.yaml. Rally-kernel is always-on, so it stays out of this tuple.
+OPTIONAL_BUILTIN_SKILL_NAMES = tuple(
+    name for name in RALLY_BUILTIN_SKILL_NAMES if name not in MANDATORY_SKILL_NAMES
+)
+
+
+def validate_system_skill_name(skill_name: str) -> None:
+    if skill_name in MANDATORY_SKILL_NAMES:
+        raise RallyConfigError(
+            f"`{skill_name}` is a mandatory Rally stdlib skill and is injected automatically; "
+            "remove it from `system_skills`."
+        )
+    if skill_name not in OPTIONAL_BUILTIN_SKILL_NAMES:
+        available = ", ".join(f"`{name}`" for name in OPTIONAL_BUILTIN_SKILL_NAMES) or "(none)"
+        raise RallyConfigError(
+            f"Unknown Rally stdlib skill `{skill_name}` in `system_skills`. "
+            f"Available stdlib skills: {available}."
+        )
 
 SkillSourceKind = Literal["markdown", "doctrine", "builtin"]
 

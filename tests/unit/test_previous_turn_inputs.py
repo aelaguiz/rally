@@ -581,6 +581,7 @@ class PreviousTurnInputsTests(unittest.TestCase):
             slug=slug,
             timeout_sec=60,
             allowed_skills=(),
+            system_skills=(),
             allowed_mcps=(),
             compiled=compiled,
         )

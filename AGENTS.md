@@ -138,7 +138,7 @@
 - `docs/RALLY_COMMUNICATION_MODEL.md`: communication model; keep it aligned with the master doc when notes, end-turn control, or harness env rules change
 - `docs/RALLY_RUNTIME.md`: runtime detail; keep it aligned with the master doc when runtime scope, proof paths, or launch rules change
 - `docs/RALLY_PORTING_GUIDE.md`: canonical porting rules and examples for bringing existing agent systems into Rally; add durable port lessons there
-- `flows/*/flow.yaml`: runtime config, adapter settings, and allowlisted skills and MCPs
+- `flows/*/flow.yaml`: runtime config, adapter settings, and allowlisted skills and MCPs (skill tier model in `docs/SKILL_SCOPING.md`)
 - `flows/*/prompts/**`: prompt source
 - `stdlib/rally/prompts/**`: Rally-owned shared prompt source; use `turn_results.prompt` as the shared final-result rule
 - `flows/*/build/**`: generated readback only

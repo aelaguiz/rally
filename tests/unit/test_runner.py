@@ -90,6 +90,7 @@ class RunnerTests(unittest.TestCase):
                 slug="demo_agent",
                 timeout_sec=60,
                 allowed_skills=(),
+                system_skills=(),
                 allowed_mcps=(),
                 compiled=compiled,
             )
@@ -172,6 +173,7 @@ class RunnerTests(unittest.TestCase):
                 slug="source_agent",
                 timeout_sec=60,
                 allowed_skills=(),
+                system_skills=(),
                 allowed_mcps=(),
                 compiled=CompiledAgentContract(
                     name="SourceAgent",
@@ -209,6 +211,7 @@ class RunnerTests(unittest.TestCase):
                 slug="reader_agent",
                 timeout_sec=60,
                 allowed_skills=(),
+                system_skills=(),
                 allowed_mcps=(),
                 compiled=CompiledAgentContract(
                     name="ReaderAgent",
@@ -380,6 +383,7 @@ class RunnerTests(unittest.TestCase):
                 slug="section_dossier_engineer",
                 timeout_sec=60,
                 allowed_skills=(),
+                system_skills=(),
                 allowed_mcps=(),
                 compiled=CompiledAgentContract(
                     name="SectionDossierEngineer",
@@ -478,6 +482,7 @@ class RunnerTests(unittest.TestCase):
                 slug="route_repair",
                 timeout_sec=60,
                 allowed_skills=(),
+                system_skills=(),
                 allowed_mcps=(),
                 compiled=replace(route_repair_compiled, markdown_path=route_repair_markdown),
             )
@@ -486,6 +491,7 @@ class RunnerTests(unittest.TestCase):
                 slug="plan_author",
                 timeout_sec=60,
                 allowed_skills=(),
+                system_skills=(),
                 allowed_mcps=(),
                 compiled=plan_author_compiled,
             )
@@ -1800,6 +1806,12 @@ class RunnerTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            (
+                repo_root / "flows" / "demo" / "build" / "agents" / "change_engineer" / "AGENTS.md"
+            ).write_text(
+                self._render_compiled_agent_markdown(name="ChangeEngineer", allowed_skills=("demo-git",)),
+                encoding="utf-8",
+            )
 
             observed_skill_sets: list[set[str]] = []
 
@@ -1906,6 +1918,12 @@ class RunnerTests(unittest.TestCase):
                 "    allowed_skills: [pytest-local]\n",
             )
             flow_path.write_text(flow_text, encoding="utf-8")
+            (
+                repo_root / "flows" / "demo" / "build" / "agents" / "change_engineer" / "AGENTS.md"
+            ).write_text(
+                self._render_compiled_agent_markdown(name="ChangeEngineer", allowed_skills=("pytest-local",)),
+                encoding="utf-8",
+            )
 
             run_dir = self._create_pending_run(repo_root=repo_root)
             self._write_issue(run_dir=run_dir)
@@ -2498,7 +2516,18 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(first_result.status, RunStatus.BLOCKED)
             self.assertTrue(first_turn.calls[0]["kwargs"]["input"].startswith("# ScopeLead\n"))
 
-            updated_markdown = "# Fresh ChangeEngineer\n"
+            updated_markdown = "\n".join(
+                (
+                    "# Fresh ChangeEngineer",
+                    "",
+                    "## Skills",
+                    "",
+                    "### rally-kernel",
+                    "",
+                    "### repo-search",
+                    "",
+                )
+            )
             (repo_root / "flows" / "demo" / "build" / "agents" / "change_engineer" / "AGENTS.md").write_text(
                 updated_markdown,
                 encoding="utf-8",
@@ -2782,6 +2811,16 @@ class RunnerTests(unittest.TestCase):
             flow_text = flow_text.replace("    allowed_skills: [repo-search]\n", "    allowed_skills: []\n")
             flow_text = flow_text.replace("    allowed_mcps: [fixture-repo]\n", "    allowed_mcps: []\n")
             flow_path.write_text(flow_text, encoding="utf-8")
+            (repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "AGENTS.md").write_text(
+                self._render_compiled_agent_markdown(name="ScopeLead", allowed_skills=()),
+                encoding="utf-8",
+            )
+            (
+                repo_root / "flows" / "demo" / "build" / "agents" / "change_engineer" / "AGENTS.md"
+            ).write_text(
+                self._render_compiled_agent_markdown(name="ChangeEngineer", allowed_skills=()),
+                encoding="utf-8",
+            )
 
             def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
                 self.assertEqual(editor_command, ("vim",))
@@ -2848,6 +2887,10 @@ class RunnerTests(unittest.TestCase):
                     "    allowed_skills: [repo-search, demo-git]\n",
                     1,
                 ),
+                encoding="utf-8",
+            )
+            (repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "AGENTS.md").write_text(
+                self._render_compiled_agent_markdown(name="ScopeLead", allowed_skills=("repo-search", "demo-git")),
                 encoding="utf-8",
             )
 
@@ -4618,10 +4661,12 @@ class RunnerTests(unittest.TestCase):
                 "  01_scope_lead:\n"
                 "    timeout_sec: 60\n"
                 "    allowed_skills: [repo-search]\n"
+                "    system_skills: []\n"
                 "    allowed_mcps: []\n"
                 "  02_change_engineer:\n"
                 "    timeout_sec: 60\n"
                 "    allowed_skills: [repo-search]\n"
+                "    system_skills: []\n"
                 "    allowed_mcps: []\n"
                 "runtime:\n"
                 "  adapter: codex\n"
@@ -4780,7 +4825,10 @@ class RunnerTests(unittest.TestCase):
     ) -> None:
         agent_dir = flow_root / "build" / "agents" / slug
         agent_dir.mkdir(parents=True, exist_ok=True)
-        (agent_dir / "AGENTS.md").write_text(f"# {name}\n", encoding="utf-8")
+        (agent_dir / "AGENTS.md").write_text(
+            self._render_compiled_agent_markdown(name=name, allowed_skills=("repo-search",)),
+            encoding="utf-8",
+        )
         schema_dir = agent_dir / "schemas"
         schema_dir.mkdir(parents=True, exist_ok=True)
         (schema_dir / "rally_turn_result.schema.json").write_text(
@@ -4854,6 +4902,12 @@ class RunnerTests(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
+
+    def _render_compiled_agent_markdown(self, *, name: str, allowed_skills: tuple[str, ...]) -> str:
+        skill_lines = ["## Skills", "", "### rally-kernel", ""]
+        for skill_name in allowed_skills:
+            skill_lines.extend((f"### {skill_name}", ""))
+        return f"# {name}\n\n" + "\n".join(skill_lines)
 
 
 class _FakeCodexRun:

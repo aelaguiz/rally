@@ -12,6 +12,17 @@ from rally.services.flow_build import ensure_flow_assets_built
 from rally.services.flow_loader import load_flow_code, load_flow_definition
 
 
+def _render_agent_markdown(
+    title: str,
+    allowed_skills: tuple[str, ...],
+    system_skills: tuple[str, ...] = (),
+) -> str:
+    skill_lines = ["## Skills", "", "### rally-kernel", ""]
+    for skill_name in (*allowed_skills, *system_skills):
+        skill_lines.extend((f"### {skill_name}", ""))
+    return f"# {title}\n\n" + "\n".join(skill_lines)
+
+
 class FlowLoaderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -238,6 +249,107 @@ class FlowLoaderTests(unittest.TestCase):
             self.assertEqual(compiled.io.outputs[1].declaration_key, "RepairPlan")
             self.assertEqual(compiled.io.outputs[1].readback_mode, "readable_text")
             self.assertEqual(compiled.io.output_bindings[1].binding_path, ("repair_plan",))
+
+    def test_load_flow_definition_rejects_compiled_skill_surface_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(repo_root=repo_root)
+            build_root = repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead"
+            (build_root / "AGENTS.md").write_text(
+                _render_agent_markdown("Scope Lead", ()),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RallyConfigError, "Compiled skill readback"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_loads_system_skills_tier(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                allowed_skills_block="    allowed_skills: []\n",
+                system_skills_block="    system_skills:\n      - rally-memory\n",
+                agents_md_allowed_skills=(),
+                agents_md_system_skills=("rally-memory",),
+            )
+
+            flow = load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+            self.assertEqual(flow.agent("01_scope_lead").allowed_skills, ())
+            self.assertEqual(flow.agent("01_scope_lead").system_skills, ("rally-memory",))
+
+    def test_load_flow_definition_requires_system_skills_field(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                system_skills_block="",
+            )
+
+            with self.assertRaisesRegex(RallyConfigError, "`system_skills` must be a list"):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_rejects_unknown_system_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                system_skills_block="    system_skills:\n      - rally-memry\n",
+            )
+
+            with self.assertRaisesRegex(
+                RallyConfigError,
+                r"Unknown Rally stdlib skill `rally-memry`",
+            ):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_rejects_mandatory_skill_in_system_skills(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                system_skills_block="    system_skills:\n      - rally-kernel\n",
+            )
+
+            with self.assertRaisesRegex(
+                RallyConfigError,
+                r"`rally-kernel` is a mandatory Rally stdlib skill",
+            ):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_rejects_duplicate_system_skills(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                system_skills_block=(
+                    "    system_skills:\n"
+                    "      - rally-memory\n"
+                    "      - rally-memory\n"
+                ),
+            )
+
+            with self.assertRaisesRegex(
+                RallyConfigError,
+                r"`system_skills` for agent `01_scope_lead` must not repeat",
+            ):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
+
+    def test_load_flow_definition_rejects_skill_tier_overlap(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_fixture_repo(
+                repo_root=repo_root,
+                allowed_skills_block="    allowed_skills:\n      - rally-memory\n",
+                system_skills_block="    system_skills:\n      - rally-memory\n",
+            )
+
+            with self.assertRaisesRegex(
+                RallyConfigError,
+                r"both `allowed_skills` and `system_skills`",
+            ):
+                load_flow_definition(repo_root=repo_root, flow_name="demo")
 
     def test_load_flow_definition_allows_compiler_owned_peer_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -763,6 +875,10 @@ class FlowLoaderTests(unittest.TestCase):
         runtime_env_yaml: str = "",
         extra_required_fields: tuple[str, ...] = (),
         io_payload: dict[str, object] | None = None,
+        allowed_skills_block: str = "    allowed_skills:\n      - repo-search\n",
+        system_skills_block: str = "    system_skills: []\n",
+        agents_md_allowed_skills: tuple[str, ...] = ("repo-search",),
+        agents_md_system_skills: tuple[str, ...] = (),
     ) -> None:
         flow_root = repo_root / "flows" / "demo"
         build_root = flow_root / "build" / "agents" / "scope_lead"
@@ -785,8 +901,8 @@ class FlowLoaderTests(unittest.TestCase):
             "agents:\n"
             "  01_scope_lead:\n"
             "    timeout_sec: 60\n"
-            "    allowed_skills:\n"
-            "      - repo-search\n"
+            f"{allowed_skills_block}"
+            f"{system_skills_block}"
             "    allowed_mcps:\n"
             "      - fixture-repo\n"
             "runtime:\n"
@@ -801,7 +917,14 @@ class FlowLoaderTests(unittest.TestCase):
         (flow_root / "setup").mkdir(parents=True)
         (flow_root / "setup" / "prepare_home.sh").write_text("#!/bin/sh\n", encoding="utf-8")
         (prompts_root / "AGENTS.prompt").write_text("agent ScopeLead:\n", encoding="utf-8")
-        (build_root / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
+        (build_root / "AGENTS.md").write_text(
+            _render_agent_markdown(
+                "Scope Lead",
+                agents_md_allowed_skills,
+                agents_md_system_skills,
+            ),
+            encoding="utf-8",
+        )
         contract_payload: dict[str, object] = {
             "contract_version": contract_version,
             "agent": {
@@ -890,6 +1013,7 @@ class FlowLoaderTests(unittest.TestCase):
                   01_scope_lead:
                     timeout_sec: 60
                     allowed_skills: []
+                    system_skills: []
                     allowed_mcps: []
                 runtime:
                   adapter: codex
@@ -900,7 +1024,10 @@ class FlowLoaderTests(unittest.TestCase):
             encoding="utf-8",
         )
         (prompts_root / "AGENTS.prompt").write_text("agent ScopeLead:\n", encoding="utf-8")
-        (build_root / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
+        (build_root / "AGENTS.md").write_text(
+            _render_agent_markdown("Scope Lead", ()),
+            encoding="utf-8",
+        )
         (schema_root / "review_response.schema.json").write_text(
             textwrap.dedent(
                 """\
@@ -1045,6 +1172,7 @@ class FlowLoaderRuntimeConfigTests(unittest.TestCase):
                   01_scope_lead:
                     timeout_sec: 60
                     allowed_skills: []
+                    system_skills: []
                     allowed_mcps: []
                 runtime:
                   adapter: codex
@@ -1060,7 +1188,10 @@ class FlowLoaderRuntimeConfigTests(unittest.TestCase):
         (flow_root / "setup" / "prepare_home.sh").write_text("#!/bin/sh\n", encoding="utf-8")
         (flow_root / "setup" / "prompt_inputs.py").write_text("print('{}')\n", encoding="utf-8")
         (prompts_root / "AGENTS.prompt").write_text("agent ScopeLead:\n", encoding="utf-8")
-        (build_root / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
+        (build_root / "AGENTS.md").write_text(
+            _render_agent_markdown("Scope Lead", ()),
+            encoding="utf-8",
+        )
         (build_root / "final_output.contract.json").write_text(
             json.dumps(
                 {

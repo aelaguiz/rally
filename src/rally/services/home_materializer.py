@@ -421,6 +421,7 @@ def _agent_skill_names(agent: FlowAgent) -> tuple[str, ...]:
             {
                 *(MANDATORY_SKILL_NAMES),
                 *(agent.allowed_skills),
+                *(agent.system_skills),
             }
         )
     )

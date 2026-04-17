@@ -11,17 +11,3 @@ skill RepoSearchSkill: "repo-search"
 
 skill PytestLocalSkill: "pytest-local"
     purpose: "Run the smallest local pytest proof for the current change."
-
-
-skills SoftwareEngineeringSkills: "Skills And Tools"
-    skill rally_kernel: RallyKernelSkill
-        requirement: Required
-
-    skill demo_git: DemoGitSkill
-        requirement: Required
-
-    skill repo_search: RepoSearchSkill
-        requirement: Advisory
-
-    skill pytest_local: PytestLocalSkill
-        requirement: Advisory

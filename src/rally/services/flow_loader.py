@@ -48,6 +48,8 @@ from rally.domain.rooted_path import (
     resolve_rooted_path,
 )
 from rally.errors import RallyConfigError
+from rally.services.agent_skill_validation import validate_flow_agent_skill_surfaces
+from rally.services.skill_bundles import validate_system_skill_name
 
 SUPPORTED_FINAL_OUTPUT_CONTRACT_VERSIONS = frozenset({1})
 _FLOW_RUNTIME_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -78,6 +80,8 @@ def load_flow_definition(
 
     agents_payload = _require_mapping(payload, "agents", context="flow.yaml")
     agents: dict[str, FlowAgent] = {}
+    allowed_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
+    system_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
     for agent_key, agent_payload in agents_payload.items():
         if not isinstance(agent_key, str):
             raise RallyConfigError(f"`agents` keys in `{flow_file}` must be strings.")
@@ -89,16 +93,33 @@ def load_flow_definition(
                 f"Compiled agent contract missing for flow agent `{agent_key}`. "
                 f"Expected `{build_agents_dir / expected_slug / 'final_output.contract.json'}`."
             )
+        allowed_skills = _require_string_list(agent_mapping, "allowed_skills", context=f"agent `{agent_key}`")
+        system_skills = _require_system_skills(agent_mapping, agent_key=agent_key)
+        _reject_skill_tier_overlap(
+            agent_key=agent_key,
+            allowed_skills=allowed_skills,
+            system_skills=system_skills,
+        )
+        allowed_skills_by_agent_key[agent_key] = allowed_skills
+        system_skills_by_agent_key[agent_key] = system_skills
         agents[agent_key] = FlowAgent(
             key=agent_key,
             # The compiled contract slug is the carried source of truth once the
             # loader has validated it against the flow-owned agent key.
             slug=compiled.slug,
             timeout_sec=_require_int(agent_mapping, "timeout_sec", context=f"agent `{agent_key}`"),
-            allowed_skills=_require_string_list(agent_mapping, "allowed_skills", context=f"agent `{agent_key}`"),
+            allowed_skills=allowed_skills,
+            system_skills=system_skills,
             allowed_mcps=_require_string_list(agent_mapping, "allowed_mcps", context=f"agent `{agent_key}`"),
             compiled=compiled,
         )
+
+    validate_flow_agent_skill_surfaces(
+        flow_file=flow_file,
+        build_agents_dir=build_agents_dir,
+        allowed_skills_by_agent_key=allowed_skills_by_agent_key,
+        system_skills_by_agent_key=system_skills_by_agent_key,
+    )
 
     start_agent_key = _require_string(payload, "start_agent", context="flow.yaml")
     if start_agent_key not in agents:
@@ -1102,6 +1123,43 @@ def _require_string_list(payload: Mapping[str, Any], key: str, *, context: str) 
     if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
         raise RallyConfigError(f"`{key}` must be a list of non-empty strings in {context}.")
     return tuple(value)
+
+
+def _require_system_skills(
+    agent_mapping: Mapping[str, Any],
+    *,
+    agent_key: str,
+) -> tuple[str, ...]:
+    system_skills = _require_string_list(
+        agent_mapping,
+        "system_skills",
+        context=f"agent `{agent_key}`",
+    )
+    seen: set[str] = set()
+    for skill_name in system_skills:
+        if skill_name in seen:
+            raise RallyConfigError(
+                f"`system_skills` for agent `{agent_key}` must not repeat `{skill_name}`."
+            )
+        seen.add(skill_name)
+        validate_system_skill_name(skill_name)
+    return system_skills
+
+
+def _reject_skill_tier_overlap(
+    *,
+    agent_key: str,
+    allowed_skills: tuple[str, ...],
+    system_skills: tuple[str, ...],
+) -> None:
+    overlap = sorted(set(allowed_skills) & set(system_skills))
+    if not overlap:
+        return
+    joined = ", ".join(f"`{name}`" for name in overlap)
+    raise RallyConfigError(
+        f"Agent `{agent_key}` lists {joined} in both `allowed_skills` and `system_skills`. "
+        "A skill belongs to exactly one tier."
+    )
 
 
 def _require_unique_string_list(

@@ -142,6 +142,7 @@ agents:
   01_scope_lead:
     timeout_sec: 900
     allowed_skills: []
+    system_skills: []
     allowed_mcps: []
 runtime:
   adapter: codex
@@ -287,7 +288,9 @@ Rally already has:
 - repo-local run homes, issue history, logs, and restartable runs
 - strict `handoff`, `done`, `blocker`, and `sleep` turn results
 - repo-local searchable memory
-- allowlisted skills and MCP materialization into the run home
+- allowlisted skills (flow-local and stdlib, see
+  [docs/SKILL_SCOPING.md](docs/SKILL_SCOPING.md)) and MCP materialization
+  into the run home
 - two demo flows:
   - `poem_loop`
   - `software_engineering_demo`

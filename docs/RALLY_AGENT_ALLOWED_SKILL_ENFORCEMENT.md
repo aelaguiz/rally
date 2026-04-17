@@ -10,6 +10,7 @@ related:
   - docs/RALLY_RUNTIME.md
   - docs/RALLY_CLI_AND_LOGGING.md
   - docs/RALLY_SOFTWARE_ENGINEERING_FLOW_SHOWCASE.md
+  - docs/SKILL_SCOPING.md
   - src/rally/domain/flow.py
   - src/rally/services/flow_loader.py
   - src/rally/services/home_materializer.py

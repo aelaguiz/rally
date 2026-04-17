@@ -12,12 +12,17 @@ import yaml
 from rally.domain.flow import flow_agent_key_to_slug
 from rally.domain.rooted_path import HOME_ROOT, PathRoot, parse_rooted_path
 from rally.errors import RallyConfigError
+from rally.services.agent_skill_validation import validate_flow_agent_skill_surfaces
 from rally.services.builtin_assets import (
     RallyBuiltinAssets,
     reject_reserved_builtin_skill_shadow,
     resolve_rally_builtin_assets,
 )
-from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
+from rally.services.skill_bundles import (
+    MANDATORY_SKILL_NAMES,
+    resolve_skill_bundle_source,
+    validate_system_skill_name,
+)
 from rally.services.workspace import WorkspaceContext, workspace_context_from_root
 
 DoctrineEmitKind = str
@@ -56,7 +61,13 @@ def ensure_flow_assets_built(
         raise RallyConfigError(f"Rally workspace pyproject is missing: `{config_path}`.")
 
     builtins = resolve_rally_builtin_assets(workspace=workspace_context)
-    skill_names = _load_flow_skill_names(repo_root=repo_root, flow_name=flow_name)
+    allowed_skills_by_agent_key, system_skills_by_agent_key = (
+        _load_flow_agent_skill_tiers(repo_root=repo_root, flow_name=flow_name)
+    )
+    skill_names = _union_flow_skill_names(
+        allowed_skills_by_agent_key=allowed_skills_by_agent_key,
+        system_skills_by_agent_key=system_skills_by_agent_key,
+    )
     expected_agent_slugs = _load_flow_agent_slugs(repo_root=repo_root, flow_name=flow_name)
     reject_reserved_builtin_skill_shadow(
         workspace_root=repo_root,
@@ -95,6 +106,12 @@ def ensure_flow_assets_built(
         expected_agent_slugs=expected_agent_slugs,
     )
     _validate_emitted_agent_packages(repo_root / "flows" / flow_name / "build" / "agents")
+    validate_flow_agent_skill_surfaces(
+        flow_file=repo_root / "flows" / flow_name / "flow.yaml",
+        build_agents_dir=repo_root / "flows" / flow_name / "build" / "agents",
+        allowed_skills_by_agent_key=allowed_skills_by_agent_key,
+        system_skills_by_agent_key=system_skills_by_agent_key,
+    )
 
     if not doctrine_skill_targets:
         return
@@ -108,30 +125,16 @@ def ensure_flow_assets_built(
     )
 
 
-def _load_flow_skill_names(*, repo_root: Path, flow_name: str) -> tuple[str, ...]:
-    flow_file = repo_root / "flows" / flow_name / "flow.yaml"
-    if not flow_file.is_file():
-        raise RallyConfigError(f"Flow definition does not exist: `{flow_file}`.")
-
-    payload = yaml.safe_load(flow_file.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise RallyConfigError(f"`{flow_file}` must decode to a mapping.")
-    raw_agents = payload.get("agents")
-    if not isinstance(raw_agents, dict):
-        raise RallyConfigError(f"`{flow_file}` must define an `agents` mapping.")
-
-    skill_names = set(MANDATORY_SKILL_NAMES)
-    for agent_key, raw_agent in raw_agents.items():
-        if not isinstance(agent_key, str):
-            raise RallyConfigError(f"`agents` keys in `{flow_file}` must be strings.")
-        if not isinstance(raw_agent, dict):
-            raise RallyConfigError(f"Agent `{agent_key}` in `{flow_file}` must decode to a mapping.")
-        raw_skills = raw_agent.get("allowed_skills", [])
-        if not isinstance(raw_skills, list) or not all(isinstance(skill, str) and skill for skill in raw_skills):
-            raise RallyConfigError(
-                f"Agent `{agent_key}` in `{flow_file}` must define `allowed_skills` as a list of strings."
-            )
-        skill_names.update(raw_skills)
+def _union_flow_skill_names(
+    *,
+    allowed_skills_by_agent_key: dict[str, tuple[str, ...]],
+    system_skills_by_agent_key: dict[str, tuple[str, ...]],
+) -> tuple[str, ...]:
+    skill_names: set[str] = set(MANDATORY_SKILL_NAMES)
+    for names in allowed_skills_by_agent_key.values():
+        skill_names.update(names)
+    for names in system_skills_by_agent_key.values():
+        skill_names.update(names)
     return tuple(sorted(skill_names))
 
 
@@ -155,6 +158,80 @@ def _load_flow_agent_slugs(*, repo_root: Path, flow_name: str) -> tuple[str, ...
             raise RallyConfigError(f"Agent `{agent_key}` in `{flow_file}` must decode to a mapping.")
         agent_slugs.append(flow_agent_key_to_slug(agent_key))
     return tuple(sorted(agent_slugs))
+
+
+def _load_flow_agent_skill_tiers(
+    *,
+    repo_root: Path,
+    flow_name: str,
+) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
+    flow_file = repo_root / "flows" / flow_name / "flow.yaml"
+    if not flow_file.is_file():
+        raise RallyConfigError(f"Flow definition does not exist: `{flow_file}`.")
+
+    payload = yaml.safe_load(flow_file.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RallyConfigError(f"`{flow_file}` must decode to a mapping.")
+    raw_agents = payload.get("agents")
+    if not isinstance(raw_agents, dict):
+        raise RallyConfigError(f"`{flow_file}` must define an `agents` mapping.")
+
+    allowed_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
+    system_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
+    for agent_key, raw_agent in raw_agents.items():
+        if not isinstance(agent_key, str):
+            raise RallyConfigError(f"`agents` keys in `{flow_file}` must be strings.")
+        if not isinstance(raw_agent, dict):
+            raise RallyConfigError(f"Agent `{agent_key}` in `{flow_file}` must decode to a mapping.")
+        allowed_skills = _require_flow_agent_string_list(
+            raw_agent,
+            key="allowed_skills",
+            agent_key=agent_key,
+            flow_file=flow_file,
+        )
+        system_skills = _require_flow_agent_string_list(
+            raw_agent,
+            key="system_skills",
+            agent_key=agent_key,
+            flow_file=flow_file,
+        )
+        seen: set[str] = set()
+        for skill_name in system_skills:
+            if skill_name in seen:
+                raise RallyConfigError(
+                    f"`system_skills` for agent `{agent_key}` in `{flow_file}` "
+                    f"must not repeat `{skill_name}`."
+                )
+            seen.add(skill_name)
+            validate_system_skill_name(skill_name)
+        overlap = sorted(set(allowed_skills) & set(system_skills))
+        if overlap:
+            joined = ", ".join(f"`{name}`" for name in overlap)
+            raise RallyConfigError(
+                f"Agent `{agent_key}` in `{flow_file}` lists {joined} in both "
+                "`allowed_skills` and `system_skills`. A skill belongs to exactly one tier."
+            )
+        allowed_skills_by_agent_key[agent_key] = allowed_skills
+        system_skills_by_agent_key[agent_key] = system_skills
+    return allowed_skills_by_agent_key, system_skills_by_agent_key
+
+
+def _require_flow_agent_string_list(
+    raw_agent: dict,
+    *,
+    key: str,
+    agent_key: str,
+    flow_file: Path,
+) -> tuple[str, ...]:
+    raw_value = raw_agent.get(key)
+    if raw_value is None or (
+        not isinstance(raw_value, list)
+        or not all(isinstance(item, str) and item for item in raw_value)
+    ):
+        raise RallyConfigError(
+            f"Agent `{agent_key}` in `{flow_file}` must define `{key}` as a list of non-empty strings."
+        )
+    return tuple(raw_value)
 
 
 def _should_emit_skill_build(

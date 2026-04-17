@@ -151,7 +151,83 @@ class FlowBuildTests(unittest.TestCase):
 
             self.assertFalse(stale_agent_dir.exists())
 
-    def _patch_doctrine(self, calls: dict[str, Any]) -> ExitStack:
+    def test_ensure_flow_assets_built_includes_system_skills_in_readback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve() / "rally"
+            self._write_source_checkout(repo_root=repo_root)
+            self._write_flow_file(
+                repo_root=repo_root,
+                allowed_skills=(),
+                system_skills=("rally-memory",),
+            )
+            # Source checkouts resolve rally-memory as a Doctrine skill target,
+            # so the builder must emit it alongside rally-kernel.
+            self._add_doctrine_emit_target(
+                repo_root=repo_root,
+                name="rally-memory",
+                entrypoint="skills/rally-memory/prompts/SKILL.prompt",
+                output_dir="skills/rally-memory/build",
+            )
+            calls: dict[str, Any] = {"load": [], "docs": [], "skills": []}
+
+            with self._patch_doctrine(calls, extra_emit_targets={"rally-memory": "rally-memory-target"}):
+                ensure_flow_assets_built(workspace=self._workspace(repo_root), flow_name="demo")
+
+            self.assertEqual(calls["docs"], ["demo-target"])
+            self.assertEqual(calls["skills"], ["rally-kernel-target", "rally-memory-target"])
+
+    def test_ensure_flow_assets_built_rejects_unknown_system_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve() / "rally"
+            self._write_source_checkout(repo_root=repo_root)
+            self._write_flow_file(
+                repo_root=repo_root,
+                allowed_skills=(),
+                system_skills=("rally-memry",),
+            )
+
+            with self.assertRaisesRegex(
+                RallyConfigError,
+                r"Unknown Rally stdlib skill `rally-memry`",
+            ):
+                ensure_flow_assets_built(workspace=self._workspace(repo_root), flow_name="demo")
+
+    def test_ensure_flow_assets_built_rejects_skill_tier_overlap(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve() / "rally"
+            self._write_source_checkout(repo_root=repo_root)
+            self._write_flow_file(
+                repo_root=repo_root,
+                allowed_skills=("rally-memory",),
+                system_skills=("rally-memory",),
+            )
+
+            with self.assertRaisesRegex(
+                RallyConfigError,
+                r"both `allowed_skills` and `system_skills`",
+            ):
+                ensure_flow_assets_built(workspace=self._workspace(repo_root), flow_name="demo")
+
+    def test_ensure_flow_assets_built_rejects_compiled_skill_surface_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve() / "rally"
+            self._write_source_checkout(repo_root=repo_root)
+            self._write_flow_file(repo_root=repo_root, allowed_skills=("demo-git",))
+            self._write_doctrine_skill(repo_root=repo_root, skill_name="demo-git")
+            agent_markdown = repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "AGENTS.md"
+            agent_markdown.write_text(self._render_compiled_agent_markdown("Scope Lead", ()), encoding="utf-8")
+            calls: dict[str, Any] = {"load": [], "docs": [], "skills": []}
+
+            with self._patch_doctrine(calls):
+                with self.assertRaisesRegex(RallyConfigError, "Compiled skill readback"):
+                    ensure_flow_assets_built(workspace=self._workspace(repo_root), flow_name="demo")
+
+    def _patch_doctrine(
+        self,
+        calls: dict[str, Any],
+        *,
+        extra_emit_targets: dict[str, str] | None = None,
+    ) -> ExitStack:
         stack = ExitStack()
 
         def fake_load_emit_targets(config_path: Path, *, provided_prompt_roots: tuple[object, ...] = ()) -> dict[str, str]:
@@ -161,11 +237,14 @@ class FlowBuildTests(unittest.TestCase):
                     "provided_prompt_roots": provided_prompt_roots,
                 }
             )
-            return {
+            emit_targets = {
                 "demo": "demo-target",
                 "demo-git": "demo-git-target",
                 "rally-kernel": "rally-kernel-target",
             }
+            if extra_emit_targets:
+                emit_targets.update(extra_emit_targets)
+            return emit_targets
 
         def fake_emit_target(target: str) -> None:
             calls["docs"].append(target)
@@ -190,6 +269,30 @@ class FlowBuildTests(unittest.TestCase):
         self._write_builtin_skill_build(repo_root=repo_root, skill_name="rally-kernel")
         self._write_doctrine_skill(repo_root=repo_root, skill_name="rally-memory")
         self._write_builtin_skill_build(repo_root=repo_root, skill_name="rally-memory")
+
+    def _add_doctrine_emit_target(
+        self,
+        *,
+        repo_root: Path,
+        name: str,
+        entrypoint: str,
+        output_dir: str,
+    ) -> None:
+        pyproject_path = repo_root / "pyproject.toml"
+        existing = pyproject_path.read_text(encoding="utf-8")
+        pyproject_path.write_text(
+            existing
+            + textwrap.dedent(
+                f"""\
+
+                [[tool.doctrine.emit.targets]]
+                name = "{name}"
+                entrypoint = "{entrypoint}"
+                output_dir = "{output_dir}"
+                """
+            ),
+            encoding="utf-8",
+        )
 
     def _write_pyproject(self, *, repo_root: Path, project_name: str) -> None:
         (repo_root / "pyproject.toml").write_text(
@@ -222,10 +325,17 @@ class FlowBuildTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def _write_flow_file(self, *, repo_root: Path, allowed_skills: tuple[str, ...]) -> None:
+    def _write_flow_file(
+        self,
+        *,
+        repo_root: Path,
+        allowed_skills: tuple[str, ...],
+        system_skills: tuple[str, ...] = (),
+    ) -> None:
         flow_root = repo_root / "flows" / "demo"
         flow_root.mkdir(parents=True, exist_ok=True)
         allowed_skills_yaml = "[" + ", ".join(allowed_skills) + "]"
+        system_skills_yaml = "[" + ", ".join(system_skills) + "]"
         (flow_root / "flow.yaml").write_text(
             textwrap.dedent(
                 f"""\
@@ -236,6 +346,7 @@ class FlowBuildTests(unittest.TestCase):
                   01_scope_lead:
                     timeout_sec: 60
                     allowed_skills: {allowed_skills_yaml}
+                    system_skills: {system_skills_yaml}
                     allowed_mcps: []
                 runtime:
                   adapter: codex
@@ -251,13 +362,30 @@ class FlowBuildTests(unittest.TestCase):
             'input IssueLedger: "Issue Ledger"\n    source: File\n        path: "home:issue.md"\n',
             encoding="utf-8",
         )
-        self._write_emitted_agent_package(flow_root=flow_root)
+        self._write_emitted_agent_package(
+            flow_root=flow_root,
+            allowed_skills=allowed_skills,
+            system_skills=system_skills,
+        )
 
-    def _write_emitted_agent_package(self, *, flow_root: Path) -> None:
+    def _write_emitted_agent_package(
+        self,
+        *,
+        flow_root: Path,
+        allowed_skills: tuple[str, ...],
+        system_skills: tuple[str, ...] = (),
+    ) -> None:
         agent_dir = flow_root / "build" / "agents" / "scope_lead"
         schema_dir = agent_dir / "schemas"
         schema_dir.mkdir(parents=True, exist_ok=True)
-        (agent_dir / "AGENTS.md").write_text("# Scope Lead\n", encoding="utf-8")
+        (agent_dir / "AGENTS.md").write_text(
+            self._render_compiled_agent_markdown(
+                "Scope Lead",
+                allowed_skills,
+                system_skills,
+            ),
+            encoding="utf-8",
+        )
         (schema_dir / "rally_turn_result.schema.json").write_text(
             textwrap.dedent(
                 """\
@@ -299,6 +427,17 @@ class FlowBuildTests(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
+
+    def _render_compiled_agent_markdown(
+        self,
+        title: str,
+        allowed_skills: tuple[str, ...],
+        system_skills: tuple[str, ...] = (),
+    ) -> str:
+        skill_lines = ["## Skills", "", "### rally-kernel", ""]
+        for skill_name in (*allowed_skills, *system_skills):
+            skill_lines.extend((f"### {skill_name}", ""))
+        return f"# {title}\n\n" + "\n".join(skill_lines)
 
     def _write_markdown_skill(self, *, repo_root: Path, skill_name: str) -> None:
         skill_root = repo_root / "skills" / skill_name

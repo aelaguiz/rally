@@ -720,6 +720,7 @@ became:
 agents:
   01_lead_role:
     allowed_skills: [publish-followthrough]
+    system_skills: []
     allowed_mcps: []
 ```
 
@@ -731,6 +732,9 @@ Port rule:
 - keep the allowlist in `flow.yaml`
 - keep the prompt prose aligned with that allowlist
 - do not keep a second live capability config beside it
+- declare `system_skills` on every agent, even when empty
+- see `docs/SKILL_SCOPING.md` for when to use `system_skills` vs
+  `allowed_skills`
 
 ## 4. Move Setup Out Of Role Prose
 

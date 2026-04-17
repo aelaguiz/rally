@@ -5,14 +5,17 @@ agents:
   00_muse:
     timeout_sec: 1200
     allowed_skills: []
+    system_skills: []
     allowed_mcps: []
   01_poem_writer:
     timeout_sec: 1200
     allowed_skills: []
+    system_skills: []
     allowed_mcps: []
   02_poem_critic:
     timeout_sec: 1200
     allowed_skills: []
+    system_skills: []
     allowed_mcps: []
 runtime:
   adapter: codex

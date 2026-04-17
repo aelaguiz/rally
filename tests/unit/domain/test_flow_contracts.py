@@ -42,6 +42,7 @@ class FlowContractsTests(unittest.TestCase):
             slug="scope_lead",
             timeout_sec=60,
             allowed_skills=(),
+            system_skills=(),
             allowed_mcps=(),
             compiled=CompiledAgentContract(
                 name="ScopeLead",
