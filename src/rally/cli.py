@@ -13,6 +13,8 @@ from rally.errors import RallyError, RallyUsageError
 from rally.memory.service import refresh_memory, save_memory, search_memory, use_memory
 from rally.services.issue_ledger import append_issue_note, render_issue_current_view
 from rally.services.run_status import show_status
+from rally.services.run_stop import DEFAULT_GRACE_SECONDS, kill_run, request_stop
+from rally.services.run_watch import watch_run
 from rally.services.runner import resume_run, run_flow
 from rally.services.workspace import resolve_workspace
 from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display
@@ -97,6 +99,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--thinking",
         help="Override `runtime.adapter_args.reasoning_effort` for this run and save it in `run.yaml`.",
     )
+    run_parser.add_argument(
+        "--detach",
+        action="store_true",
+        help="Start the run in the background; return immediately with the run id.",
+    )
     run_parser.set_defaults(func=_run_command)
 
     resume_parser = subparsers.add_parser(
@@ -144,6 +151,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--thinking",
         help="Update the saved `runtime.adapter_args.reasoning_effort` override before Rally resumes this run.",
     )
+    resume_parser.add_argument(
+        "--detach",
+        action="store_true",
+        help="Resume the run in the background; return immediately with the run id.",
+    )
     resume_parser.set_defaults(func=_resume_command)
 
     status_parser = subparsers.add_parser(
@@ -168,6 +180,72 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run identifier to inspect. Leave this empty to list active runs.",
     )
     status_parser.set_defaults(func=_status_command)
+
+    stop_parser = subparsers.add_parser(
+        "stop",
+        help="Stop a Rally run.",
+        description=(
+            "Stop one Rally run. By default, requests a cooperative stop that "
+            "takes effect at the next turn boundary. Use `--now` to signal the "
+            "run's process directly with SIGTERM (then SIGKILL after the grace "
+            "window) for runs that have wedged."
+        ),
+        epilog=_examples(
+            "Examples",
+            (
+                "rally stop DMO-1",
+                "rally stop DMO-1 --now",
+                "rally stop DMO-1 --now --grace 5",
+            ),
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    stop_parser.add_argument("run_id", help="Run identifier to stop.")
+    stop_parser.add_argument(
+        "--now",
+        action="store_true",
+        help="Signal the run's process immediately instead of waiting for a turn boundary.",
+    )
+    stop_parser.add_argument(
+        "--grace",
+        type=float,
+        default=DEFAULT_GRACE_SECONDS,
+        help=f"Seconds to wait after SIGTERM before SIGKILL (default {DEFAULT_GRACE_SECONDS}).",
+    )
+    stop_parser.set_defaults(func=_stop_command)
+
+    watch_parser = subparsers.add_parser(
+        "watch",
+        help="Tail one run's event log.",
+        description=(
+            "Render `logs/events.jsonl` for a Rally run. Prints any existing "
+            "events and exits; use `--follow` to keep streaming until the run "
+            "reaches a terminal status."
+        ),
+        epilog=_examples(
+            "Examples",
+            (
+                "rally watch DMO-1",
+                "rally watch DMO-1 --follow",
+                "rally watch DMO-1 --since 20 --follow",
+            ),
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    watch_parser.add_argument("run_id", help="Run identifier to watch.")
+    watch_parser.add_argument(
+        "--since",
+        type=int,
+        default=0,
+        help="Skip the first N events before printing. Defaults to 0.",
+    )
+    watch_parser.add_argument(
+        "-f",
+        "--follow",
+        action="store_true",
+        help="Keep streaming new events until the run reaches a terminal status.",
+    )
+    watch_parser.set_defaults(func=_watch_command)
 
     issue_parser = subparsers.add_parser(
         "issue",
@@ -324,6 +402,7 @@ def _run_command(args: argparse.Namespace) -> int:
             issue_seed_path=issue_seed_path,
             model_override=args.model,
             reasoning_effort_override=args.thinking,
+            detach=args.detach,
         ),
         display_factory=_build_display_factory(sys.stdout),
     )
@@ -342,6 +421,7 @@ def _resume_command(args: argparse.Namespace) -> int:
             step=args.step,
             model_override=args.model,
             reasoning_effort_override=args.thinking,
+            detach=args.detach,
         ),
         display_factory=_build_display_factory(sys.stdout),
     )
@@ -356,6 +436,37 @@ def _status_command(args: argparse.Namespace) -> int:
         run_id=args.run_id,
     )
     print(result.message)
+    return 0
+
+
+def _watch_command(args: argparse.Namespace) -> int:
+    workspace = resolve_workspace()
+    if args.since < 0:
+        raise RallyUsageError("`--since` must be zero or greater.")
+    watch_run(
+        repo_root=workspace.workspace_root,
+        run_id=args.run_id,
+        since=args.since,
+        follow=args.follow,
+        stream=sys.stdout,
+    )
+    return 0
+
+
+def _stop_command(args: argparse.Namespace) -> int:
+    workspace = resolve_workspace()
+    if args.now:
+        outcome = kill_run(
+            repo_root=workspace.workspace_root,
+            run_id=args.run_id,
+            grace_seconds=args.grace,
+        )
+    else:
+        outcome = request_stop(
+            repo_root=workspace.workspace_root,
+            run_id=args.run_id,
+        )
+    print(outcome.message)
     return 0
 
 

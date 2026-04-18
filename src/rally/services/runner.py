@@ -23,10 +23,13 @@ from rally.domain.turn_result import (
     TurnResult,
 )
 from rally.errors import RallyConfigError, RallyError, RallyStateError, RallyUsageError
+from rally.services.atomic_io import write_atomic
+from rally.services.detach import spawn_detached
 from rally.services.flow_build import ensure_flow_assets_built
 from rally.services.final_response_loader import LoadedReviewTruth, load_agent_final_response
 from rally.services.flow_loader import load_flow_code, load_flow_definition
 from rally.services.guarded_git_repos import check_guarded_git_repos, render_guarded_git_repo_blocker
+from rally.services.heartbeat import HeartbeatThread
 from rally.services.home_materializer import activate_agent_skills, materialize_run_home, prepare_run_home_shell
 from rally.services.issue_editor import (
     edit_existing_issue_file_in_editor,
@@ -34,7 +37,10 @@ from rally.services.issue_editor import (
 )
 from rally.services.issue_ledger import append_issue_edit_diff, append_issue_event, load_original_issue_text
 from rally.services.previous_turn_inputs import render_previous_turn_appendix
+from rally.services.process_identity import ProcessIdentity, capture_self
+from rally.services.reconcile import done_marker_path
 from rally.services.run_events import EventConsumer, RunEventRecorder
+from rally.services.run_stop import clear_stop_request, is_stop_requested
 from rally.services.run_store import (
     archive_run,
     archive_runs_dir,
@@ -138,6 +144,7 @@ def run_flow(
             },
             issue_text=issue_seed.issue_text,
             run_started_detail_lines=issue_seed.run_started_detail_lines,
+            detach=request.detach,
         )
         if issue_seed.seed_path is None:
             return result
@@ -217,6 +224,15 @@ def resume_run(
                 code="RESUME",
                 message=f"Resuming run `{run_record.id}`.",
             )
+            if request.detach:
+                parent_result = _detach_or_continue(
+                    run_dir=run_dir,
+                    run_record=run_record,
+                    flow=flow,
+                    recorder=recorder,
+                )
+                if parent_result is not None:
+                    return parent_result
             return _execute_until_stop(
                 workspace=workspace_context,
                 repo_root=repo_root,
@@ -246,6 +262,7 @@ def _execute_new_run(
     issue_text: str | None = None,
     run_start_source: str = "rally run",
     run_started_detail_lines: Sequence[str] = (),
+    detach: bool = False,
 ) -> RunCommandResult:
     run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
     recorder = _build_recorder(
@@ -269,6 +286,15 @@ def _execute_new_run(
         )
         if issue_text is not None:
             (run_dir / "home" / "issue.md").write_text(issue_text, encoding="utf-8")
+        if detach:
+            parent_result = _detach_or_continue(
+                run_dir=run_dir,
+                run_record=run_record,
+                flow=flow,
+                recorder=recorder,
+            )
+            if parent_result is not None:
+                return parent_result
         return _execute_until_stop(
             workspace=workspace,
             repo_root=repo_root,
@@ -759,34 +785,71 @@ def _execute_until_stop(
             after_text=issue_edit_diff.after_text,
         )
 
-    turns_started = 0
-    while True:
-        state = load_run_state(run_dir=run_dir)
-        _assert_resumable(state=state, run_id=run_record.id)
-        if turns_started >= flow.max_command_turns:
-            return _block_for_command_turn_cap(
+    identity = capture_self()
+    # A prior resume may have left a cooperative-stop marker after the run
+    # already stopped; clear it so the fresh loop does not fire immediately.
+    clear_stop_request(run_dir)
+    heartbeat_turn = {"value": initial_state.turn_index}
+    heartbeat = HeartbeatThread(
+        run_dir=run_dir,
+        identity=identity,
+        get_turn_index=lambda: heartbeat_turn["value"],
+    )
+    heartbeat.start()
+    result: RunCommandResult | None = None
+    try:
+        turns_started = 0
+        while True:
+            state = load_run_state(run_dir=run_dir)
+            _assert_resumable(state=state, run_id=run_record.id)
+            if is_stop_requested(run_dir):
+                result = _finalize_cooperative_stop(
+                    repo_root=repo_root,
+                    run_dir=run_dir,
+                    run_record=run_record,
+                    state=state,
+                    recorder=recorder,
+                    identity=identity,
+                )
+                break
+            if turns_started >= flow.max_command_turns:
+                result = _block_for_command_turn_cap(
+                    repo_root=repo_root,
+                    run_dir=run_dir,
+                    flow=flow,
+                    run_record=run_record,
+                    state=state,
+                    recorder=recorder,
+                )
+                break
+
+            outcome = _execute_single_turn(
                 repo_root=repo_root,
                 run_dir=run_dir,
+                run_home=run_home,
+                workspace=workspace,
                 flow=flow,
                 run_record=run_record,
-                state=state,
                 recorder=recorder,
+                subprocess_run=subprocess_run,
+                pause_on_handoff=step,
+                identity=identity,
             )
-
-        outcome = _execute_single_turn(
-            repo_root=repo_root,
-            run_dir=run_dir,
-            run_home=run_home,
-            workspace=workspace,
-            flow=flow,
-            run_record=run_record,
-            recorder=recorder,
-            subprocess_run=subprocess_run,
-            pause_on_handoff=step,
-        )
-        turns_started += 1
-        if outcome.command_result is not None:
-            return outcome.command_result
+            turns_started += 1
+            heartbeat_turn["value"] = outcome.state.turn_index
+            if outcome.command_result is not None:
+                result = outcome.command_result
+                break
+    finally:
+        heartbeat.stop()
+        if result is not None:
+            _write_done_marker(
+                run_dir=run_dir,
+                run_id=run_record.id,
+                status=result.status,
+            )
+    assert result is not None
+    return result
 
 
 def _execute_single_turn(
@@ -800,6 +863,7 @@ def _execute_single_turn(
     recorder: RunEventRecorder,
     subprocess_run: SubprocessRunner,
     pause_on_handoff: bool = False,
+    identity: ProcessIdentity | None = None,
 ) -> _TurnExecutionOutcome:
     state = load_run_state(run_dir=run_dir)
     _assert_resumable(state=state, run_id=run_record.id)
@@ -840,13 +904,16 @@ def _execute_single_turn(
 
     artifacts = adapter.prepare_turn_artifacts(run_home=run_home, agent_slug=agent.slug, turn_index=turn_index)
 
-    running_state = RunState(
-        status=RunStatus.RUNNING,
-        current_agent_key=agent.key,
-        current_agent_slug=agent.slug,
-        turn_index=state.turn_index,
-        updated_at=_render_time(),
-        last_turn_kind=state.last_turn_kind,
+    running_state = _stamp_identity(
+        RunState(
+            status=RunStatus.RUNNING,
+            current_agent_key=agent.key,
+            current_agent_slug=agent.slug,
+            turn_index=state.turn_index,
+            updated_at=_render_time(),
+            last_turn_kind=state.last_turn_kind,
+        ),
+        identity=identity,
     )
     write_run_state(run_dir=run_dir, state=running_state)
     recorder.emit(
@@ -1657,6 +1724,130 @@ def _format_adapter_readiness_failure(
 
 def _render_time() -> str:
     return datetime.now(UTC).astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _detach_or_continue(
+    *,
+    run_dir: Path,
+    run_record: RunRecord,
+    flow: FlowDefinition,
+    recorder: RunEventRecorder,
+) -> RunCommandResult | None:
+    """Double-fork to detach. Return ``None`` in the grandchild (keep running);
+    return a parent-facing ``RunCommandResult`` in the original caller.
+    """
+    handoff = spawn_detached(run_dir)
+    if handoff is None:
+        return None
+    recorder.emit(
+        source="rally",
+        kind="lifecycle",
+        code="DETACH",
+        message=(
+            f"Run `{run_record.id}` detached as pid `{handoff.child_pid}`."
+        ),
+        data={"child_pid": handoff.child_pid},
+    )
+    message = (
+        f"Run `{run_record.id}` detached (pid `{handoff.child_pid}`).\n"
+        f"Check progress with `rally status {run_record.id}` "
+        f"or stop it with `rally stop {run_record.id}`."
+    )
+    return RunCommandResult(
+        run_id=run_record.id,
+        status=RunStatus.RUNNING,
+        current_agent_key=flow.start_agent_key,
+        message=message,
+    )
+
+
+def _stamp_identity(state: RunState, *, identity: ProcessIdentity | None) -> RunState:
+    """Return ``state`` with ``pid`` / ``process_create_time`` / ``pgid`` filled in.
+
+    ``identity=None`` is a no-op — pre-detach / non-loop call sites keep the
+    existing (None) fields so the YAML round-trip stays stable.
+    """
+    if identity is None:
+        return state
+    try:
+        pgid = os.getpgid(identity.pid)
+    except (OSError, AttributeError):
+        pgid = None
+    return replace(
+        state,
+        pid=identity.pid,
+        process_create_time=identity.create_time,
+        pgid=pgid,
+    )
+
+
+def _write_done_marker(*, run_dir: Path, run_id: str, status: RunStatus) -> None:
+    """Write ``done.json`` so the reconciler can distinguish clean exit from crash.
+
+    The body captures the reason the loop exited; the *presence* of the file
+    is what the reconciler keys on, but the content helps operators.
+    """
+    payload = {
+        "run_id": run_id,
+        "status": status.value,
+        "written_at": _render_time(),
+    }
+    write_atomic(done_marker_path(run_dir), json.dumps(payload, sort_keys=True) + "\n")
+
+
+def _finalize_cooperative_stop(
+    *,
+    repo_root: Path,
+    run_dir: Path,
+    run_record: RunRecord,
+    state: RunState,
+    recorder: RunEventRecorder,
+    identity: ProcessIdentity,
+) -> RunCommandResult:
+    """Transition a live run to STOPPED in response to ``stop.requested``."""
+    stopped_state = _stamp_identity(
+        RunState(
+            status=RunStatus.STOPPED,
+            current_agent_key=state.current_agent_key,
+            current_agent_slug=state.current_agent_slug,
+            turn_index=state.turn_index,
+            updated_at=_render_time(),
+            last_turn_kind=state.last_turn_kind,
+        ),
+        identity=identity,
+    )
+    write_run_state(run_dir=run_dir, state=stopped_state)
+    recorder.emit(
+        source="rally",
+        kind="status",
+        code="STOPPED",
+        message=f"Run `{run_record.id}` stopped cooperatively.",
+        turn_index=state.turn_index,
+        agent_key=state.current_agent_key,
+        agent_slug=state.current_agent_slug,
+    )
+    append_issue_event(
+        repo_root=repo_root,
+        run_id=run_record.id,
+        title="Rally Stopped",
+        source="rally stop",
+        detail_lines=(
+            f"Agent: `{state.current_agent_key}`",
+            "Reason: `rally stop` requested a cooperative stop.",
+            f"Resume: `rally resume {run_record.id}`",
+            f"Restart: `rally resume {run_record.id} --restart`",
+        ),
+    )
+    clear_stop_request(run_dir)
+    return RunCommandResult(
+        run_id=run_record.id,
+        status=RunStatus.STOPPED,
+        current_agent_key=stopped_state.current_agent_key,
+        message=_with_next_action(
+            f"Run `{run_record.id}` stopped cooperatively.",
+            f"`rally resume {run_record.id}` or `rally resume {run_record.id} --restart`",
+        ),
+    )
 
 
 def _parse_time(raw_value: str) -> datetime:

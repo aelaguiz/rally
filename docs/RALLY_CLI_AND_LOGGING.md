@@ -192,6 +192,72 @@ Model and thinking override rules today:
 - otherwise Rally uses the value from `flow.yaml`
 - `rally resume --restart` carries saved overrides into the fresh run unless the restart command passes new flags
 
+### `rally stop`
+
+Current shape:
+
+```bash
+rally stop <run-id> [--now] [--grace <secs>]
+```
+
+What it does today:
+
+- without `--now`, writes `runs/active/<run-id>/control/stop.requested`
+  atomically; the runner loop observes the file at the next turn boundary,
+  writes `state.yaml` status `stopped`, emits a `STOPPED` event, appends
+  one `Rally Stopped` ledger block, and drops `done.json`
+- idempotent: a second `rally stop` on a run that is already stopped, or
+  already has a stop request pending, reports that and returns 0
+- with `--now`, reads the run's recorded `(pid, create_time)` and signals
+  the process group (when the run was detached and is its own pgid
+  leader) or the pid (for foreground runs); sends `SIGTERM`, waits
+  `--grace` seconds (default 10), then sends `SIGKILL`
+- refuses unknown runs with the same usage-error shape as `rally resume`
+
+### `rally watch`
+
+Current shape:
+
+```bash
+rally watch <run-id> [--since <n>] [-f|--follow]
+```
+
+What it does today:
+
+- reads `runs/active/<run-id>/logs/events.jsonl` and renders each line
+  with the same renderer the runtime uses for `rendered.log`
+- `--since <n>` skips the first `n` events; useful for operators who
+  already saw the early portion of a long run
+- `--follow` polls the file for new lines and exits when the run reaches
+  a terminal status (`done`, `blocked`, `stopped`)
+- tolerates partial writes by rewinding before an incomplete line so the
+  next poll picks it up whole
+- the command is read-only; Ctrl-C exits cleanly with the events printed
+  so far
+
+### `rally run --detach` and `rally resume --detach`
+
+Either command can be passed `--detach` to put the run in the background:
+
+```bash
+rally run demo --detach
+rally resume DMO-1 --detach
+```
+
+What Rally does today with `--detach`:
+
+- performs a double-fork (`fork` → `setsid` → `fork`), chdirs into the
+  run directory, redirects stdio into `runs/active/<run-id>/logs/stdout.log`
+  and `stderr.log`, and calls `setpgrp` so the grandchild is its own
+  process-group leader
+- prints the grandchild pid and a "follow with `rally status`" hint, then
+  returns immediately with exit 0
+- keeps the flow lock (held via `fcntl.flock` on an open file
+  description) alive across the fork, so a second `rally run <same-flow>`
+  still refuses to start until the detached run finishes
+- emits one `DETACH` lifecycle event into `events.jsonl` so operators can
+  see the hand-off in `rally watch`
+
 ### `runtime.max_command_turns`
 
 Each flow now sets `runtime.max_command_turns` in `flow.yaml`.
