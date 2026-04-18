@@ -14,7 +14,15 @@ from typing import Callable, Sequence
 from rally.adapters.base import AdapterInvocation, AdapterReadinessFailure
 from rally.adapters.registry import get_adapter
 from rally.domain.flow import AdapterConfig, FlowAgent, FlowDefinition
-from rally.domain.run import ResumeRequest, RunRecord, RunRequest, RunState, RunStatus
+from rally.domain.run import (
+    RECONCILED_STATUS_TERMINAL,
+    ReconciledStatus,
+    ResumeRequest,
+    RunRecord,
+    RunRequest,
+    RunState,
+    RunStatus,
+)
 from rally.domain.turn_result import (
     BlockerTurnResult,
     DoneTurnResult,
@@ -38,7 +46,7 @@ from rally.services.issue_editor import (
 from rally.services.issue_ledger import append_issue_edit_diff, append_issue_event, load_original_issue_text
 from rally.services.previous_turn_inputs import render_previous_turn_appendix
 from rally.services.process_identity import ProcessIdentity, capture_self
-from rally.services.reconcile import done_marker_path
+from rally.services.reconcile import done_marker_path, reconcile_from_state
 from rally.services.run_events import EventConsumer, RunEventRecorder
 from rally.services.run_stop import clear_stop_request, is_stop_requested
 from rally.services.run_store import (
@@ -121,6 +129,8 @@ def run_flow(
             flow=flow,
             request=request,
         )
+        if not request.start_new:
+            _refuse_if_active_run_exists(repo_root=repo_root, flow=flow)
         run_record = create_run(
             repo_root=repo_root,
             flow=flow,
@@ -322,13 +332,15 @@ def _restart_run(
 ) -> RunCommandResult:
     run_dir = find_run_dir(repo_root=repo_root, run_id=run_record.id)
     state = load_run_state(run_dir=run_dir)
+    reconciled = reconcile_from_state(run_dir=run_dir, state=state)
     original_issue = load_original_issue_text(repo_root=repo_root, run_id=run_record.id)
     if not _confirm_replace_active_run(
         active_run=run_record,
         active_state=state,
+        reconciled_status=reconciled.status,
         command_text=f"rally resume {run_record.id} --restart",
         prompt=(
-            f"Archive active run `{run_record.id}` with status `{state.status.value}` "
+            f"Archive active run `{run_record.id}` with status `{reconciled.status.value}` "
             "and restart it from the original issue? [y/N]: "
         ),
     ):
@@ -423,6 +435,90 @@ def _run_record_with_overrides(*, run_record: RunRecord, overrides: _AdapterOver
     )
 
 
+def _refuse_if_active_run_exists(*, repo_root: Path, flow: FlowDefinition) -> None:
+    """Fail fast on ``rally run <flow>`` when an active run already exists.
+
+    The underlying ``create_run`` raises a bare "already has an active run"
+    error. That is correct but unhelpful: the operator needs to know the
+    reconciled status of the existing run to pick a recovery action (resume,
+    stop, restart, or start fresh with ``--new``). We reconcile up-front and
+    raise a tailored ``RallyUsageError`` pointing at the right next step.
+    """
+    active_run = find_active_run_for_flow(repo_root=repo_root, flow_code=flow.code)
+    if active_run is None:
+        return
+    active_run_dir = find_run_dir(repo_root=repo_root, run_id=active_run.id)
+    active_state = load_run_state(run_dir=active_run_dir)
+    reconciled = reconcile_from_state(run_dir=active_run_dir, state=active_state)
+    raise RallyUsageError(
+        _render_active_run_refusal_message(
+            flow_name=flow.name,
+            active_run_id=active_run.id,
+            reconciled_status=reconciled.status,
+        )
+    )
+
+
+def _render_active_run_refusal_message(
+    *,
+    flow_name: str,
+    active_run_id: str,
+    reconciled_status: ReconciledStatus,
+) -> str:
+    header = (
+        f"Flow `{flow_name}` already has an active run: `{active_run_id}` "
+        f"(status: {reconciled_status.value})."
+    )
+    guidance = _render_active_run_guidance(
+        flow_name=flow_name,
+        active_run_id=active_run_id,
+        reconciled_status=reconciled_status,
+    )
+    return f"{header} {guidance}"
+
+
+def _render_active_run_guidance(
+    *,
+    flow_name: str,
+    active_run_id: str,
+    reconciled_status: ReconciledStatus,
+) -> str:
+    resume = f"`rally resume {active_run_id}`"
+    restart = f"`rally resume {active_run_id} --restart`"
+    stop = f"`rally stop {active_run_id}`"
+    status_cmd = f"`rally status {active_run_id}`"
+    new_run = f"`rally run {flow_name} --new`"
+
+    if reconciled_status in (ReconciledStatus.CRASHED, ReconciledStatus.ORPHANED):
+        return (
+            f"The run is no longer alive. Recover with {restart} to re-run the "
+            f"original issue, or {new_run} to archive it and start fresh."
+        )
+    if reconciled_status in (
+        ReconciledStatus.DONE,
+        ReconciledStatus.BLOCKED,
+        ReconciledStatus.STOPPED,
+    ):
+        return (
+            f"The run is finished. Start a fresh run with {new_run}, or "
+            f"inspect it with {status_cmd}."
+        )
+    if reconciled_status is ReconciledStatus.STALE:
+        return (
+            f"The run is marked RUNNING but its heartbeat is stale. Inspect "
+            f"with {status_cmd}, then {stop} or {restart}."
+        )
+    if reconciled_status is ReconciledStatus.RUNNING:
+        return (
+            f"Tail it with `rally watch {active_run_id}`, stop it with {stop}, "
+            f"or replace it with {new_run}."
+        )
+    if reconciled_status in (ReconciledStatus.PAUSED, ReconciledStatus.SLEEPING):
+        return f"Continue it with {resume}, or replace it with {new_run}."
+    # PENDING or anything else — surface the generic recovery menu.
+    return f"Continue with {resume}, stop with {stop}, or replace with {new_run}."
+
+
 def _maybe_archive_replaced_run(
     *,
     repo_root: Path,
@@ -438,12 +534,14 @@ def _maybe_archive_replaced_run(
 
     active_run_dir = find_run_dir(repo_root=repo_root, run_id=active_run.id)
     active_state = load_run_state(run_dir=active_run_dir)
+    reconciled = reconcile_from_state(run_dir=active_run_dir, state=active_state)
     if not _confirm_replace_active_run(
         active_run=active_run,
         active_state=active_state,
+        reconciled_status=reconciled.status,
         command_text=f"rally run {flow.name} --new",
         prompt=(
-            f"Archive active run `{active_run.id}` with status `{active_state.status.value}` "
+            f"Archive active run `{active_run.id}` with status `{reconciled.status.value}` "
             f"and start a new `{flow.name}` run? [y/N]: "
         ),
     ):
@@ -465,9 +563,17 @@ def _confirm_replace_active_run(
     *,
     active_run: RunRecord,
     active_state: RunState,
+    reconciled_status: ReconciledStatus,
     command_text: str,
     prompt: str,
 ) -> bool:
+    # The run is already finished — archiving it is lossless, so skip the
+    # "are you sure?" prompt. This lets `rally run --new --detach` and
+    # `rally resume --restart --detach` hand back control without needing a
+    # PTY on the crash-recovery path.
+    if reconciled_status in RECONCILED_STATUS_TERMINAL:
+        return True
+
     if not (_stream_is_tty(sys.stdin) and _stream_is_tty(sys.stdout)):
         raise RallyUsageError(
             f"`{command_text}` needs an interactive TTY to confirm archiving "
