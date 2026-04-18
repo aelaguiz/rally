@@ -1,6 +1,3 @@
-from shared.outputs import PoemDraftDocument
-
-
 input IssueLedger: "Issue Ledger"
     source: File
         path: "home:issue.md"

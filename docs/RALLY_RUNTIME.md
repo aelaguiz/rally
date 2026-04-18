@@ -11,8 +11,8 @@ related:
   - docs/RALLY_CLI_AND_LOGGING.md
   - docs/RALLY_MEMORY.md
   - flows/poem_loop/flow.yaml
-  - stdlib/rally/prompts/rally/base_agent.prompt
-  - stdlib/rally/prompts/rally/turn_results.prompt
+  - stdlib/rally/prompts/rally/base_agent/AGENTS.prompt
+  - stdlib/rally/prompts/rally/turn_results/AGENTS.prompt
   - src/rally/adapters/base.py
   - src/rally/adapters/registry.py
   - src/rally/adapters/codex/adapter.py

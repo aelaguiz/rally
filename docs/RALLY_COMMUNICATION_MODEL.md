@@ -8,10 +8,10 @@ doc_type: architecture_detail
 related:
   - docs/RALLY_MASTER_DESIGN.md
   - docs/RALLY_RUNTIME.md
-  - stdlib/rally/prompts/rally/base_agent.prompt
-  - stdlib/rally/prompts/rally/memory.prompt
-  - stdlib/rally/prompts/rally/review_results.prompt
-  - stdlib/rally/prompts/rally/turn_results.prompt
+  - stdlib/rally/prompts/rally/base_agent/AGENTS.prompt
+  - stdlib/rally/prompts/rally/memory/AGENTS.prompt
+  - stdlib/rally/prompts/rally/review_results/AGENTS.prompt
+  - stdlib/rally/prompts/rally/turn_results/AGENTS.prompt
   - skills/rally-kernel/prompts/SKILL.prompt
   - src/rally/cli.py
   - src/rally/adapters/base.py
@@ -50,7 +50,7 @@ injects it beside `AGENTS.md`. That appendix is context only, not control.
 
 # Shipped Rules
 
-- Every Rally-managed agent inherits the shared base agent in `stdlib/rally/prompts/rally/base_agent.prompt`.
+- Every Rally-managed agent inherits the shared base agent in `stdlib/rally/prompts/rally/base_agent/AGENTS.prompt`.
 - Every Rally-managed agent gets the shared `rally-kernel` skill.
 - The shared note path is `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`.
 - The shared read-first path is `"$RALLY_CLI_BIN" issue current --run-id "$RALLY_RUN_ID"`.
@@ -69,17 +69,17 @@ injects it beside `AGENTS.md`. That appendix is context only, not control.
 
 # Shipped Surfaces
 
-- `stdlib/rally/prompts/rally/base_agent.prompt`
+- `stdlib/rally/prompts/rally/base_agent/AGENTS.prompt`
   - shared read-first and turn rules
   - required env vars
   - required `rally-kernel` skill
   - shared advisory issue-note output that shells through the Rally CLI
-- `stdlib/rally/prompts/rally/memory.prompt`
+- `stdlib/rally/prompts/rally/memory/AGENTS.prompt`
   - shared memory skill meaning and memory entry shape
-- `stdlib/rally/prompts/rally/turn_results.prompt`
+- `stdlib/rally/prompts/rally/turn_results/AGENTS.prompt`
   - the shared final JSON contract, authored with Doctrine `output schema`,
     including the optional passive `agent_issues` field for non-review turns
-- `stdlib/rally/prompts/rally/review_results.prompt`
+- `stdlib/rally/prompts/rally/review_results/AGENTS.prompt`
   - the shared review final JSON family for review-native turns
 - `flows/_stdlib_smoke/prompts/AGENTS.prompt`
   - the shipped local non-review opt-out proof surface

@@ -898,6 +898,45 @@ source-repo readback rebuild that follows the same single-copy rules.
 
 Do not add a sync-first host step for Rally-owned built-ins.
 
+## Provider Roots Under Doctrine v4
+
+Rally ships on Doctrine v4 (Language 4.0). Doctrine v4 changed the flow
+namespace model in ways a port must honor:
+
+- Every directory with an `AGENTS.prompt` or `SKILL.prompt` at its root is one
+  flow. All `.prompt` files under that directory share one flat namespace and
+  resolve each other by bare name. Do not write same-flow `import` lines
+  (Doctrine fails with `E315`).
+- `import` is only for crossing flow boundaries. Cross-flow `import` sees only
+  declarations marked with the new `export` modifier. Missing exports fail with
+  `E314`.
+- Relative imports (`import .x`, `import ..y`) are removed from the grammar.
+
+Rally's own stdlib is the canonical example. Each shared module is its own
+flow root so downstream `import rally.<module>` resolves to a real flow:
+
+- `stdlib/rally/prompts/rally/base_agent/AGENTS.prompt`
+- `stdlib/rally/prompts/rally/memory/AGENTS.prompt`
+- `stdlib/rally/prompts/rally/turn_results/AGENTS.prompt`
+- `stdlib/rally/prompts/rally/review_results/AGENTS.prompt`
+
+Every declaration a downstream flow consumes carries the `export` modifier.
+
+When you port a shared prompt root of your own (a provider root declared under
+`additional_prompt_roots`), apply the same shape:
+
+1. Give each shared module its own directory with an `AGENTS.prompt` or
+   `SKILL.prompt` at the root.
+2. Mark every declaration you want visible across flows with `export`.
+3. Inside each module, drop sibling `import` lines — bare names resolve now.
+4. If a consuming flow still has same-flow `import` lines, delete them; keep
+   only cross-flow `rally.*` or `your_shared.*` imports.
+
+One Doctrine v4 resolver detail worth knowing during a port: `review` blocks
+look up their `workflow`/`schema` contract in the same file. Keep the `review`
+block in the same `.prompt` file as its contract `workflow`, even within one
+flow.
+
 A useful port often has a flow-local render verifier.
 
 That script exists for a reason.

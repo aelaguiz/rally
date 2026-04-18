@@ -9,8 +9,8 @@ related:
   - docs/RALLY_MASTER_DESIGN.md
   - docs/RALLY_CLI_AND_LOGGING.md
   - docs/RALLY_RUNTIME.md
-  - stdlib/rally/prompts/rally/base_agent.prompt
-  - stdlib/rally/prompts/rally/turn_results.prompt
+  - stdlib/rally/prompts/rally/base_agent/AGENTS.prompt
+  - stdlib/rally/prompts/rally/turn_results/AGENTS.prompt
   - src/rally/services/flow_build.py
   - src/rally/services/flow_loader.py
   - src/rally/services/home_materializer.py

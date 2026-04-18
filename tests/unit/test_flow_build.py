@@ -260,8 +260,9 @@ class FlowBuildTests(unittest.TestCase):
     def _write_source_checkout(self, *, repo_root: Path) -> None:
         repo_root.mkdir(parents=True)
         self._write_pyproject(repo_root=repo_root, project_name="rally-agents")
-        (repo_root / "stdlib" / "rally" / "prompts" / "rally").mkdir(parents=True)
-        (repo_root / "stdlib" / "rally" / "prompts" / "rally" / "base_agent.prompt").write_text(
+        base_agent_dir = repo_root / "stdlib" / "rally" / "prompts" / "rally" / "base_agent"
+        base_agent_dir.mkdir(parents=True)
+        (base_agent_dir / "AGENTS.prompt").write_text(
             "# Base\n",
             encoding="utf-8",
         )

@@ -11,7 +11,7 @@ class SharedPromptOwnershipTests(unittest.TestCase):
         cls.repo_root = Path(__file__).resolve().parents[2]
 
     def test_base_agent_owns_shared_run_rules(self) -> None:
-        source = (self.repo_root / "stdlib/rally/prompts/rally/base_agent.prompt").read_text(encoding="utf-8")
+        source = (self.repo_root / "stdlib/rally/prompts/rally/base_agent/AGENTS.prompt").read_text(encoding="utf-8")
 
         self.assertIn("Use `home:issue.md` as the shared ledger for this run.", source)
         self.assertIn("Leave one short saved note through `Saved Run Note` only when later readers need it.", source)
@@ -20,7 +20,7 @@ class SharedPromptOwnershipTests(unittest.TestCase):
         self.assertNotIn("rally-memory", source)
 
     def test_base_agent_owns_shared_note_output(self) -> None:
-        source = (self.repo_root / "stdlib/rally/prompts/rally/base_agent.prompt").read_text(encoding="utf-8")
+        source = (self.repo_root / "stdlib/rally/prompts/rally/base_agent/AGENTS.prompt").read_text(encoding="utf-8")
 
         self.assertIn('output target RallyIssueNoteAppend: "Rally Issue Note Append"', source)
         self.assertIn("delivery_skill: RallyKernelSkill", source)

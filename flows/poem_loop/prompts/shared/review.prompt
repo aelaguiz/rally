@@ -58,3 +58,38 @@ output PoemReviewResponse[review_results.BaseRallyReviewResponse]: "Poem Review 
 
 output PoemReviewFinalResponse[PoemReviewResponse]: "Poem Review Final Response"
     inherit {target, shape, requirement, verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail, trust_surface, standalone_read}
+
+
+review PoemReview: "Poem Review"
+    subject: PoemDraftFile
+    contract: PoemReviewContract
+    comment_output: PoemReviewResponse
+
+    # Bare names mean identity binds.
+    # Keep explicit paths only where the review semantic name changes.
+    fields:
+        verdict
+        reviewed_artifact
+        analysis: analysis_performed
+        readback: findings_first
+        current_artifact
+        failing_gates: failure_detail.failing_gates
+        blocked_gate: failure_detail.blocked_gate
+        next_owner
+
+    basis_checks: "Basis Checks"
+        block "The poem draft is missing." when PoemDraftFile.basis_missing
+
+    contract_checks: "Contract Checks"
+        accept "The poem meets the review contract." when contract.passes
+
+    on_accept: "If Accepted"
+        current artifact PoemDraftFile via PoemReviewResponse.current_artifact
+
+    on_reject: "If Rejected"
+        when present(blocked_gate):
+            current none
+
+        when missing(blocked_gate):
+            current artifact PoemDraftFile via PoemReviewResponse.current_artifact
+            route "Poem needs another draft." -> Muse
