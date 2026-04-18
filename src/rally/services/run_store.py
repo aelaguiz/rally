@@ -15,10 +15,11 @@ import yaml
 from rally.domain.flow import normalize_flow_code
 from rally.domain.flow import FlowDefinition
 from rally.domain.run import RUN_STATE_SCHEMA_VERSION, RunRecord, RunState, RunStatus
-from rally.errors import RallyStateError
-from rally.services.atomic_io import write_atomic
+from rally.errors import RallyStateError, RallyUsageError
+from rally.services.atomic_io import replace_symlink, write_atomic
 
 _RUN_ID_RE = re.compile(r"^(?P<flow_code>[A-Z]{3})-(?P<sequence>\d+)$")
+_FLOW_CODE_ALIAS_RE = re.compile(r"^[A-Za-z]{3}$")
 
 
 def active_runs_dir(repo_root: Path) -> Path:
@@ -27,6 +28,94 @@ def active_runs_dir(repo_root: Path) -> Path:
 
 def archive_runs_dir(repo_root: Path) -> Path:
     return repo_root / "runs" / "archive"
+
+
+def latest_links_dir(repo_root: Path) -> Path:
+    return repo_root / "runs" / "latest"
+
+
+def latest_link_path(*, repo_root: Path, flow_code: str) -> Path:
+    return latest_links_dir(repo_root) / _require_flow_code(flow_code, context="Flow code")
+
+
+def update_latest_link(*, repo_root: Path, flow_code: str, run_dir: Path) -> None:
+    """Atomically point ``runs/latest/<CODE>`` at ``run_dir`` (relative target).
+
+    Best-effort: if the host filesystem refuses the symlink, swallow the error
+    so a real run is never blocked by an ergonomic cache.
+    """
+    try:
+        link = latest_link_path(repo_root=repo_root, flow_code=flow_code)
+        link.parent.mkdir(parents=True, exist_ok=True)
+        relative_target = Path(os.path.relpath(run_dir, link.parent))
+        replace_symlink(link, relative_target)
+    except OSError:
+        pass
+
+
+def resolve_run_id(
+    *,
+    repo_root: Path,
+    alias: str,
+    require_active: bool = False,
+) -> str:
+    """Resolve a CLI-supplied run identifier to a concrete run-id.
+
+    Accepts either a full ``FLOW-N`` run-id (passed through unchanged) or a
+    bare three-letter flow code, in which case it picks:
+
+    * the active run for that flow code, or
+    * the highest-sequence archived run for that flow code (only when
+      ``require_active`` is ``False``).
+
+    Anything else passes through verbatim so downstream "run dir not found"
+    errors continue to fire as today.
+    """
+    candidate = alias.strip()
+    if not candidate:
+        raise RallyUsageError("Run identifier must not be empty.")
+    if _RUN_ID_RE.match(candidate):
+        return candidate
+    if not _FLOW_CODE_ALIAS_RE.match(candidate):
+        return candidate
+
+    flow_code = candidate.upper()
+    active = find_active_run_for_flow(repo_root=repo_root, flow_code=flow_code)
+    if active is not None:
+        return active.id
+
+    archived_id = _highest_archived_run_id(repo_root=repo_root, flow_code=flow_code)
+    if require_active:
+        if archived_id is None:
+            raise RallyUsageError(
+                f"No active run for flow `{flow_code}`."
+            )
+        raise RallyUsageError(
+            f"Flow `{flow_code}` has no active run; pass a full run-id "
+            f"(e.g. `{archived_id}`) to act on an archived run."
+        )
+    if archived_id is not None:
+        return archived_id
+    raise RallyUsageError(f"No runs found for flow `{flow_code}`.")
+
+
+def _highest_archived_run_id(*, repo_root: Path, flow_code: str) -> str | None:
+    runs_dir = archive_runs_dir(repo_root)
+    if not runs_dir.is_dir():
+        return None
+    highest = -1
+    winner: str | None = None
+    for run_dir in runs_dir.iterdir():
+        if not run_dir.is_dir():
+            continue
+        match = _RUN_ID_RE.match(run_dir.name)
+        if match is None or match.group("flow_code") != flow_code:
+            continue
+        sequence = int(match.group("sequence"))
+        if sequence > highest:
+            highest = sequence
+            winner = run_dir.name
+    return winner
 
 
 def find_run_dir(*, repo_root: Path, run_id: str) -> Path:
@@ -80,6 +169,7 @@ def create_run(
     )
     write_run_record(run_dir=run_dir, record=record)
     write_run_state(run_dir=run_dir, state=state)
+    update_latest_link(repo_root=repo_root, flow_code=flow_code, run_dir=run_dir)
     return record
 
 
@@ -120,6 +210,13 @@ def archive_run(*, repo_root: Path, run_id: str) -> Path:
 
     archived_run_dir.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(active_run_dir), str(archived_run_dir))
+    match = _RUN_ID_RE.match(run_id)
+    if match is not None:
+        update_latest_link(
+            repo_root=repo_root,
+            flow_code=match.group("flow_code"),
+            run_dir=archived_run_dir,
+        )
     return archived_run_dir
 
 

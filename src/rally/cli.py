@@ -14,6 +14,7 @@ from rally.memory.service import refresh_memory, save_memory, search_memory, use
 from rally.services.issue_ledger import append_issue_note, render_issue_current_view
 from rally.services.run_status import show_status
 from rally.services.run_stop import DEFAULT_GRACE_SECONDS, kill_run, request_stop
+from rally.services.run_store import resolve_run_id
 from rally.services.run_watch import watch_run
 from rally.services.runner import resume_run, run_flow
 from rally.services.workspace import resolve_workspace
@@ -117,6 +118,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "Examples",
             (
                 "rally resume DMO-1",
+                "rally resume DMO",
                 "rally resume DMO-1 --step",
                 "rally resume DMO-1 --edit",
                 "rally resume DMO-1 --restart",
@@ -126,7 +128,10 @@ def _build_parser() -> argparse.ArgumentParser:
         + "\n\nNext: Use `rally status <run-id>` first if you are not sure what state the run is in.",
         formatter_class=_HelpFormatter,
     )
-    resume_parser.add_argument("run_id", help="Run identifier to resume.")
+    resume_parser.add_argument(
+        "run_id",
+        help="Run identifier or 3-letter flow code to resume (e.g. `DMO-1` or `DMO`).",
+    )
     resume_action = resume_parser.add_mutually_exclusive_group()
     resume_action.add_argument(
         "--edit",
@@ -170,6 +175,7 @@ def _build_parser() -> argparse.ArgumentParser:
             (
                 "rally status",
                 "rally status DMO-1",
+                "rally status DMO",
             ),
         ),
         formatter_class=_HelpFormatter,
@@ -177,7 +183,10 @@ def _build_parser() -> argparse.ArgumentParser:
     status_parser.add_argument(
         "run_id",
         nargs="?",
-        help="Run identifier to inspect. Leave this empty to list active runs.",
+        help=(
+            "Run identifier or 3-letter flow code to inspect (e.g. `DMO-1` or `DMO`). "
+            "Leave this empty to list active runs."
+        ),
     )
     status_parser.set_defaults(func=_status_command)
 
@@ -194,13 +203,17 @@ def _build_parser() -> argparse.ArgumentParser:
             "Examples",
             (
                 "rally stop DMO-1",
+                "rally stop DMO",
                 "rally stop DMO-1 --now",
                 "rally stop DMO-1 --now --grace 5",
             ),
         ),
         formatter_class=_HelpFormatter,
     )
-    stop_parser.add_argument("run_id", help="Run identifier to stop.")
+    stop_parser.add_argument(
+        "run_id",
+        help="Run identifier or 3-letter flow code to stop (e.g. `DMO-1` or `DMO`).",
+    )
     stop_parser.add_argument(
         "--now",
         action="store_true",
@@ -226,13 +239,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "Examples",
             (
                 "rally watch DMO-1",
-                "rally watch DMO-1 --follow",
+                "rally watch DMO --follow",
                 "rally watch DMO-1 --since 20 --follow",
             ),
         ),
         formatter_class=_HelpFormatter,
     )
-    watch_parser.add_argument("run_id", help="Run identifier to watch.")
+    watch_parser.add_argument(
+        "run_id",
+        help="Run identifier or 3-letter flow code to watch (e.g. `DMO-1` or `DMO`).",
+    )
     watch_parser.add_argument(
         "--since",
         type=int,
@@ -269,13 +285,18 @@ def _build_parser() -> argparse.ArgumentParser:
             "Examples",
             (
                 'rally issue note --run-id DMO-1 --text "Need review from QA."',
+                'rally issue note --run-id DMO --text "Quick note for the active DMO run."',
                 "rally issue note --run-id DMO-1 --file ./note.md",
                 'printf "### Note\\n- operator context\\n" | rally issue note --run-id DMO-1',
             ),
         ),
         formatter_class=_HelpFormatter,
     )
-    issue_note_parser.add_argument("--run-id", required=True, help="Run identifier to update.")
+    issue_note_parser.add_argument(
+        "--run-id",
+        required=True,
+        help="Run identifier or 3-letter flow code to update (e.g. `DMO-1` or `DMO`).",
+    )
     issue_note_parser.add_argument(
         "--field",
         action="append",
@@ -298,11 +319,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "Examples",
             (
                 "rally issue current --run-id DMO-1",
+                "rally issue current --run-id DMO",
             ),
         ),
         formatter_class=_HelpFormatter,
     )
-    issue_current_parser.add_argument("--run-id", required=True, help="Run identifier to read.")
+    issue_current_parser.add_argument(
+        "--run-id",
+        required=True,
+        help="Run identifier or 3-letter flow code to read (e.g. `DMO-1` or `DMO`).",
+    )
     issue_current_parser.set_defaults(func=_issue_current_command)
 
     memory_parser = subparsers.add_parser(
@@ -328,7 +354,11 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=_HelpFormatter,
     )
-    memory_search_parser.add_argument("--run-id", required=True, help="Run identifier to use for memory scope.")
+    memory_search_parser.add_argument(
+        "--run-id",
+        required=True,
+        help="Run identifier or 3-letter flow code for memory scope (e.g. `DMO-1` or `DMO`).",
+    )
     memory_search_parser.add_argument("--agent-slug", help="Override the scoped agent slug.")
     memory_search_parser.add_argument("--query", required=True, help="Search text.")
     memory_search_parser.add_argument("--limit", type=int, default=5, help="Maximum number of hits to print.")
@@ -346,7 +376,11 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=_HelpFormatter,
     )
-    memory_use_parser.add_argument("--run-id", required=True, help="Run identifier to use for memory scope.")
+    memory_use_parser.add_argument(
+        "--run-id",
+        required=True,
+        help="Run identifier or 3-letter flow code for memory scope (e.g. `DMO-1` or `DMO`).",
+    )
     memory_use_parser.add_argument("--agent-slug", help="Override the scoped agent slug.")
     memory_use_parser.add_argument("memory_id", help="Memory id to read.")
     memory_use_parser.set_defaults(func=_memory_use_command)
@@ -363,7 +397,11 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=_HelpFormatter,
     )
-    memory_save_parser.add_argument("--run-id", required=True, help="Run identifier to use for memory scope.")
+    memory_save_parser.add_argument(
+        "--run-id",
+        required=True,
+        help="Run identifier or 3-letter flow code for memory scope (e.g. `DMO-1` or `DMO`).",
+    )
     memory_save_parser.add_argument("--agent-slug", help="Override the scoped agent slug.")
     memory_source = memory_save_parser.add_mutually_exclusive_group()
     memory_source.add_argument("--text", help="Inline memory markdown to save.")
@@ -382,7 +420,11 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=_HelpFormatter,
     )
-    memory_refresh_parser.add_argument("--run-id", required=True, help="Run identifier to use for memory scope.")
+    memory_refresh_parser.add_argument(
+        "--run-id",
+        required=True,
+        help="Run identifier or 3-letter flow code for memory scope (e.g. `DMO-1` or `DMO`).",
+    )
     memory_refresh_parser.add_argument("--agent-slug", help="Override the scoped agent slug.")
     memory_refresh_parser.set_defaults(func=_memory_refresh_command)
     return parser
@@ -412,6 +454,11 @@ def _run_command(args: argparse.Namespace) -> int:
 
 def _resume_command(args: argparse.Namespace) -> int:
     workspace = resolve_workspace()
+    args.run_id = resolve_run_id(
+        repo_root=workspace.workspace_root,
+        alias=args.run_id,
+        require_active=True,
+    )
     result = resume_run(
         workspace=workspace,
         request=ResumeRequest(
@@ -431,6 +478,12 @@ def _resume_command(args: argparse.Namespace) -> int:
 
 def _status_command(args: argparse.Namespace) -> int:
     workspace = resolve_workspace()
+    if args.run_id is not None:
+        args.run_id = resolve_run_id(
+            repo_root=workspace.workspace_root,
+            alias=args.run_id,
+            require_active=False,
+        )
     result = show_status(
         repo_root=workspace.workspace_root,
         run_id=args.run_id,
@@ -443,6 +496,11 @@ def _watch_command(args: argparse.Namespace) -> int:
     workspace = resolve_workspace()
     if args.since < 0:
         raise RallyUsageError("`--since` must be zero or greater.")
+    args.run_id = resolve_run_id(
+        repo_root=workspace.workspace_root,
+        alias=args.run_id,
+        require_active=False,
+    )
     watch_run(
         repo_root=workspace.workspace_root,
         run_id=args.run_id,
@@ -455,6 +513,11 @@ def _watch_command(args: argparse.Namespace) -> int:
 
 def _stop_command(args: argparse.Namespace) -> int:
     workspace = resolve_workspace()
+    args.run_id = resolve_run_id(
+        repo_root=workspace.workspace_root,
+        alias=args.run_id,
+        require_active=True,
+    )
     if args.now:
         outcome = kill_run(
             repo_root=workspace.workspace_root,
@@ -472,6 +535,11 @@ def _stop_command(args: argparse.Namespace) -> int:
 
 def _issue_note_command(args: argparse.Namespace) -> int:
     workspace = resolve_workspace()
+    args.run_id = resolve_run_id(
+        repo_root=workspace.workspace_root,
+        alias=args.run_id,
+        require_active=True,
+    )
     note_text = _read_note_text(args)
     note_fields = _parse_note_fields(args.field)
     result = append_issue_note(
@@ -490,6 +558,11 @@ def _issue_note_command(args: argparse.Namespace) -> int:
 
 def _issue_current_command(args: argparse.Namespace) -> int:
     workspace = resolve_workspace()
+    args.run_id = resolve_run_id(
+        repo_root=workspace.workspace_root,
+        alias=args.run_id,
+        require_active=False,
+    )
     print(
         render_issue_current_view(
             repo_root=workspace.workspace_root,
@@ -501,6 +574,11 @@ def _issue_current_command(args: argparse.Namespace) -> int:
 
 def _memory_search_command(args: argparse.Namespace) -> int:
     workspace = resolve_workspace()
+    args.run_id = resolve_run_id(
+        repo_root=workspace.workspace_root,
+        alias=args.run_id,
+        require_active=False,
+    )
     hits = search_memory(
         repo_root=workspace.workspace_root,
         run_id=args.run_id,
@@ -521,6 +599,11 @@ def _memory_search_command(args: argparse.Namespace) -> int:
 
 def _memory_use_command(args: argparse.Namespace) -> int:
     workspace = resolve_workspace()
+    args.run_id = resolve_run_id(
+        repo_root=workspace.workspace_root,
+        alias=args.run_id,
+        require_active=False,
+    )
     entry = use_memory(
         repo_root=workspace.workspace_root,
         run_id=args.run_id,
@@ -536,6 +619,11 @@ def _memory_use_command(args: argparse.Namespace) -> int:
 
 def _memory_save_command(args: argparse.Namespace) -> int:
     workspace = resolve_workspace()
+    args.run_id = resolve_run_id(
+        repo_root=workspace.workspace_root,
+        alias=args.run_id,
+        require_active=True,
+    )
     memory_text = _read_memory_text(args)
     save_result, refresh_result = save_memory(
         repo_root=workspace.workspace_root,
@@ -554,6 +642,11 @@ def _memory_save_command(args: argparse.Namespace) -> int:
 
 def _memory_refresh_command(args: argparse.Namespace) -> int:
     workspace = resolve_workspace()
+    args.run_id = resolve_run_id(
+        repo_root=workspace.workspace_root,
+        alias=args.run_id,
+        require_active=True,
+    )
     result = refresh_memory(
         repo_root=workspace.workspace_root,
         run_id=args.run_id,

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import textwrap
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from rally.domain.flow import (
     AdapterConfig,
@@ -14,8 +16,15 @@ from rally.domain.flow import (
     FlowDefinition,
     FlowHostInputs,
 )
-from rally.errors import RallyStateError
-from rally.services.run_store import archive_run, create_run, list_active_run_records, load_run_record
+from rally.errors import RallyStateError, RallyUsageError
+from rally.services.run_store import (
+    archive_run,
+    create_run,
+    latest_link_path,
+    list_active_run_records,
+    load_run_record,
+    resolve_run_id,
+)
 
 
 class RunStoreTests(unittest.TestCase):
@@ -135,6 +144,124 @@ class RunStoreTests(unittest.TestCase):
             records = list_active_run_records(repo_root=repo_root)
 
             self.assertEqual([record.id for record in records], [second.id])
+
+
+class ResolveRunIdTests(unittest.TestCase):
+    def test_full_run_id_passes_through_without_filesystem_lookup(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self.assertEqual(
+                resolve_run_id(repo_root=repo_root, alias="POM-12"),
+                "POM-12",
+            )
+
+    def test_lowercase_flow_code_resolves_to_active_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+            record = create_run(repo_root=repo_root, flow=flow)
+
+            self.assertEqual(
+                resolve_run_id(repo_root=repo_root, alias="dmo"),
+                record.id,
+            )
+
+    def test_flow_code_falls_back_to_highest_archived_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+            first = create_run(repo_root=repo_root, flow=flow)
+            archive_run(repo_root=repo_root, run_id=first.id)
+            second = create_run(repo_root=repo_root, flow=flow)
+            archive_run(repo_root=repo_root, run_id=second.id)
+
+            self.assertEqual(
+                resolve_run_id(repo_root=repo_root, alias="DMO"),
+                second.id,
+            )
+
+    def test_require_active_with_only_archives_hints_at_archived_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+            first = create_run(repo_root=repo_root, flow=flow)
+            archive_run(repo_root=repo_root, run_id=first.id)
+
+            with self.assertRaises(RallyUsageError) as captured:
+                resolve_run_id(repo_root=repo_root, alias="DMO", require_active=True)
+            message = str(captured.exception)
+            self.assertIn("no active run", message.lower())
+            self.assertIn(first.id, message)
+
+    def test_flow_code_with_no_runs_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            with self.assertRaisesRegex(RallyUsageError, "No runs found"):
+                resolve_run_id(repo_root=repo_root, alias="POM")
+
+    def test_unknown_alias_shape_passes_through(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self.assertEqual(
+                resolve_run_id(repo_root=repo_root, alias="not-a-real-id"),
+                "not-a-real-id",
+            )
+
+    def test_empty_alias_raises_usage_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            with self.assertRaises(RallyUsageError):
+                resolve_run_id(repo_root=repo_root, alias="   ")
+
+
+class LatestSymlinkTests(unittest.TestCase):
+    def test_create_run_populates_runs_latest_with_relative_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+            record = create_run(repo_root=repo_root, flow=flow)
+
+            link = latest_link_path(repo_root=repo_root, flow_code="DMO")
+            self.assertTrue(link.is_symlink())
+            target = os.readlink(link)
+            self.assertFalse(os.path.isabs(target), f"expected relative target, got {target!r}")
+            self.assertEqual((link.parent / target).resolve(), (repo_root / "runs" / "active" / record.id).resolve())
+
+    def test_archive_run_retargets_symlink_to_archive_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+            record = create_run(repo_root=repo_root, flow=flow)
+            archive_run(repo_root=repo_root, run_id=record.id)
+
+            link = latest_link_path(repo_root=repo_root, flow_code="DMO")
+            target = os.readlink(link)
+            self.assertFalse(os.path.isabs(target))
+            self.assertEqual((link.parent / target).resolve(), (repo_root / "runs" / "archive" / record.id).resolve())
+
+    def test_second_create_run_after_archive_moves_symlink_to_new_active(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+            first = create_run(repo_root=repo_root, flow=flow)
+            archive_run(repo_root=repo_root, run_id=first.id)
+            second = create_run(repo_root=repo_root, flow=flow)
+
+            link = latest_link_path(repo_root=repo_root, flow_code="DMO")
+            target = os.readlink(link)
+            self.assertEqual((link.parent / target).resolve(), (repo_root / "runs" / "active" / second.id).resolve())
+
+    def test_create_run_swallows_symlink_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            flow = _demo_flow(repo_root=repo_root)
+
+            with patch("rally.services.run_store.replace_symlink", side_effect=OSError("nope")):
+                record = create_run(repo_root=repo_root, flow=flow)
+
+            self.assertTrue((repo_root / "runs" / "active" / record.id).is_dir())
+            link = latest_link_path(repo_root=repo_root, flow_code="DMO")
+            self.assertFalse(link.exists())
 
 
 def _demo_flow(*, repo_root: Path) -> FlowDefinition:

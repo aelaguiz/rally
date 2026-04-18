@@ -23,7 +23,7 @@ import os
 import tempfile
 from pathlib import Path
 
-__all__ = ["write_atomic", "write_atomic_bytes"]
+__all__ = ["write_atomic", "write_atomic_bytes", "replace_symlink"]
 
 
 def write_atomic(path: Path, text: str, *, encoding: str = "utf-8") -> None:
@@ -60,6 +60,34 @@ def write_atomic_bytes(path: Path, data: bytes) -> None:
             pass
         raise
     _fsync_dir(path.parent)
+
+
+def replace_symlink(link_path: Path, target: Path) -> None:
+    """Atomically point ``link_path`` at ``target`` via a symlink.
+
+    Creates the symlink at a sibling temp path first, then ``os.replace`` over
+    the destination. POSIX ``rename`` over a symlink is atomic, so concurrent
+    readers either see the previous target or the new one — never a missing
+    link or a partially-created one.
+
+    ``target`` is written verbatim into the symlink (use a relative path if you
+    want the link to survive a move of its parent tree).
+    """
+    link_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = link_path.parent / f".{link_path.name}.{os.getpid()}.tmp"
+    try:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+        os.symlink(os.fspath(target), tmp_path)
+        os.replace(tmp_path, link_path)
+    except BaseException:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _fsync_dir(directory: Path) -> None:

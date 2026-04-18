@@ -115,6 +115,16 @@ SIGTERM → (grace) → SIGKILL, targeting the run's recorded pgid when the
 run was detached (pgid == pid for a double-fork leader), and otherwise
 the recorded pid.
 
+Each of the commands above accepts the bare three-letter flow code in
+place of the run id (`rally watch POM -f`, `rally stop POM`,
+`rally status POM`). A complementary `runs/latest/<CODE>` symlink is
+maintained on `create_run` and `archive_run` so native tools also work
+without the operator re-discovering the path each launch
+(`tail -f runs/latest/POM/logs/rendered.log`,
+`bat runs/latest/POM/home/issue.md`). See
+`docs/RALLY_CLI_AND_LOGGING.md` § "Flow-code aliases and `runs/latest/`"
+for the full semantics.
+
 ## 4. Lifecycle
 
 ```

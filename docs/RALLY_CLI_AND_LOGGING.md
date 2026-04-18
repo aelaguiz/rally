@@ -387,6 +387,76 @@ What it does today:
 - is the repair path when QMD state drifts or is cleared
 - writes a first-class memory event in the canonical runtime stream
 
+### Flow-code aliases and `runs/latest/`
+
+Per-flow run directories rotate every launch (`runs/active/POM-12` today,
+`runs/archive/POM-12` after archive, `runs/active/POM-13` on the next launch),
+which makes ad-hoc debugging painful — the operator has to re-discover the path
+to `home/issue.md` and `logs/rendered.log` each time. Rally fixes this with two
+small primitives that do not add new CLI surface.
+
+**Flow-code aliases.** Every command that takes a run identifier also accepts
+the bare three-letter flow code:
+
+- `rally watch POM` and `rally watch POM -f` resolve `POM` to the active run
+  for that flow code (e.g. `POM-12`) before streaming events.
+- `rally status POM`, `rally issue current --run-id POM`, `rally issue note
+  --run-id POM`, `rally memory * --run-id POM`, `rally stop POM`, and
+  `rally resume POM` all accept the same alias.
+- For read-only commands (`status`, `watch`, `issue current`, `memory search`,
+  `memory use`), if no run is currently active for that flow code Rally falls
+  back to the highest-sequence archived run (so `rally watch POM` keeps
+  working right after a run finishes).
+- For mutating commands (`resume`, `stop`, `issue note`, `memory save`,
+  `memory refresh`), Rally requires an active run and emits a usage error that
+  hints at the latest archived run-id when only archives exist.
+- A full `FLOW-N` run-id always passes through unchanged. Anything that is
+  neither a run-id nor a three-letter alias passes through too, so existing
+  "run dir not found" errors keep firing for typos.
+
+The resolver lives in `src/rally/services/run_store.py` as
+`resolve_run_id(repo_root, alias, *, require_active)`. The CLI calls it once
+at the top of each handler; the service layer never sees a flow-code alias.
+
+**`runs/latest/<CODE>` symlinks.** Rally maintains a directory of per-flow
+symlinks at `runs/latest/`, sibling to `active/`, `archive/`, and `locks/`:
+
+```
+runs/latest/POM -> ../active/POM-12     # while POM-12 is active
+runs/latest/POM -> ../archive/POM-12    # once POM-12 is archived
+runs/latest/SED -> ../active/SED-8
+```
+
+The link is updated atomically (write a sibling temp symlink, then
+`os.replace` over the destination — POSIX `rename` over a symlink is atomic)
+in two places only:
+
+- `create_run()` points the link at the freshly-created active run.
+- `archive_run()` retargets the link at the archived directory after the move,
+  so paths into the most recently finished run keep resolving.
+
+Targets are written as **relative** paths (`../active/POM-12`), so the entire
+`runs/` tree remains relocatable.
+
+This is what unlocks every native unix tool without a Rally wrapper:
+
+```bash
+tail -f runs/latest/POM/logs/rendered.log
+bat runs/latest/POM/home/issue.md
+less +F runs/latest/POM/logs/rendered.log
+code runs/latest/POM/
+```
+
+Notes:
+
+- The symlink update is best-effort. If the host filesystem refuses symlinks
+  the run still succeeds — symlinks are an ergonomic cache, never load-bearing
+  state. Rally's own commands continue to work without them via the resolver.
+- Runs that existed before this feature shipped do not get backfilled. The
+  next `create_run` or `archive_run` for a given flow code populates the link.
+- `runs/latest/` follows the same gitignore convention as `runs/active/` and
+  `runs/archive/` (local working state, not tracked).
+
 ### Exit behavior
 
 The CLI error model is already simple:
