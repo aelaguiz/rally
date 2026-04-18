@@ -5,7 +5,7 @@
 # A flow that can hand off must add its own `route field` and bind it with
 # `final_output.route:`. That keeps route member names flow-owned and lets
 # Rally route from Doctrine's emitted contract instead of a copied payload key.
-output schema BaseRallyTurnResultSchema: "Base Rally Turn Result Schema"
+export output schema BaseRallyTurnResultSchema: "Base Rally Turn Result Schema"
     field kind: "Kind"
         type: string
         enum:
@@ -44,14 +44,14 @@ output schema BaseRallyTurnResultSchema: "Base Rally Turn Result Schema"
 # It inherits every base field so flow-specific schemas can also inherit the
 # same base and override only the parts they own.
 # Group the plain inherited fields when nothing local sits between them.
-output schema RallyTurnResultSchema[BaseRallyTurnResultSchema]: "Rally Turn Result Schema"
+export output schema RallyTurnResultSchema[BaseRallyTurnResultSchema]: "Rally Turn Result Schema"
     inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
 # Base shape: the JSON wrapper around the reusable schema.
 # `field_notes` explains how Rally reads the fields without changing schema
 # validation rules.
-output shape BaseRallyTurnResultJson: "Base Rally Turn Result JSON"
+export output shape BaseRallyTurnResultJson: "Base Rally Turn Result JSON"
     kind: JsonObject
     schema: BaseRallyTurnResultSchema
 
@@ -72,7 +72,7 @@ output shape BaseRallyTurnResultJson: "Base Rally Turn Result JSON"
 # notes, and field meaning shared.
 # Grouped inherit is legal here too, but the explicit lines keep the schema
 # override easy to scan in the middle.
-output shape RallyTurnResultJson[BaseRallyTurnResultJson]: "Rally Turn Result JSON"
+export output shape RallyTurnResultJson[BaseRallyTurnResultJson]: "Rally Turn Result JSON"
     inherit kind
     override schema: RallyTurnResultSchema
     inherit field_notes
@@ -81,7 +81,7 @@ output shape RallyTurnResultJson[BaseRallyTurnResultJson]: "Rally Turn Result JS
 # Base output: the reusable final-response target.
 # Flows extend this output when they need Rally control plus extra readback
 # fields in the same final JSON.
-output BaseRallyTurnResult: "Base Rally Turn Result"
+export output BaseRallyTurnResult: "Base Rally Turn Result"
     target: TurnResponse
     shape: BaseRallyTurnResultJson
     requirement: Required
@@ -91,7 +91,7 @@ output BaseRallyTurnResult: "Base Rally Turn Result"
 # It inherits the target and required status, then points at the stock shape.
 # Keep the explicit order here for the same reason: the shape override reads
 # better when the inherited slots stay spelled out around it.
-output RallyTurnResult[BaseRallyTurnResult]: "Rally Turn Result"
+export output RallyTurnResult[BaseRallyTurnResult]: "Rally Turn Result"
     inherit target
     override shape: RallyTurnResultJson
     inherit requirement

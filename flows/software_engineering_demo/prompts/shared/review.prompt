@@ -1,3 +1,4 @@
+import rally.base_agent as base
 import rally.review_results as review_results
 
 
@@ -96,3 +97,69 @@ output EngineeringReviewResponse[review_results.BaseRallyReviewResponse]: "Engin
 
 output EngineeringReviewFinalResponse[EngineeringReviewResponse]: "Engineering Review Final Response"
     inherit {target, shape, requirement, verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail, trust_surface, standalone_read}
+
+
+review_family EngineeringReviewFamily: "Engineering Review"
+    comment_output: EngineeringReviewResponse
+
+    # Bare names mean identity binds.
+    # Keep explicit paths only where the review semantic name changes.
+    fields:
+        verdict
+        reviewed_artifact
+        analysis: analysis_performed
+        readback: findings_first
+        current_artifact
+        blocked_gate: failure_detail.blocked_gate
+        failing_gates: failure_detail.failing_gates
+        next_owner
+
+
+review ArchitectReview[EngineeringReviewFamily]: "Architect Review"
+    subject: base.RallyIssueLedger
+    contract: ArchitectReviewContract
+    inherit fields
+
+    contract_checks: "Contract Checks"
+        accept "The architect review contract passes." when contract.passes
+
+    on_accept:
+        current artifact base.RallyIssueLedger via EngineeringReviewResponse.current_artifact
+        route "Accepted architecture goes to Developer." -> Developer
+
+    on_reject:
+        current artifact base.RallyIssueLedger via EngineeringReviewResponse.current_artifact
+        route "Architect needs another pass." -> Architect
+
+
+review DeveloperReview[EngineeringReviewFamily]: "Developer Review"
+    subject: base.RallyIssueLedger
+    contract: DeveloperReviewContract
+    inherit fields
+
+    contract_checks: "Contract Checks"
+        accept "The developer review contract passes." when contract.passes
+
+    on_accept:
+        current artifact base.RallyIssueLedger via EngineeringReviewResponse.current_artifact
+        route "Accepted development goes to QA." -> QaDocsTester
+
+    on_reject:
+        current artifact base.RallyIssueLedger via EngineeringReviewResponse.current_artifact
+        route "Developer needs another pass." -> Developer
+
+
+review QaReview[EngineeringReviewFamily]: "QA Review"
+    subject: base.RallyIssueLedger
+    contract: QaReviewContract
+    inherit fields
+
+    contract_checks: "Contract Checks"
+        accept "The QA review contract passes." when contract.passes
+
+    on_accept:
+        current artifact base.RallyIssueLedger via EngineeringReviewResponse.current_artifact
+
+    on_reject:
+        current artifact base.RallyIssueLedger via EngineeringReviewResponse.current_artifact
+        route "QA found work that still belongs in the repo." -> Developer

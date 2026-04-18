@@ -140,7 +140,7 @@
 - `docs/RALLY_PORTING_GUIDE.md`: canonical porting rules and examples for bringing existing agent systems into Rally; add durable port lessons there
 - `flows/*/flow.yaml`: runtime config, adapter settings, and allowlisted skills and MCPs (skill tier model in `docs/SKILL_SCOPING.md`)
 - `flows/*/prompts/**`: prompt source
-- `stdlib/rally/prompts/**`: Rally-owned shared prompt source; use `turn_results.prompt` as the shared final-result rule
+- `stdlib/rally/prompts/**`: Rally-owned shared prompt source; use `turn_results/AGENTS.prompt` as the shared final-result rule
 - `flows/*/build/**`: generated readback only
 - `flows/*/setup/*.sh`: flow-home setup
 - `skills/*/SKILL.md`: skill rules

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rally-agents"
-version = "1.0.0"
+version = "2.0.0"
 description = "Program complex multi-agent workflows with a typed DSL, a CLI-first runtime, and repo-local run state."
 readme = "README.md"
 license = "MIT"
@@ -32,7 +32,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "doctrine-agents>=2.0.0,<3",
+    "doctrine-agents>=4.0.0,<5",
     "psutil>=6,<7",
     "PyYAML>=6.0.3,<7",
     "rich>=15.0.0,<16",
@@ -103,7 +103,10 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.data-files]
-"rally_assets/stdlib/rally/prompts/rally" = ["stdlib/rally/prompts/rally/*.prompt"]
+"rally_assets/stdlib/rally/prompts/rally/base_agent" = ["stdlib/rally/prompts/rally/base_agent/AGENTS.prompt"]
+"rally_assets/stdlib/rally/prompts/rally/memory" = ["stdlib/rally/prompts/rally/memory/AGENTS.prompt"]
+"rally_assets/stdlib/rally/prompts/rally/turn_results" = ["stdlib/rally/prompts/rally/turn_results/AGENTS.prompt"]
+"rally_assets/stdlib/rally/prompts/rally/review_results" = ["stdlib/rally/prompts/rally/review_results/AGENTS.prompt"]
 "rally_assets/skills/rally-kernel" = ["skills/rally-kernel/build/SKILL.md"]
 "rally_assets/skills/rally-kernel/references" = ["skills/rally-kernel/build/references/*"]
 "rally_assets/skills/rally-memory" = ["skills/rally-memory/build/SKILL.md"]

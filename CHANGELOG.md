@@ -98,6 +98,40 @@ Use this section for work that is not public yet.
 - `psutil>=6,<7` for durable `(pid, create_time)` process identity. Isolated
   to `rally.services.process_identity`; no other module imports `psutil`.
 
+## v2.0.0 - 2026-04-18
+
+Release kind: Breaking
+Release channel: stable
+Release version: v2.0.0
+Affected surfaces: Rally package metadata Doctrine floor, supported Doctrine package line, Rally stdlib prompt layout on disk, packaged data-files glob, host-repo `.prompt` authoring inherited from Doctrine Language 4.0, and downstream provider-root prompt authoring (e.g. psflows' `curriculum_shared/`).
+Who must act: (1) host authors whose `.prompt` files still use same-flow `import` lines between siblings under one `AGENTS.prompt` or `SKILL.prompt` root (Doctrine 4.0 emits `E315`); (2) host authors whose cross-flow imports reach declarations that are not marked `export` (Doctrine 4.0 emits `E314`); (3) authors of shared provider roots registered through `additional_prompt_roots` whose modules are flat `.prompt` files rather than directory-backed flows (v4 requires every import target to live under a flow root); (4) host repos that still ship a `doctrine-agents<4` pin alongside Rally; (5) downstream consumers of `rally-agents` (e.g. psflows) whose `pyproject.toml` still pins `rally-agents<2`.
+Who does not need to act: users who resolve `doctrine-agents` only through Rally's declared range, users whose flows already live under one flow root with cross-flow `import` lines and no same-flow imports, and users who do not register shared provider roots.
+Upgrade steps: (1) install `rally-agents` v2.0.0 so Rally pulls `doctrine-agents>=4.0.0,<5`; (2) refresh any lockfile or dependency pin that still points at `doctrine-agents<4` to `doctrine-agents>=4.0.0,<5`; (3) in host `.prompt` files, delete same-flow `import` lines — under Doctrine v4 every `.prompt` under one `AGENTS.prompt` or `SKILL.prompt` root shares a flat namespace and siblings resolve by bare name (Doctrine compile errors cite `E315`); (4) mark every declaration consumed across flow boundaries with the `export` modifier (Doctrine compile errors cite `E314`); (5) restructure shared provider-root trees so each shared module is its own flow root with an `AGENTS.prompt` or `SKILL.prompt` entrypoint — the Rally stdlib restructure at `stdlib/rally/prompts/rally/<module>/AGENTS.prompt` is the canonical example; (6) keep each `review` block in the same `.prompt` file as its contract `workflow` declaration (v4 review contract resolution is per-file, not flow-wide); (7) rerun `uv run rally build` (or the host equivalent) after the upgrade so emitted build artifacts regenerate under the new Doctrine namespace rules; (8) downstream consumers of Rally (e.g. psflows) must bump their `rally-agents` pin to `>=2.0.0,<3` and apply steps (3)–(6) to their own flows and provider roots before they can run.
+Verification: make verify
+Support-surface version changes: minimum Doctrine release v2.0.0 -> v4.0.0; supported Doctrine package line `doctrine-agents>=2.0.0,<3` -> `doctrine-agents>=4.0.0,<5`; inherited Doctrine language 3.0 -> 4.0; Rally stdlib disk layout retires `stdlib/rally/prompts/rally/<module>.prompt` in favor of `stdlib/rally/prompts/rally/<module>/AGENTS.prompt` (one flow root per shared module); package data-files glob updated to ship the new stdlib tree; workspace manifest 1 (unchanged); compiled contract version 1 (unchanged)
+
+### Changed
+- Raised Rally's public Doctrine floor to `doctrine-agents>=4.0.0,<5` so Rally
+  installs resolve against the Doctrine 4.0 release line and pick up the new
+  Doctrine language (4.0) flow-namespace rules: directory-backed flow roots,
+  retired same-flow `import`, required `export` for cross-flow visibility, and
+  retired relative imports.
+- Restructured Rally's stdlib so each shared module is its own directory-backed
+  flow root at `stdlib/rally/prompts/rally/<module>/AGENTS.prompt`. Downstream
+  `import rally.<module>` keeps resolving; declarations consumed cross-flow
+  carry the new `export` modifier.
+- Colocated `review` blocks with their contract `workflow` declarations inside
+  each shipped flow (Doctrine v4 resolves review contracts per-file).
+- Updated the `[tool.setuptools.data-files]` globs so `pip install rally-agents`
+  keeps shipping the new stdlib tree.
+- Updated `docs/VERSIONING.md`, `README.md`, `docs/RALLY_RUNTIME.md`,
+  `docs/RALLY_MEMORY.md`, `docs/RALLY_COMMUNICATION_MODEL.md`,
+  `docs/RALLY_SOFTWARE_ENGINEERING_FLOW_SHOWCASE.md`, and the tests-side
+  packaged-install proof to carry the new paths and floor in one place.
+- Added a "Provider Roots Under Doctrine v4" section to
+  `docs/RALLY_PORTING_GUIDE.md` so downstream repos (psflows and similar) can
+  mirror the same pattern when they port their shared prompt roots.
+
 ## v1.0.0 - 2026-04-17
 
 Release kind: Breaking

@@ -1,7 +1,7 @@
 # Memory stays opt-in.
 # The base agent does not import this file, so a flow must choose memory when
 # older lessons are worth the extra turn cost.
-skill RallyMemorySkill: "rally-memory"
+export skill RallyMemorySkill: "rally-memory"
     purpose: "Use the shared Rally memory skill when an older lesson could help on this turn or when you learned one worth keeping."
 
     use_when: "Use When"
@@ -12,7 +12,7 @@ skill RallyMemorySkill: "rally-memory"
 # The document shape makes saved lessons plain and repeatable.
 # It is separate from `home:issue.md` notes because memory crosses runs while
 # notes explain one run.
-document RallyMemoryEntryDocument: "Rally Memory Entry"
+export document RallyMemoryEntryDocument: "Rally Memory Entry"
     section lesson: "Lesson"
         "State the lesson in plain words."
 

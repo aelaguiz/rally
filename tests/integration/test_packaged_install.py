@@ -38,8 +38,8 @@ class PackagedInstallTests(unittest.TestCase):
             self._create_venv(venv_root)
             python_bin = self._venv_python(venv_root)
             rally_bin = self._venv_rally(venv_root)
-            self._run([str(python_bin), "-m", "pip", "install", str(artifact_path)])
             self._install_dev_doctrine_checkout(python_bin=python_bin)
+            self._run([str(python_bin), "-m", "pip", "install", str(artifact_path)])
 
             help_result = self._run([str(rally_bin), "--help"], cwd=temp_root)
             self.assertIn("usage: rally", help_result.stdout)
@@ -71,7 +71,7 @@ class PackagedInstallTests(unittest.TestCase):
 
                     assets = resolve_rally_builtin_assets(workspace_root=Path.cwd())
                     print(assets.source_kind)
-                    print((assets.stdlib_prompts_root / "rally" / "turn_results.prompt").is_file())
+                    print((assets.stdlib_prompts_root / "rally" / "turn_results" / "AGENTS.prompt").is_file())
                     print((assets.skill_runtime_dir("rally-kernel") / "SKILL.md").is_file())
                     """
                 ),

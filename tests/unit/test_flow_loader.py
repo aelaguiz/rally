@@ -720,8 +720,8 @@ class FlowLoaderTests(unittest.TestCase):
         flow_skills_source = (
             repo_root / "flows/software_engineering_demo/prompts/shared/skills.prompt"
         ).read_text(encoding="utf-8")
-        base_source = (repo_root / "stdlib/rally/prompts/rally/base_agent.prompt").read_text(encoding="utf-8")
-        memory_source = (repo_root / "stdlib/rally/prompts/rally/memory.prompt").read_text(encoding="utf-8")
+        base_source = (repo_root / "stdlib/rally/prompts/rally/base_agent/AGENTS.prompt").read_text(encoding="utf-8")
+        memory_source = (repo_root / "stdlib/rally/prompts/rally/memory/AGENTS.prompt").read_text(encoding="utf-8")
 
         # Shared base rules stay lean. A flow only teaches memory use when it
         # opts into the memory skill on purpose.

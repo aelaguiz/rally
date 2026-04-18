@@ -4,7 +4,7 @@
 # Base review schema: shared review fields, not producer turn fields.
 # Flow review shapes inherit this and add examples or local wording without
 # changing what Rally can read back from a review turn.
-output schema BaseRallyReviewSchema: "Base Rally Review Schema"
+export output schema BaseRallyReviewSchema: "Base Rally Review Schema"
     field verdict: "Verdict"
         type: string
         enum:
@@ -69,7 +69,7 @@ output schema BaseRallyReviewSchema: "Base Rally Review Schema"
 
 # Base review shape: a JSON object backed by the review schema.
 # Field notes explain null handling that schema alone cannot teach clearly.
-output shape BaseRallyReviewJson: "Base Rally Review JSON"
+export output shape BaseRallyReviewJson: "Base Rally Review JSON"
     kind: JsonObject
     schema: BaseRallyReviewSchema
 
@@ -84,7 +84,7 @@ output shape BaseRallyReviewJson: "Base Rally Review JSON"
 # Base review response: the reusable review carrier.
 # A flow can inherit this output, override local wording, and still keep the
 # same review fields Rally writes into run history.
-output BaseRallyReviewResponse: "Base Rally Review Response"
+export output BaseRallyReviewResponse: "Base Rally Review Response"
     target: TurnResponse
     shape: BaseRallyReviewJson
     requirement: Required

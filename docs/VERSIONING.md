@@ -3,12 +3,12 @@
 This file is the canonical home for Rally versioning, release rules, and
 Doctrine compatibility guidance.
 
-Current public Rally release version: v1.0.0
-Current Rally package version: 1.0.0
+Current public Rally release version: v2.0.0
+Current Rally package version: 2.0.0
 Current workspace manifest version: 1
 Current final-output contract version: 1
-Current minimum Doctrine release: v2.0.0
-Current supported Doctrine package line: doctrine-agents>=2.0.0,<3
+Current minimum Doctrine release: v4.0.0
+Current supported Doctrine package line: doctrine-agents>=4.0.0,<5
 
 ## The Version Lines
 

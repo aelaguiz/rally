@@ -64,12 +64,12 @@ class BuiltinAssetsTests(unittest.TestCase):
     def test_installed_distribution_missing_required_skill_fails_loudly(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir).resolve()
-            base_agent = install_root / "rally_assets" / "stdlib" / "rally" / "prompts" / "rally" / "base_agent.prompt"
+            base_agent = install_root / "rally_assets" / "stdlib" / "rally" / "prompts" / "rally" / "base_agent" / "AGENTS.prompt"
             base_agent.parent.mkdir(parents=True)
             base_agent.write_text("# Base\n", encoding="utf-8")
             fake_dist = _FakeDistribution(
                 (
-                    _FakeDistFile("rally_assets/stdlib/rally/prompts/rally/base_agent.prompt", base_agent),
+                    _FakeDistFile("rally_assets/stdlib/rally/prompts/rally/base_agent/AGENTS.prompt", base_agent),
                 )
             )
 
@@ -101,8 +101,9 @@ class BuiltinAssetsTests(unittest.TestCase):
     def _write_source_checkout(self, repo_root: Path) -> None:
         (repo_root / "pyproject.toml").parent.mkdir(parents=True)
         (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally-agents'\n", encoding="utf-8")
-        (repo_root / "stdlib" / "rally" / "prompts" / "rally").mkdir(parents=True)
-        (repo_root / "stdlib" / "rally" / "prompts" / "rally" / "base_agent.prompt").write_text(
+        base_agent_dir = repo_root / "stdlib" / "rally" / "prompts" / "rally" / "base_agent"
+        base_agent_dir.mkdir(parents=True)
+        (base_agent_dir / "AGENTS.prompt").write_text(
             "# Base\n",
             encoding="utf-8",
         )
@@ -117,7 +118,7 @@ class BuiltinAssetsTests(unittest.TestCase):
     def _write_distribution_assets(self, install_root: Path) -> _FakeDistribution:
         files: list[_FakeDistFile] = []
         paths = (
-            "rally_assets/stdlib/rally/prompts/rally/base_agent.prompt",
+            "rally_assets/stdlib/rally/prompts/rally/base_agent/AGENTS.prompt",
             "rally_assets/skills/rally-kernel/SKILL.md",
             "rally_assets/skills/rally-memory/SKILL.md",
         )

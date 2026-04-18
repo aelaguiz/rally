@@ -117,7 +117,15 @@ def _is_rally_source_root(candidate: Path) -> bool:
 
 def _required_source_paths(source_root: Path) -> bool:
     return (
-        (source_root / "stdlib" / "rally" / "prompts" / "rally" / "base_agent.prompt").is_file()
+        (
+            source_root
+            / "stdlib"
+            / "rally"
+            / "prompts"
+            / "rally"
+            / "base_agent"
+            / "AGENTS.prompt"
+        ).is_file()
         and (source_root / "skills" / "rally-kernel" / "prompts" / "SKILL.prompt").is_file()
     )
 
@@ -164,9 +172,9 @@ def _assets_from_installed_distribution() -> RallyBuiltinAssets:
 
     stdlib_marker = _locate_distribution_file(
         dist=dist,
-        relative_path=f"{_ASSET_PREFIX}/stdlib/rally/prompts/rally/base_agent.prompt",
+        relative_path=f"{_ASSET_PREFIX}/stdlib/rally/prompts/rally/base_agent/AGENTS.prompt",
     )
-    stdlib_prompts_root = stdlib_marker.parents[1]
+    stdlib_prompts_root = stdlib_marker.parents[2]
     stdlib_root = stdlib_prompts_root.parent
     skill_runtime_dirs = {
         skill_name: _locate_distribution_file(

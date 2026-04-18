@@ -1510,7 +1510,7 @@ class RunnerTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            stdlib_prompt_path = repo_root / "stdlib" / "rally" / "prompts" / "rally" / "base_agent.prompt"
+            stdlib_prompt_path = repo_root / "stdlib" / "rally" / "prompts" / "rally" / "base_agent" / "AGENTS.prompt"
             stdlib_prompt_marker = "Keep the shared Rally rules short and action-first."
             stdlib_prompt_path.write_text(
                 stdlib_prompt_path.read_text(encoding="utf-8").replace(

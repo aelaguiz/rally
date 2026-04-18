@@ -10,8 +10,8 @@ related:
   - docs/RALLY_MASTER_DESIGN.md
   - docs/RALLY_RUNTIME.md
   - docs/RALLY_CLI_AND_LOGGING.md
-  - stdlib/rally/prompts/rally/base_agent.prompt
-  - stdlib/rally/prompts/rally/memory.prompt
+  - stdlib/rally/prompts/rally/base_agent/AGENTS.prompt
+  - stdlib/rally/prompts/rally/memory/AGENTS.prompt
   - skills/rally-kernel/prompts/SKILL.prompt
   - flows/poem_loop/prompts/shared/inputs.prompt
   - flows/software_engineering_demo/prompts/shared/inputs.prompt
@@ -47,7 +47,7 @@ store that stays separate from turn routing and note control.
 # Shipped Surface
 
 What is shipped now:
-- shared memory contract in `stdlib/rally/prompts/rally/memory.prompt`
+- shared memory contract in `stdlib/rally/prompts/rally/memory/AGENTS.prompt`
 - shared issue-ledger input and `RALLY_AGENT_SLUG` exposure in the shared base agent
 - optional `rally-memory` skill source in `skills/rally-memory/`
 - optional skill wiring through `flow_build.py` when a flow allowlists `rally-memory`
