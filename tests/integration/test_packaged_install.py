@@ -336,7 +336,7 @@ class PackagedInstallTests(unittest.TestCase):
                 agent ScopeLead[rally.base_agent.RallyManagedBaseAgent]:
                     role: "Finish the task and stop."
                     inherit read_first
-                    inherit how_to_take_a_turn
+                    inherit shared_rules
                     workflow: "Finish"
                         "Finish the task and stop."
                     inherit rally_contract
@@ -362,7 +362,7 @@ class PackagedInstallTests(unittest.TestCase):
                 agent ScopeReviewer[rally.base_agent.RallyManagedBaseAgent]:
                     role: "Review the scope draft and end with structured review JSON."
                     inherit read_first
-                    inherit how_to_take_a_turn
+                    inherit shared_rules
                     inherit rally_contract
                     review: ScopeReview
                     inputs: "Inputs"

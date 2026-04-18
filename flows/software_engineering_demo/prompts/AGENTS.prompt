@@ -138,7 +138,7 @@ skills RepoProofSkills: "Skills And Tools"
 
 
 abstract agent SoftwareEngineeringRole[base.RallyManagedBaseAgent]:
-    inherit {rally_contract, read_first, how_to_take_a_turn}
+    inherit {rally_contract, read_first, shared_rules}
     system_context: SoftwareEngineeringSystemContext
     issue_truth: IssueLedgerGroundTruth
     repo_rules: DemoRepoRules
@@ -146,7 +146,7 @@ abstract agent SoftwareEngineeringRole[base.RallyManagedBaseAgent]:
 
 agent Architect[SoftwareEngineeringRole]:
     role: "Core job: turn the issue into one real next build step for the demo repo."
-    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, issue_truth, repo_rules}
+    inherit {rally_contract, read_first, shared_rules, system_context, issue_truth, repo_rules}
     decision: ArchitectureChoice
     your_job: ArchitectJob
     quality_bar: ArchitectQualityBar
@@ -167,7 +167,7 @@ agent Architect[SoftwareEngineeringRole]:
 
 agent ArchitectReviewer[SoftwareEngineeringRole]:
     role: "Core job: review the architect pass honestly and route the next real owner."
-    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, issue_truth, repo_rules}
+    inherit {rally_contract, read_first, shared_rules, system_context, issue_truth, repo_rules}
     your_job: ArchitectReviewerJob
     quality_bar: ArchitectReviewerQualityBar
     review: ArchitectReview
@@ -193,7 +193,7 @@ agent ArchitectReviewer[SoftwareEngineeringRole]:
 
 agent Developer[SoftwareEngineeringRole]:
     role: "Core job: make the next real repo change for the issue."
-    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, issue_truth, repo_rules}
+    inherit {rally_contract, read_first, shared_rules, system_context, issue_truth, repo_rules}
     your_job: DeveloperJob
     quality_bar: DeveloperQualityBar
     inputs: SoftwareEngineeringDemoInputs
@@ -210,7 +210,7 @@ agent Developer[SoftwareEngineeringRole]:
 
 agent DeveloperReviewer[SoftwareEngineeringRole]:
     role: "Core job: review the developer pass honestly and route the next real owner."
-    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, issue_truth, repo_rules}
+    inherit {rally_contract, read_first, shared_rules, system_context, issue_truth, repo_rules}
     your_job: DeveloperReviewerJob
     quality_bar: DeveloperReviewerQualityBar
     review: DeveloperReview
@@ -234,7 +234,7 @@ agent DeveloperReviewer[SoftwareEngineeringRole]:
 
 agent QaDocsTester[SoftwareEngineeringRole]:
     role: "Core job: prove the change, repair small docs or test gaps, and hand the result to QaReviewer."
-    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, issue_truth, repo_rules}
+    inherit {rally_contract, read_first, shared_rules, system_context, issue_truth, repo_rules}
     your_job: QaDocsTesterJob
     quality_bar: QaDocsTesterQualityBar
     inputs: SoftwareEngineeringDemoInputs
@@ -251,7 +251,7 @@ agent QaDocsTester[SoftwareEngineeringRole]:
 
 agent QaReviewer[SoftwareEngineeringRole]:
     role: "Core job: review the QA pass honestly and end only when the issue is truly done."
-    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, issue_truth, repo_rules}
+    inherit {rally_contract, read_first, shared_rules, system_context, issue_truth, repo_rules}
     your_job: QaReviewerJob
     quality_bar: QaReviewerQualityBar
     review: QaReview

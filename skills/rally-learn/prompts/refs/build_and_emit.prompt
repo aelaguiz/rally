@@ -1,0 +1,106 @@
+document BuildAndEmit: "Build And Emit"
+    """This reference owns how source `.prompt` files become the compiled tree Rally loads: the two Doctrine emit entry points (`doctrine.emit_docs` for flows, `doctrine.emit_skill` for skill packages), the pyproject emit-target shape, the `build/` layout, and the rule that anything under `build/` is compiler-owned. The canonical Rally helper is `ensure_flow_assets_built` in `src/rally/services/flow_build.py`."""
+
+    section two_entry_points: "Two Emit Entry Points"
+        "Doctrine ships two emit commands. Rally uses both:"
+
+        markdown:
+            text: """| Command | Use for | Output |
+| --- | --- | --- |
+| `doctrine.emit_docs` | Flows (entry `AGENTS.prompt`). | Per-agent `AGENTS.md`, `final_output.contract.json`, `schemas/*.schema.json`, plus Doctrine's compiler-owned readback under `build/`. |
+| `doctrine.emit_skill` | Skill packages (entry `SKILL.prompt`). | `build/SKILL.md`, `build/agents/openai.yaml`, `build/references/*.md` (from the `emit:` block). |
+"""
+
+    section ensure_flow_assets_built: "ensure_flow_assets_built"
+        """Rally's canonical rebuild is `ensure_flow_assets_built(flow_name=..., repo_root=Path('.'))` in `src/rally/services/flow_build.py`. This is what `rally run` and `rally resume` call implicitly before loading. Most authors never need to emit by hand — the CLI does it for you.
+
+When you do need a manual rebuild (for example, to test emission from a script), call the helper directly:"""
+
+        code:
+            language: bash
+            text: """uv run python -c "from pathlib import Path; \\
+from rally.services.flow_build import ensure_flow_assets_built; \\
+ensure_flow_assets_built(flow_name='software_engineering_demo', repo_root=Path('.'))"
+"""
+
+        """Do not call `python -m doctrine.emit_docs` directly on a Rally flow unless you know what you are doing. Direct invocation bypasses the stdlib wiring Rally adds automatically. The symptom is a compiler error about unresolved stdlib modules. The right fix is to use `ensure_flow_assets_built` or `rally run`/`rally resume`, which do the wiring for you."""
+
+    section pyproject_targets: "Pyproject Emit Targets"
+        "Every flow and every skill package needs a `[[tool.doctrine.emit.targets]]` entry in `pyproject.toml`."
+
+        code:
+            language: toml
+            text: """[[tool.doctrine.emit.targets]]
+name = "software_engineering_demo"
+entrypoint = "flows/software_engineering_demo/prompts/AGENTS.prompt"
+output_dir = "flows/software_engineering_demo/build/agents"
+
+[[tool.doctrine.emit.targets]]
+name = "rally-kernel"
+entrypoint = "skills/rally-kernel/prompts/SKILL.prompt"
+output_dir = "skills/rally-kernel/build"
+"""
+
+        """Flow targets point at `<flow>/prompts/AGENTS.prompt`. Skill targets point at `<skill>/prompts/SKILL.prompt`. The `output_dir` is always under the source directory's `build/`."""
+
+    section build_layout: "The build/ Layout"
+        "For a flow, emit produces one directory per agent under `flows/<flow>/build/agents/<agent_slug>/`:"
+
+        code:
+            language: text
+            text: """flows/<flow>/build/agents/<agent_slug>/
+  AGENTS.md                      # the compiled agent home
+  final_output.contract.json     # what Rally parses to load the turn contract
+  schemas/<output>.schema.json   # JSON schemas for typed outputs
+"""
+
+        "For a skill package, emit produces:"
+
+        code:
+            language: text
+            text: """skills/<name>/build/
+  SKILL.md                   # compiled from SKILL.prompt
+  agents/
+    openai.yaml              # copied byte-for-byte from prompts/agents/openai.yaml
+  references/
+    <ref-name>.md            # emitted from the emit: block in SKILL.prompt
+"""
+
+    section compiler_owned: "build/ Is Compiler-Owned"
+        """Files under `build/**` are produced by Doctrine emit. Do not hand-edit them. Editing the compiled tree is silent drift: the next emit will overwrite your changes, and any inconsistency with the source will show up as a hard-to-trace bug.
+
+Rally's `flows/*/build/` is gitignored (`flows/*/build/` in `.gitignore`). Rally's `skills/**/build/` is also gitignored for the same reason. The source `.prompt` is the truth; `build/` is a cache.
+
+When you see output drift from what you expect, re-emit from source. Do not patch the compiled file.
+
+Two first-party skill exceptions live as tracked build outputs because they ship as installed assets in the wheel: `skills/rally-kernel/build/SKILL.md` and `skills/rally-memory/build/SKILL.md`. These are referenced in `pyproject.toml` under `[tool.setuptools.data-files]` and need to stay in sync with source before release. Emit them via `make emit`."""
+
+    section rally_specific_wiring: "Rally-Specific Wiring"
+        """Rally automatically adds `stdlib/rally/prompts` as an additional prompt root. This is declared in `pyproject.toml`:"""
+
+        code:
+            language: toml
+            text: """[tool.doctrine.compile]
+additional_prompt_roots = ["stdlib/rally/prompts"]
+"""
+
+        "This is why flows can write `import rally.base_agent as base` and have it resolve. Without this root, Doctrine would fail with a resolution error."
+
+    section common_issues: "Common Issues And Fixes"
+        markdown:
+            text: """| Symptom | Root cause | Fix |
+| --- | --- | --- |
+| "Could not resolve flow root" | Running `doctrine.emit_docs` directly on a Rally flow without the stdlib root wired. | Use `ensure_flow_assets_built` or `rally run`/`rally resume`. |
+| Compiled AGENTS.md has stale content | Source changed but emit did not rerun. | `rally run` or `rally resume` rebuilds implicitly; or call `ensure_flow_assets_built`. |
+| `uv run --python 3.14` breaks | Flag silently upgrades the project venv, losing binary deps. | Omit `--python`; the project venv already uses the declared Python. |
+| Schema file missing | Typed output added without re-emitting. | Re-emit; schemas regenerate from the source. |
+"""
+
+    section related: "Related References"
+        bullets refs:
+            "`references/principles.md`: generated-readback-is-compiler-owned."
+            "`references/flow-authoring.md`: how `AGENTS.prompt` becomes the emitted tree."
+            "`references/skills-and-scoping.md`: how skill packages emit."
+            "`src/rally/services/flow_build.py`: the `ensure_flow_assets_built` source."
+
+        """**Load when:** the author is configuring emit, debugging a rebuild, or wondering why their change did not show up."""

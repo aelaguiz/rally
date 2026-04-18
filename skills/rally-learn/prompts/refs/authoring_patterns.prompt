@@ -1,0 +1,139 @@
+document AuthoringPatterns: "Authoring Patterns"
+    """Load this when you have a real Rally authoring job but do not yet know which surface owns it. This file is a task-first chooser, not a second schema reference. It maps common jobs to the one surface that should own them, then cites the shipped example to copy from.
+
+Keep these rules in front of every choice:"""
+
+    bullets rules:
+        "Typed truth beats prose truth. If the schema can own an exact rule, let it."
+        "Always-on context is a budget. Every line on an allowlisted skill or shared prompt burns budget on every turn."
+        "The harness owns runtime. Flows own authoring. Do not invent Rally-level policy inside a flow."
+        "Fail loud. If you are about to write something Rally will refuse at load time (note-backed reopen, unknown owner, missing `system_skills`, reserved `path:`), stop and use the refusal path."
+
+    section chooser: "Task-First Chooser"
+        """Each row names one real job, one Rally surface, and one shipped example to copy."""
+
+        markdown:
+            text: """- I need to add a new agent to an existing flow.
+  Add the role to `agents:` in `flow.yaml` and author a new `agent <Name>[base.RallyBaseAgent]:` block under `prompts/AGENTS.prompt`. Wire it into `start_agent` or into an upstream agent's `next_owner` route.
+  See `flows/software_engineering_demo/flow.yaml` and `flows/software_engineering_demo/prompts/AGENTS.prompt`.
+
+- I need the new agent to receive upstream typed work.
+  Declare the upstream output with `target: File` and a `home:` path, then declare the downstream agent's previous-turn input with `source: base.RallyPreviousTurnOutput` pointing at the upstream output symbol.
+  See `references/previous-turn-inputs.md` and the `PoemDraft` / `PreviousPoemDraft` pattern in `flows/poem_loop/prompts/AGENTS.prompt`.
+
+- I need the new agent to review an artifact and gate the next step.
+  Model it as a review turn. Use `final_output` that inherits `BaseRallyReviewFinalResponseSchema`, emit `verdict`, `reviewed_artifact`, `analysis_performed`, `findings_first`, `current_artifact`, and the route selector.
+  See `stdlib/rally/prompts/rally/review_results/AGENTS.prompt` and the reviewer agents in `flows/software_engineering_demo/`.
+
+- I need the new agent to have tools the others do not.
+  Add skills to that agent's `allowed_skills` in `flow.yaml`. Keep the list tight — every entry burns always-on budget.
+  See `references/skills-and-scoping.md` and the per-agent allowlists in `flows/software_engineering_demo/flow.yaml`.
+
+- I need to add a new flow to the repo.
+  Create `flows/<name>/flow.yaml` (with three-letter `code`), `flows/<name>/prompts/AGENTS.prompt` (with one `agent` block per role), and register the flow in `pyproject.toml` under `[[tool.doctrine.emit.targets]]`.
+  See `references/flow-authoring.md` and the `_stdlib_smoke` flow for the minimal shape.
+
+- I need a reusable capability several agents can call.
+  Author a flow-local skill under `flows/<name>/skills/<skill>/prompts/SKILL.prompt`. Add a `[[tool.doctrine.emit.targets]]` entry. Bind the skill in each agent's `allowed_skills` that should call it.
+  See `references/skills-and-scoping.md` and the `demo-git` skill in `flows/software_engineering_demo/skills/demo-git/`.
+
+- I need the agent to save a fact across runs.
+  Add `rally-memory` to that agent's `system_skills:` in `flow.yaml`. The agent calls `rally memory save` and `rally memory search` from its turn body.
+  See `references/memory.md` and the memory-enabled role in `flows/software_engineering_demo/flow.yaml`.
+
+- I need the agent's final JSON to carry a new typed field.
+  Declare a flow-local `final_output` schema that inherits the stdlib base and adds the field. Point the agent's `final_output:` at the override.
+  See `references/turn-results-and-routing.md` and `MuseTurnResultSchema` / `PoemWriterTurnResultSchema` in `flows/poem_loop/prompts/AGENTS.prompt`.
+
+- I need the agent to sleep and resume later.
+  Return `kind: "sleep"` in the final JSON with `sleep_duration_seconds >= 1` and a short `reason`. Rally wakes the run automatically when the sleep elapses.
+  See `references/turn-results-and-routing.md` and `references/runtime-operations.md` for the SLEEPING status path.
+
+- I need the flow to stop cleanly when a human must act.
+  Return `kind: "blocker"` with a short `reason`. Rally marks the run `BLOCKED` and waits. Use `rally run --edit` to unblock after the reason clears.
+  See `references/runtime-operations.md`.
+
+- I need the flow to run in the background after I close my terminal.
+  Start it with `rally run <flow> --detach`. Rally double-forks, writes `heartbeat.json` every 15 seconds, and returns the run id.
+  See `references/runtime-operations.md` and `src/rally/services/detach.py`.
+
+- I need to hand-step through an authored change.
+  Start with `rally run <flow> --step` or `rally resume <id> --step`. Rally executes exactly one turn, pauses, and returns. Ideal while you are teaching or debugging.
+  See `references/runtime-operations.md`.
+
+- I need to run a setup command once before the first turn (seed a repo, create directories, write fixtures).
+  Set `setup_home_script:` in `flow.yaml`. Rally runs it exactly once per new run, under the run's home directory.
+  See `flows/software_engineering_demo/flow.yaml` and the `setup_home.sh` at the flow root.
+
+- I need to ship a new first-party skill as an installable external skill.
+  Author it under `skills/<name>/prompts/SKILL.prompt`, add two `[[tool.doctrine.emit.targets]]` entries (one for `skills/<name>/build/`, one for `skills/.curated/<name>/`), and add a Makefile target that emits and installs via the pinned `npx skills` CLI.
+  See `skills/rally-learn/` and the `make skills` / `make verify-skill-install` targets in the Makefile.
+
+- I need a new principle or rule to show up on every agent's prompt.
+  Add it to `stdlib/rally/prompts/rally/base_agent/AGENTS.prompt` or an adjacent stdlib file. Do not copy it into each flow's shared prompt. Rally's `additional_prompt_roots` already wires the stdlib.
+  See `references/build-and-emit.md` and `stdlib/rally/prompts/rally/base_agent/AGENTS.prompt`.
+
+- I need to change a stdlib turn-result rule (the five base keys, the route selector shape).
+  This is a Rally release-level change, not a flow-level change. Update `stdlib/rally/prompts/rally/turn_results/AGENTS.prompt`, update every consuming flow's local override if needed, bump Doctrine if the rule needs compiler backing, and ship it as a release with a `CHANGELOG.md` entry.
+  See `references/release-and-versioning.md`.
+"""
+
+        """If none of these rows match your job, load `references/principles.md` and pick the one surface that fits before writing code."""
+
+    section composition: "Composition Patterns"
+        "Rally stays small when you compose the right way."
+
+        section extract_shared_output: "Extract A Reused Output Shape"
+            bullets items:
+                "When two agents produce the same typed artifact, extract a shared `output` declaration in the flow's `prompts/AGENTS.prompt` and inherit it."
+                "When the shape is reusable across flows, declare it with `export` in one flow and `import` it in the other."
+                "One fix should land once. Do not chase the shape across role files."
+
+        section one_owner_per_rule: "One Owner Per Rule"
+            bullets items:
+                "If stdlib teaches a rule (the five turn-result base keys, the issue-note discipline, the memory opt-in rule), do not copy it into flow-shared prompts."
+                "If a flow's shared prompt teaches a rule (this flow's `home:` path convention, this flow's review contract), do not copy it into per-role prompts."
+                "Point at the declaration that owns the rule; let Doctrine's import resolution do the plumbing."
+
+        section modular_prompts: "Keep The Prompt Tree Modular"
+            bullets items:
+                "Split by role, shared contract, and shared output when a single file grows past about 400 lines."
+                "Use `import <symbol>` when a downstream role consumes an upstream symbol."
+                "Do not `import` same-flow symbols — they resolve by bare name."
+
+    section anti_patterns: "Anti-Patterns"
+        "These shapes compile but push against the principles. Fix them early. See `references/porting-anti-patterns.md` for the long list; these are the Rally-specific headliners:"
+
+        section second_state_machine: "Second State Machine On Top Of Rally"
+            "Do not invent a reducer that parses `home:issue.md` back into prompt fields. Rally's turn results and issue ledger already own that truth."
+
+        section notes_as_database: "Notes As A Tiny Database"
+            "Do not teach agents to write typed YAML blocks inside notes. Notes are readable ledger entries, not a shadow JSON store."
+
+        section bloated_allowed_skills: "Bloated allowed_skills"
+            "Every line in `allowed_skills` burns always-on budget. If the agent never calls the skill, remove it."
+
+        section copy_paste_law: "Copy-Paste Law"
+            "If stdlib already teaches a rule, do not repeat it in flow-shared or role prompts."
+
+        section hand_edit_build: "Hand-Editing build/"
+            "Never hand-edit files under `build/**`. Re-emit from source."
+
+    section plain_language: "Plain Language Rule"
+        """Shipped prompts and agent replies should read at about a 7th grade level."""
+
+        bullets rules:
+            "Use short sentences."
+            "Use common words."
+            "Use direct verbs."
+            "Keep Rally and Doctrine terms that carry exact meaning. Simplify the sentences around them."
+
+    section related: "Related References"
+        bullets refs:
+            "`references/principles.md`: the twelve principles every chooser row obeys."
+            "`references/flow-authoring.md`: how `flow.yaml` and `AGENTS.prompt` fit together."
+            "`references/turn-results-and-routing.md`: the final-JSON shape every row eventually emits."
+            "`references/skills-and-scoping.md`: where new reusable capability lives."
+            "`references/porting-anti-patterns.md`: the recurring shapes to avoid."
+
+        """**Load when:** the author has a real job in hand and needs to pick between several plausible Rally surfaces."""

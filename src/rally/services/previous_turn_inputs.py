@@ -298,9 +298,7 @@ def _resolve_previous_output_value(
         )
     if output.readback_mode == "unsupported":
         if _is_note_backed_target(output.target.key):
-            raise RallyStateError(
-                f"Note-backed previous output reopen is not supported for `{request.input_name}`."
-            )
+            raise RallyStateError(_note_backed_reopen_error(request.input_name))
         raise RallyStateError(
             f"Previous output `{output.declaration_key}` uses unsupported readback mode "
             f"`{output.readback_mode}` for `{request.input_name}`."
@@ -313,9 +311,7 @@ def _resolve_previous_output_value(
         )
     if output.target.key != "File":
         if _is_note_backed_target(output.target.key):
-            raise RallyStateError(
-                f"Note-backed previous output reopen is not supported for `{request.input_name}`."
-            )
+            raise RallyStateError(_note_backed_reopen_error(request.input_name))
         raise RallyStateError(
             f"Previous output `{output.declaration_key}` uses unsupported target `{output.target.key}` "
             f"for `{request.input_name}`."
@@ -440,3 +436,14 @@ def _readable_fence_language(*, request: PreviousTurnInputContract) -> str:
 
 def _is_note_backed_target(target_key: str) -> bool:
     return "Note" in target_key or target_key.endswith("NoteAppend")
+
+
+def _note_backed_reopen_error(input_name: str) -> str:
+    return (
+        f"Note-backed previous output reopen is not supported for `{input_name}`. "
+        f"Rally notes append to `home:issue.md` without declaration identity, so "
+        f"prior note bodies cannot be reopened exactly. Re-author the emitting "
+        f"output with `target: File` and a `home:` artifact path if the next "
+        f"turn needs to read it typed. See `docs/RALLY_PORTING_GUIDE.md` "
+        f"§ \"Do Not Put Required Typed Handoffs On The Note Target\"."
+    )

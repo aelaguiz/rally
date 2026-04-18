@@ -31,6 +31,8 @@ htmlcov/
 _audit_ledger.md
 _comment_ledger.md
 skills/**/build
+skills/.curated/
+/node_modules/
 **/legacy
 
 # Local agent tooling and scratch artifacts

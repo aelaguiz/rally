@@ -1,0 +1,101 @@
+document RuntimeOperations: "Runtime Operations"
+    """This reference owns Rally's runtime surface: the CLI commands (`rally run`, `rally resume`, `rally status`, `rally stop`, `rally watch`, `rally issue`, `rally memory`), the per-flow lock, `--step`, `--detach`, the heartbeat, and reconciled status. The canonical prose homes are `docs/RALLY_CLI_AND_LOGGING.md` and `docs/RALLY_BACKGROUND_EXECUTION.md`. The CLI source is `src/rally/cli.py`."""
+
+    section cli_surface: "CLI Surface"
+        "Every Rally command works on runs that live under `runs/active/<ID>/` or `runs/completed/<ID>/`."
+
+        markdown:
+            text: """| Command | Purpose | Key flags |
+| --- | --- | --- |
+| `rally run <flow>` | Start a new run. Implicitly rebuilds flow assets first. | `--step`, `--detach`, `--new`, `--edit`, `--restart`. |
+| `rally resume <id>` | Resume a paused, sleeping, or blocked run. | `--step`, `--detach`. |
+| `rally status` | Show the status of all active and recent runs. | `--flow <name>`, `--all`. |
+| `rally stop <id>` | Cleanly stop an active run. | `--force`. |
+| `rally watch <id>` | Stream run output from the detach heartbeat. | — |
+| `rally issue current` | Show the current `home:issue.md` for an active run. | `--run-id`. |
+| `rally issue note` | Append a short note through the CLI. | `--run-id`, `--field key=value`, `--text`, `--file`. |
+| `rally memory search` | Search durable memory entries (requires `rally-memory`). | `--agent-slug`, `--query`. |
+| `rally memory use` | Show a specific memory entry. | `--id`. |
+| `rally memory save` | Save a new memory entry. | `--agent-slug`, body from stdin. |
+| `rally memory refresh` | Rebuild the memory QMD index from source markdown. | — |
+"""
+
+    section step_mode: "Step Mode"
+        """`--step` runs exactly one turn and pauses the run in the `PAUSED` state. The run stays on disk with a well-formed state; resume with `rally resume <id>` (or `rally run <flow> --step` again to step one more turn on a fresh run).
+
+Use `--step` while you are authoring, debugging, or teaching. It gives you a turn-by-turn view of what Rally is doing."""
+
+    section detach_mode: "Detach Mode"
+        """`--detach` double-forks the Rally process and detaches from the terminal. Rally records `pid`, `create_time`, and `pgid` in the run directory and spawns a heartbeat thread that writes `heartbeat.json` every 15 seconds. The parent process returns immediately with the run id.
+
+The detach path is in `src/rally/services/detach.py`. Use it when you want a long-running flow to survive your terminal closing."""
+
+    section per_flow_lock: "Per-Flow Lock"
+        """Rally enforces one active run per flow with a per-flow lock at `runs/locks/<FLOW_CODE>.lock` (using the three-letter `code` from `flow.yaml`). The lock uses `fcntl.flock`. It survives fork, so a detached run still holds the lock. The OS releases the lock automatically on process death, so a crashed run does not leak.
+
+The lock source is `src/rally/services/run_lock.py`. When a second run tries to start, Rally refuses with a message that names the current active run and its status."""
+
+    section reconciled_status: "Reconciled Status"
+        """Rally computes run status on every read; it never persists status. Stored terminal states (`DONE`, `BLOCKED`, `STOPPED`) pass through unchanged. For running or paused runs, Rally reconciles against process state:"""
+
+        markdown:
+            text: """| Computed status | When Rally returns it |
+| --- | --- |
+| `RUNNING` | `pid` alive, `create_time` matches, heartbeat fresh (≤ 45 seconds old). |
+| `PAUSED` | Explicit pause (step mode, sleep mid-duration). |
+| `SLEEPING` | `sleep` kind on last turn, still within `sleep_duration_seconds`. |
+| `DONE` | `done.json` present. Terminal. |
+| `BLOCKED` | Last turn kind is `blocker`. Terminal until the reason clears. |
+| `STOPPED` | Explicit stop via `rally stop`. Terminal. |
+| `CRASHED` | Was `RUNNING` or `PAUSED`, pid dead, no `done.json`. |
+| `ORPHANED` | pid is reused (create_time mismatch). Was `RUNNING`. |
+| `STALE` | `RUNNING` but heartbeat older than 45 seconds. |
+"""
+
+        "`CRASHED`, `ORPHANED`, and `STALE` are computed, never persisted. They describe a run that drifted from a healthy state without explicitly terminating."
+
+    section active_run_refusal: "Active Run Refusal"
+        """When you try to start a second run against a flow that already has one active, Rally refuses with a message tailored to the current status:"""
+
+        bullets refusals:
+            "If current is `RUNNING` or `PAUSED`: Rally names the run id and tells you to `rally stop` or `rally resume`."
+            "If current is `SLEEPING`: Rally explains the run will resume automatically when the sleep finishes."
+            "If current is `BLOCKED`: Rally suggests `--edit` to unblock."
+            "If current is `CRASHED`, `ORPHANED`, or `STOPPED`: Rally suggests `--restart` to reclaim the flow."
+
+        "These refusal messages live in `src/rally/cli.py`. Read them carefully — they point at the right next action every time."
+
+    section issue_ledger: "The Issue Ledger"
+        """`home:issue.md` is the shared run ledger. Every agent can read it. Agents write to it through `rally issue note` (via the `rally-kernel` skill) — not by direct file edits. The ledger is for context, breadcrumbs, and operator-visible state. It does not drive routing. Routing lives in the final JSON.
+
+The `rally issue note` shape:"""
+
+        code:
+            language: bash
+            text: """"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID" <<'EOF'
+### Note
+- One short paragraph the next reader needs.
+EOF
+"""
+
+        "Use short `--field key=value` labels for structured indexing. Keep the body short. Longer context belongs in a file under `home:`."
+
+    section restart_and_edit: "Restart And Edit"
+        """Two recovery flags live on `rally run`:"""
+
+        bullets flags:
+            "`--restart` — terminate the current active run (if any) and start a fresh run of the same flow. Use this after `CRASHED`, `ORPHANED`, or `STOPPED`."
+            "`--edit` — unblock a `BLOCKED` run by acknowledging the reason. Use this when the human or upstream has addressed the `blocker` reason."
+
+        "Neither flag is a substitute for fixing the authored surface when Rally refuses for a real reason."
+
+    section related: "Related References"
+        bullets refs:
+            "`references/principles.md`: one-active-run-per-flow."
+            "`references/turn-results-and-routing.md`: what drives status transitions."
+            "`references/memory.md`: durable context across runs."
+            "`docs/RALLY_CLI_AND_LOGGING.md`: canonical CLI reference."
+            "`docs/RALLY_BACKGROUND_EXECUTION.md`: detach, heartbeat, reconciled status."
+            "`src/rally/cli.py`: the CLI source of truth."
+
+        """**Load when:** the author is operating a run, hitting an active-run refusal, or teaching someone how Rally behaves under the hood."""

@@ -1,0 +1,150 @@
+document ReleaseAndVersioning: "Release And Versioning"
+    """This reference owns Rally's release rules: the four release classes, the version lines Rally tracks separately, the Doctrine-first publish order, and the CHANGELOG entry shape the release helper enforces. The canonical prose home is `docs/VERSIONING.md`. The release helper source is `src/rally/release_flow.py`."""
+
+    section four_classes: "The Four Release Classes"
+        "Every public Rally release uses exactly one class. Classes drive the changelog shape, the tag kind, and the version bump."
+
+        markdown:
+            text: """| Class | Meaning | Release kind |
+| --- | --- | --- |
+| `internal` | Docs-only, tooling-only, packaging-only, refactor, or cleanup. No shipped public surface changed. | Non-breaking |
+| `additive` | Backward-compatible public additions. | Non-breaking |
+| `soft-deprecated` | Behavior still works, but Rally now tells users what to move off and how. | Non-breaking |
+| `breaking` | Any shipped public surface now needs user action. CLI, workspace layout, final-output contract, install, or upgrade behavior. | Breaking |
+"""
+
+        "Version bump mapping:"
+        bullets bumps:
+            "**Patch** (`2.0.1`): routine internal work, fixes, docs, tooling. Prefer this for most public releases."
+            "**Minor** (`2.1.0`): real backward-compatible public additions or soft deprecations."
+            "**Major** (`3.0.0`): breaking public-surface changes."
+
+        "Do not bump minor for routine work. Do not bump major without real upgrade steps."
+
+    section version_lines: "Rally Tracks Multiple Version Lines Separately"
+        """Rally separates its public release version from narrower support-surface versions. Confusing them is a common mistake."""
+
+        markdown:
+            text: """| Line | What it versions |
+| --- | --- |
+| Rally release version (`vX.Y.Z`) | One public shipped release or prerelease. Tracked in signed annotated git tags and GitHub releases. |
+| `[project].version` in `pyproject.toml` | The published `rally-agents` Python package version. Must match the release-package version of the requested release. |
+| `[tool.rally.workspace].version` | The Rally workspace manifest contract. Stable, rarely bumps. |
+| `contract_version` in `final_output.contract.json` | The emitted final-output metadata shape. Stable, rarely bumps. |
+| Minimum Doctrine release | Rally's public package metadata pins `doctrine-agents>=X.Y.Z,<X+1`. Changes only when the floor changes. |
+"""
+
+        """A breaking change in Rally's CLI does not imply a workspace-manifest bump. A final-output contract break does not imply a package-metadata major bump. Bump only the lines that actually changed, and write what changed on each of them into the release entry's "Support-surface version changes" line."""
+
+    section doctrine_first: "Doctrine-First Publish Order"
+        """Rally depends on Doctrine. When both ship together, Doctrine publishes first so Rally's public wheel smoke test can install the real pinned Doctrine from the package index."""
+
+        sequence steps:
+            "Cut and publish the Doctrine public release (signed tag, GitHub release, PyPI via Trusted Publishing)."
+            "Wait for Doctrine's package to land on PyPI and be installable in a clean temp venv."
+            "Bump Rally's `doctrine-agents` floor in `pyproject.toml`, `docs/VERSIONING.md`, `CHANGELOG.md`, and `tests/integration/test_packaged_install.py` in the same change."
+            "Cut Rally's release. Rally's `make verify-package` smoke test installs the Rally wheel and sdist in fresh temp envs, which transitively installs the pinned Doctrine from PyPI."
+
+        """Do not ship a Rally public release pinning an unreleased Doctrine floor. Repo-local WIP may still use `tool.uv.sources` to point at editable `../doctrine`, but public install proof must come from the package index."""
+
+    section release_targets: "The Release-Flow Make Targets"
+        "Every public Rally release goes through these targets in order."
+
+        markdown:
+            text: """| Target | What it does |
+| --- | --- |
+| `make release-prepare RELEASE=vX.Y.Z CLASS=<class> CHANNEL=<stable|beta|rc>` | Validate the worksheet, check `CHANGELOG.md` header, print the next commands. |
+| `make verify-package` | Prove wheel and sdist install cleanly in fresh temp envs. |
+| `make verify` | Run the broader release proof (`test_release_flow`, `test_package_release`, full unit suite, packaged install). |
+| `make release-tag RELEASE=vX.Y.Z CHANNEL=<channel>` | Create and push the signed annotated tag. Fails on a dirty worktree or unsigned config. |
+| `make release-draft RELEASE=vX.Y.Z CHANNEL=<channel> PREVIOUS_TAG=auto` | Create the GitHub draft release from the tag. |
+| `make release-publish RELEASE=vX.Y.Z` | Publish the reviewed draft and wait for the publish workflow. |
+"""
+
+        """Targets fail loud on wrong input: a mismatched package version, a missing CHANGELOG entry, a placeholder in the entry, or an unsigned tag all stop the pipeline before it can produce a bad release."""
+
+    section changelog_shape: "CHANGELOG Entry Shape"
+        """Before `make release-tag` or `make release-draft`, `CHANGELOG.md` must carry one matching release section. The helper reads the header fields out of `CHANGELOG.md` for tag messages and GitHub draft notes. Keep it exact."""
+
+        code:
+            language: md
+            text: """## vX.Y.Z - YYYY-MM-DD
+
+Release kind: Non-breaking
+Release channel: stable
+Release version: vX.Y.Z
+Affected surfaces: ...
+Who must act: ...
+Who does not need to act: ...
+Upgrade steps: ...
+Verification: ...
+Support-surface version changes: none
+
+### Added
+- ...
+
+### Changed
+- ...
+"""
+
+        "Rules:"
+        bullets rules:
+            "Replace every placeholder before you tag. The helper rejects `fill this in`, `update for this release`, `...`, and similar text."
+            "Breaking releases must carry real upgrade steps. Vague 'this might break you' wording is not allowed."
+            "Beta and RC releases use the same shape, but `Release channel:` becomes `beta.N` or `rc.N` and `Release version:` uses the prerelease tag."
+            "`Support-surface version changes:` names each narrower line that moved (workspace manifest, final-output contract, package metadata, Doctrine floor). Use `none` when only the release version moved."
+
+    section breaking_payload: "Required Breaking-Change Payload"
+        "Every breaking release must say all of the following in the CHANGELOG entry. Missing any of these is a hard reject:"
+
+        bullets items:
+            "Affected surface."
+            "Old behavior."
+            "New behavior."
+            "First affected version."
+            "Who must act."
+            "Who does not need to act."
+            "Exact upgrade steps (not prose hints)."
+            "Before-and-after example when that helps."
+            "Verification step."
+
+    section tag_signing: "Signed Tags And GitHub Rules"
+        bullets rules:
+            "Public beta, rc, and stable tags must be signed annotated tags (`git tag -s`)."
+            "`make release-tag` fails if the git worktree is dirty or tag signing is not configured."
+            "`make release-tag` and `make release-draft` fail if `[project].version` does not match the requested release's package version."
+            "`make release-draft` and `make release-publish` fail if the current public release tag is missing, lightweight, fails `git verify-tag`, is not pushed to `origin`, or points to a different object on `origin` than the verified local tag."
+            "Beta and RC GitHub releases must be marked as prereleases and must not be marked as the latest release."
+
+    section bad_release: "Bad Release Correction"
+        "If a public release is wrong, fix forward. Do not move stable history."
+
+        bullets rules:
+            "Do not move a stable tag."
+            "Do not replace stable release assets in place."
+            "Fix forward with a new version."
+            "Mark the older release as `YANKED` or superseded in `CHANGELOG.md`."
+            "Update GitHub release notes only to clarify the public record."
+
+    section doctrine_compat: "Doctrine Compatibility"
+        """Rally public releases depend on one explicit minimum Doctrine public release. When that floor moves, update all of these together:"""
+
+        bullets files:
+            "`pyproject.toml` (`[project].dependencies`)."
+            "`docs/VERSIONING.md` (the floor line)."
+            "`CHANGELOG.md` (the release entry's Support-surface version changes)."
+            "`README.md` (the user-facing floor reference)."
+            "`tests/integration/test_packaged_install.py` (the proof path)."
+
+        """Do not infer Doctrine language compatibility from the Rally release version. Do not treat Rally's `[project].version` as a Doctrine line."""
+
+    section related: "Related References"
+        bullets refs:
+            "`references/principles.md`: typed truth beats prose truth — versioning rules are typed."
+            "`references/verify-and-ship.md`: the proof commands run before every release."
+            "`references/build-and-emit.md`: the emit step that ships with every release."
+            "`docs/VERSIONING.md`: canonical versioning and release policy."
+            "`CHANGELOG.md`: portable release history and entry shapes."
+            "`src/rally/release_flow.py`: the release-helper source."
+
+        """**Load when:** the author is cutting a release, picking a version bump, drafting a CHANGELOG entry, or debugging a rejected release-flow command."""

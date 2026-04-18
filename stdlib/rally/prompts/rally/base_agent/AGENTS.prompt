@@ -69,9 +69,12 @@ export workflow RallyReadFirst: "Read First"
         "Then read this role's local rules, files, and outputs."
 
 
-# Keep shared turn rules in one workflow so flow prompts can inherit them or
-# add local rules nearby without restating Rally's base rules.
-export workflow RallyHowToTakeATurn: "Shared Rules"
+# These are always-on Rally rules for every managed turn: the shared ledger,
+# the saved-note contract, and where routing/done/blocker/sleep live. They are
+# framework truths, not a turn sequence — so they ride on the `shared_rules:`
+# slot on `RallyManagedBaseAgent`. Flow authors write their own
+# `how_to_take_a_turn:` sequence; Rally does not prescribe one.
+export workflow RallyManagedSharedRules: "Shared Rules"
     bullets rules:
         "Use `home:issue.md` as the shared ledger for this run."
         "Leave one short saved note through `Saved Run Note` only when later readers need it."
@@ -110,6 +113,13 @@ export render_profile CompactSavedContext:
     properties -> sentence
 
 
+# This target appends to the shared `home:issue.md` ledger. Notes are
+# advisory context for later human or agent readers — not typed artifacts.
+# Do not extend this target for `requirement: Required` producer→critic
+# handoffs. Rally cannot reopen a prior note output exactly because the
+# ledger is append-only and has no declaration identity. For typed
+# handoffs the next turn needs to re-read, use an output with
+# `target: File` and a `home:` artifact path.
 export output target RallyIssueNoteAppend: "Rally Issue Note Append"
     delivery_skill: RallyKernelSkill
 
@@ -124,7 +134,8 @@ export input RallyIssueLedger: "Issue Ledger"
 
 # A saved note is advisory because notes are for later readers.
 # Routing, `done`, `blocker`, and `sleep` still belong to the declared final
-# JSON for the turn.
+# JSON for the turn. Do not extend this output or its target for a required
+# typed handoff — use a `File`-targeted artifact output for that case.
 export output RallyIssueNote: "Issue Note"
     target: RallyIssueNoteAppend
     shape: MarkdownDocument
@@ -145,15 +156,23 @@ export outputs RallyManagedOutputs: "Outputs"
         RallyIssueNote
 
 
-# This shared base block is where Rally states repo-wide turn rules once.
-# Local flows can add more rules, but they should not fight this base layer.
+# This shared base block is where Rally states always-on framework truths
+# once: the Rally context, the read-first habit, and the shared-rules bullets
+# that apply to every managed turn regardless of flow.
+#
+# Note what is deliberately absent: `how_to_take_a_turn:`. Turn sequences are
+# role-specific and belong to the flow author. Concrete roles bind their own
+# `how_to_take_a_turn:` workflow; Rally stdlib does not prescribe one. This
+# keeps flow-flavored sequences (e.g. lessons' 6-step authoring sequence)
+# from leaking into framework stdlib.
+#
 # `abstract agent` is the Doctrine pattern that lets flow roles inherit the
 # shared shape without creating a runnable stdlib-only agent.
 export abstract agent RallyManagedBaseAgent:
     rally_contract: "Rally Context"
         "Rally is the shared control plane for this run. It gives you the shared ledger, shared skills, and the next route."
     read_first: RallyReadFirst
-    how_to_take_a_turn: RallyHowToTakeATurn
+    shared_rules: RallyManagedSharedRules
 
     inputs: RallyManagedInputs
     skills: RallyManagedSkills

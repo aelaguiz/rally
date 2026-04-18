@@ -1,0 +1,150 @@
+document PortingAntiPatterns: "Porting Anti-Patterns"
+    """This reference owns the recurring mistakes that keep biting authors who are porting an existing agent system into Rally. The canonical prose home is `docs/RALLY_PORTING_GUIDE.md`. Every pattern below is distilled from real ports and names the Rally surface that should own the job instead."""
+
+    section lead_with_move: "Lead With The Move"
+        """Agents respond better to direct positive framing than to a wall of bans. Say the move first:"""
+
+        bullets examples:
+            "`Use rally issue current first, then keep going from the named current artifact.`"
+            "`Write one readable note and name the current artifact.`"
+            "`Set the route field in final JSON when the producer route is clear.`"
+
+        """Use `do not` for the cases that really need a hard stop — safety rules, one-way mistakes, red lines. Prefer a move; fall back to a ban only when the wrong move creates drift or bad state."""
+
+    section second_state_machine: "Do Not Build A Second State Machine On Top Of Rally"
+        """The most common porting mistake: porting a reducer-fed control plane from the source system. Prompts start depending on `waiting`, `review_mode`, `active_mode` gates computed by a Rally-side script."""
+
+        "Signs you are doing this:"
+
+        bullets signs:
+            "Declaring a `Prompt` input that only exists because Rally ran a per-turn script and appended computed JSON after the compiled agent home."
+            "Parsing `home:issue.md` into fields like `selected_mode`, `review_basis_missing`, or `last_turn_agent` and feeding those fields back into prompts."
+            "Teaching roles to 'read the runtime facts' when the truth is already in `home:issue.md`, the latest turn result, or a tool call."
+
+        "The Rally move:"
+
+        bullets moves:
+            "If the agent can read `home:issue.md` and the latest turn result directly, prefer that."
+            "Do not add a special mode gate just to restate what the issue and last turn already say."
+            "Rally does not support `runtime.prompt_input_command`. Expose runtime truth through files, setup scripts, tools, or `rally issue current`."
+
+    section deterministic_as_prompt: "Do Not Turn Deterministic Repo State Into Prompt State"
+        """Another tempting pattern: feed git or repo status back into the prompt as a JSON summary (current branch, head commit, dirty state, recent commits). It looks helpful. It is not the Rally move."""
+
+        "Signs:"
+
+        bullets signs:
+            "A per-turn script that turns `git status` into 'Demo Repo Facts'."
+            "A `Prompt` input that mirrors branch and commit state instead of calling a skill like `demo-git`."
+            "Grounding rules whitelisting summary keys like `demo_repo_status` or `current_branch` when the role can read the repo directly."
+
+        "The Rally move:"
+
+        bullets moves:
+            "Keep deterministic repo truth on deterministic surfaces."
+            "Use file inputs and skills for repo state."
+            "Do not feed git summaries into prompt context just because the source system used a reducer."
+
+    section notes_as_database: "Do Not Turn Notes Into A Tiny Database"
+        """Teaching agents to write a fenced YAML block with fields like `note_kind`, `review_mode`, `trigger_reason`, `publish_state`. A typed note protocol is another thing to keep in sync."""
+
+        "The Rally move:"
+
+        bullets moves:
+            "Keep notes readable first. `home:issue.md` is a shared readable ledger, not a shadow state store."
+            "Put route truth in final JSON."
+            "Put current work truth in the note plus the named current artifact."
+            "Do not invent note-local enums and ids unless Rally truly needs them."
+
+    section note_backed_reopen: "Do Not Put Required Typed Handoffs On The Note Target"
+        """A specific variation of the notes-as-database pattern: declaring `target: base.RallyIssueNoteAppend` on an output that a downstream agent's previous-turn input depends on. Rally refuses this at runtime — notes carry no declaration identity, so there is no way to prove which ledger block wrote which output."""
+
+        "The refusal message:"
+
+        code:
+            language: text
+            text: """Note-backed previous output reopen is not supported for
+`PreviousProducerHandoff`. ...
+"""
+
+        """The fix is to move the output to `target: File` with a `home:` path the flow owns. That path carries declaration identity and readback is exact.
+
+The guard lives in `src/rally/services/previous_turn_inputs.py:_is_note_backed_target`. It is deliberate. See `references/previous-turn-inputs.md` for the full shape."""
+
+    section old_harness_names: "Do Not Port The Old Harness Names"
+        """Names like `source_home`, `agent_configs.json`, or wrapper command choreography should not be carried over just because they were familiar. Rally owns `home:`, `flow.yaml`, and its own CLI. Rename to match."""
+
+    section two_config_planes: "Do Not Keep Two Live Config Planes"
+        """If `flow.yaml` owns capability truth (which it does — `allowed_skills`, `system_skills`, `allowed_mcps`), do not keep a second live allowlist file. Pick one owner."""
+
+    section overbuilt_mode_gates: "Do Not Overbuild Mode Gates"
+        """If the next agent can use `rally issue current` and open `home:issue.md` only when older history matters, do not invent a special `waiting`, `review_mode`, or `active_mode` gate to tell it what already happened."""
+
+    section review_as_prose: "Do Not Encode Review Work As Generic Agent Prose"
+        """If the lane's main job is review, model it as Doctrine review law. Reach for `review` or `review_family` first — declared subject, declared contract, declared basis checks, declared `on_accept` and `on_reject` behavior."""
+
+        "Avoid:"
+
+        bullets avoid:
+            "A giant critic workflow that re-explains review routing in prose."
+            "Lane-by-lane pass-fail logic spread across ordinary agent sections."
+            "Review behavior that lives mostly in note instructions instead of review law."
+
+    section repeat_shared_prose: "Do Not Repeat Shared Command Prose Locally"
+        """If Rally stdlib or a shared skill already teaches a command path, do not copy that command into every role home. Burns always-on prompt budget, and the copies drift."""
+
+    section hide_current_truth: "Do Not Hide Current Truth In Supporting Files"
+        """Support evidence can exist, but it should not compete with the one current artifact. Each lane points at one main current artifact or says plainly there is none yet."""
+
+    section hand_edit_readback: "Do Not Hand-Edit Generated Readback"
+        """Files under `flows/*/build/**` and `skills/**/build/**` are compiler-owned. Never hand-edit them. Re-emit from source via `rally run`, `rally resume`, or `ensure_flow_assets_built`."""
+
+    section migration_story: "Do Not Move Migration Story Into Runtime Prompts"
+        """Runtime prompts are for live behavior. Migration stories (what changed in v3.2.0, why we moved from X to Y) belong in dated notes and git history. Putting them in a role prompt guarantees stale context on every turn."""
+
+    section ban_instead_of_move: "Do Not Write The Rule As A Ban Instead Of A Move"
+        "Prefer:"
+
+        bullets prefer:
+            "`Read the ledger, open the current artifact, and continue the pass.`"
+            "`Leave one readable note with the pickup summary.`"
+
+        "Use a ban only when the line is a real guardrail:"
+
+        bullets bans:
+            "`Do not add a second handoff artifact.`"
+            "`Do not hand-edit generated readback.`"
+
+    section bloated_allowed_skills: "Do Not Bloat allowed_skills"
+        """Every skill in `allowed_skills` burns always-on prompt budget. Add a skill only if the agent will actually call it. A long allowlist is a smell — either the role is too broad, or most of those skills are dead."""
+
+    section grep_based_tests: "Do Not Write Grep-Based Tests"
+        """Tests that grep a prompt for a substring to prove the rule is wired fail as soon as anyone rephrases the prompt. Prefer typed proof: assert that `flow.yaml` lists the skill, that the emitted `final_output.contract.json` carries the field, that `ensure_flow_assets_built` emits the expected schema. See `tests/unit/test_flow_loader.py` for the real shape."""
+
+    section copy_paste_law: "Do Not Copy-Paste Shared Law"
+        """If stdlib teaches a rule (turn-result shape, memory discipline, issue note format), do not copy it into a flow-shared prompt or per-role prompt. One owner. Point at the stdlib declaration by name and let Doctrine import resolution handle it."""
+
+    section porting_checklist: "The Porting Checklist"
+        "Use this before you call a port 'done':"
+
+        sequence steps:
+            "`flow.yaml` owns the runtime truth."
+            "`.prompt` source owns authored instructions."
+            "Rally stdlib owns shared Rally command law."
+            "Flow-local setup owns bootstrap behavior."
+            "Reusable procedures live in skills."
+            "`home:issue.md` is the only shared run ledger."
+            "Each lane leaves one current artifact or says there is none."
+            "Generated readback was re-emitted, not hand-edited."
+            "The smallest useful proof ran."
+            "Any real behavior loss is either fixed or named plainly."
+
+    section related: "Related References"
+        bullets refs:
+            "`references/principles.md`: the rules every anti-pattern violates."
+            "`references/flow-authoring.md`: where runtime truth lives."
+            "`references/previous-turn-inputs.md`: the note-backed guard in detail."
+            "`references/skills-and-scoping.md`: why `allowed_skills` is a hard budget."
+            "`docs/RALLY_PORTING_GUIDE.md`: canonical prose home with full before-and-after examples."
+
+        """**Load when:** the author is porting an existing system, reviewing a port for drift, or explaining why Rally refused a familiar-looking pattern."""

@@ -1,0 +1,97 @@
+document TurnResultsAndRouting: "Turn Results And Routing"
+    """This reference owns the turn-result contract: the four kinds, the five required base keys, the optional `agent_issues` field, the route-selector shape, and the review verdict contract. The canonical prose home is `docs/TURN_RESULT_CONTRACT.md`. The stdlib shape lives at `stdlib/rally/prompts/rally/turn_results/AGENTS.prompt`."""
+
+    section four_kinds: "The Four Kinds"
+        "Every non-review turn emits one final JSON object. The `kind` field names one of four values:"
+
+        markdown:
+            text: """| Kind | Meaning | Required extra keys |
+| --- | --- | --- |
+| `handoff` | Pass control to another agent in the same flow. | `next_owner` (route selector). |
+| `done` | The flow is complete on this run. | `summary` (short prose). |
+| `blocker` | Cannot proceed. Human or upstream needs to act. | `reason` (short prose). |
+| `sleep` | Pause this agent for a fixed duration, then resume. | `reason` and `sleep_duration_seconds >= 1`. |
+"""
+
+    section five_base_keys: "The Five Required Base Keys"
+        """Every non-review turn result carries the same five top-level keys. Rally validates their presence. Missing any one is a hard parse error.
+
+The five keys are declared in `stdlib/rally/prompts/rally/turn_results/AGENTS.prompt` under `BaseRallyTurnResultSchema`:"""
+
+        bullets keys:
+            "`kind` — one of `handoff`, `done`, `blocker`, `sleep`."
+            "`next_owner` — route selector. `null` on `done`, `blocker`, `sleep`."
+            "`reason` — short prose. Required on `blocker` and `sleep`. `null` on `handoff` and `done`."
+            "`sleep_duration_seconds` — int ≥ 1 on `sleep`. `null` otherwise."
+            "`summary` — short prose. Required on `done`. Optional elsewhere."
+
+        """Domain fields (`revision_goal`, `reviewed_artifact`, whatever your agent produces) extend the schema beyond these five. They go inside `summary` only when they are free-form prose; structured extensions go as typed sibling fields on the schema."""
+
+    section agent_issues: "The Optional agent_issues Field"
+        """`agent_issues` is passive diagnostics. It is a free-form string or `"none"`. It does not alter routing or the turn's kind. Rally collects it into the run log for later inspection.
+
+Use `agent_issues` when the agent wants to surface a non-blocking concern (a warning, a doubt, a suggestion for the operator) without changing control flow. Do not use it for anything load-bearing."""
+
+    section route_field: "Route Field (next_owner)"
+        """On `handoff`, `next_owner` names the next agent by its short name — the bare name from the `flow.yaml` schema, not a dotted locator. The route-selector shape is declared in `stdlib/rally/prompts/rally/turn_results/AGENTS.prompt` as `route field next_route:`.
+
+Example:"""
+
+        code:
+            language: text
+            text: """route field next_route: "Next Route"
+    architect_reviewer: "Send the issue to ArchitectReviewer." -> ArchitectReviewer
+    nullable
+    note: "Use null only when the turn blocks or sleeps."
+"""
+
+        "The target of each route (`ArchitectReviewer`) is the compiled Doctrine agent name. Rally's contract loader validates that each short name maps to one agent in the flow."
+
+    section review_verdict: "Review Verdict Contract"
+        """Review turns parse differently. The schema is `BaseRallyReviewFinalResponseSchema` in `stdlib/rally/prompts/rally/review_results/AGENTS.prompt`. A review turn result carries:"""
+
+        bullets keys:
+            "`verdict` — `accept` or `changes_requested`."
+            "`reviewed_artifact` — what the reviewer looked at."
+            "`analysis_performed` — short prose naming what checks ran."
+            "`findings_first` — the readback Rally surfaces next."
+            "`current_artifact` — what the next owner must work from."
+            "`failure_detail.blocked_gate`, `failure_detail.failing_gates` — only when `verdict` is `changes_requested`."
+            "`next_owner` — short-name route selector, like non-review turns."
+
+        """Rally's runtime exposes reviewed state as `LoadedReviewTruth`. Downstream agents see `reviewed_artifact`, `analysis`, `current_artifact`, `next_owner`, and any blocked / failing gates — all typed, all loaded from the review JSON."""
+
+    section optional_local_override: "Optional Local Override Pattern"
+        """When a specific agent needs a narrower schema (for example, one where `next_owner` is never null), override the base schema in the flow's shared prompt and point the agent's `final_output` at the override.
+
+The base shape in `stdlib/rally/prompts/rally/turn_results/AGENTS.prompt` uses `inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}`. A flow-local override can tighten any of those, add fields, or constrain the route field.
+
+See `flows/poem_loop/prompts/AGENTS.prompt` for `MuseTurnResultSchema`, `PoemWriterTurnResultSchema`, and `PoemCriticTurnResultSchema` — three role-specific overrides that all inherit from the stdlib base."""
+
+    section validation: "What Rally Validates"
+        bullets checks:
+            "The five base keys are present on non-review turns."
+            "`kind` is one of the four allowed values."
+            "`next_owner` is a short name that maps to exactly one agent in this flow."
+            "`sleep_duration_seconds` is ≥ 1 on `sleep`, null otherwise."
+            "Review turns parse the verdict contract into `LoadedReviewTruth`."
+            "Rally rejects a flow whose `final_output` clause points at a schema that does not inherit the base."
+
+    section common_mistakes: "Common Mistakes"
+        bullets mistakes:
+            "Using a dotted locator (`flows.myflow.agents.architect_reviewer`) in `next_owner`. Use the short name `architect_reviewer` instead."
+            "Putting control state into `summary`. `summary` is human-readable prose; Rally does not parse it."
+            "Writing `next_owner: null` on a `handoff`. Use a valid short name."
+            "Writing `next_owner: \"some_agent\"` on `done`. Leave it `null`."
+            "Adding a sixth required base key on every agent. Put domain fields on the agent's local override schema instead."
+
+    section related: "Related References"
+        bullets refs:
+            "`references/principles.md`: notes-are-advisory, final-JSON-is-control."
+            "`references/flow-authoring.md`: how `final_output` is declared on an `agent` block."
+            "`references/previous-turn-inputs.md`: how downstream agents read the previous turn's JSON."
+            "`docs/TURN_RESULT_CONTRACT.md`: canonical prose reference."
+            "`stdlib/rally/prompts/rally/turn_results/AGENTS.prompt`: the source of the five base keys."
+            "`stdlib/rally/prompts/rally/review_results/AGENTS.prompt`: the review verdict contract."
+
+        """**Load when:** the author is shaping a turn's final JSON, wiring a route field, or adding a reviewer agent."""

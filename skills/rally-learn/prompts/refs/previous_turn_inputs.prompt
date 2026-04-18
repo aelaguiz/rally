@@ -1,0 +1,75 @@
+document PreviousTurnInputs: "Previous Turn Inputs"
+    """This reference owns how downstream agents see upstream work: the three supported previous-turn targets, the note-backed-reopen guard, and the immediate-prior-turn-only rule. The runtime source is `src/rally/services/previous_turn_inputs.py`. Previous-turn inputs are materialized into `runs/active/<ID>/home/sessions/<slug>/turn-<NNN>/previous_turn_inputs.md` before the turn starts."""
+
+    section mental_model: "Mental Model"
+        """Rally writes a per-turn `previous_turn_inputs.md` file every time an agent takes a turn. The file contains whatever the flow declared the agent needs from earlier work. The agent reads it at the top of its turn. Rally enforces that every declared previous-turn input has an identifiable source on disk.
+
+Only the immediate prior turn is reopenable. If you need state older than one turn, load it through a file the earlier turn wrote, not through previous-turn-input declarations."""
+
+    section three_targets: "The Three Supported Targets"
+        "Rally supports exactly three shapes for a previous-turn input source. All three live in the stdlib base under `base.RallyPreviousTurnOutput`:"
+
+        markdown:
+            text: """| Target shape | When to use | Example |
+| --- | --- | --- |
+| Exact prior final JSON | The downstream agent needs the full typed turn result the upstream agent produced. | `source: base.RallyPreviousTurnOutput` with no `output:` clause. |
+| File-backed structured JSON | The downstream agent needs one specific declared `output` the upstream agent wrote to a `home:` file. | `source: base.RallyPreviousTurnOutput` with `output: MyTypedOutput`. |
+| File-backed readable text | The downstream agent needs readable prose (a `MarkdownDocument`) the upstream agent wrote. | `source: base.RallyPreviousTurnOutput` pointing at a `MarkdownDocument` with a `home:` file target. |
+"""
+
+        "In every case, the upstream `output` declaration must carry `target: File` with a `home:` path the flow owns. That file is what Rally reopens on the next turn."
+
+    section required_vs_advisory: "Required vs Advisory"
+        """Every previous-turn input declaration carries a `requirement:` clause:"""
+
+        bullets requirements:
+            "`requirement: Required` — Rally refuses to start the turn if the declared source cannot be resolved. The downstream agent depends on the content."
+            "`requirement: Advisory` — Rally loads the source when it can. If unavailable, the turn starts anyway and the agent sees the fact it was unavailable."
+
+        "Use `Required` only when the downstream agent truly cannot work without the content. Every `Required` link is a hard dependency that can block a run."
+
+    section note_backed_guard: "The Note-Backed-Reopen Guard"
+        """Rally refuses to reopen a previous-turn input whose target is `base.RallyIssueNoteAppend` (a note). The refusal is loud and permanent: notes carry no declaration identity and cannot be typed-reopened.
+
+The right shape for any Required typed handoff is `target: File` with a `home:` path the flow owns. See `flows/software_engineering_demo/prompts/roles/` for concrete examples of file-backed handoff outputs.
+
+If you catch yourself writing `target: base.RallyIssueNoteAppend` on an output that a downstream agent will depend on, stop and switch to `target: File`. Notes stay advisory; file-backed outputs carry identity."""
+
+    section immediate_prior_turn: "Immediate Prior Turn Only"
+        """Reopen is limited to the immediate prior turn — the one just before the turn Rally is about to start. If you need state from an earlier turn, the upstream agent must have written that state to a stable `home:` file on its own turn, and the downstream agent must read from that file directly (not through a previous-turn-input declaration).
+
+This rule keeps the previous-turn-input contract simple and the `previous_turn_inputs.md` file small. Deep history belongs in durable files or in memory (`rally-memory`)."""
+
+    section shape_examples: "Concrete Shape Examples"
+        "One upstream agent declares a file-backed output:"
+
+        code:
+            language: text
+            text: """output PoemDraft[base.RallyManagedOutput]: "Poem Draft"
+    target: File
+        home:poems/draft.md
+    requirement: Required
+    shape: MarkdownDocument
+"""
+
+        "The downstream agent's previous-turn input declaration points at the output by symbol:"
+
+        code:
+            language: text
+            text: """input PreviousPoemDraft: "Previous Poem Draft"
+    source: base.RallyPreviousTurnOutput
+        output: PoemDraft
+    requirement: Required
+    "Rebuild the poem from the prior draft."
+"""
+
+        """Rally reads `home:poems/draft.md` on the next turn, renders it into `previous_turn_inputs.md`, and hands it to the downstream agent."""
+
+    section related: "Related References"
+        bullets refs:
+            "`references/principles.md`: every-typed-handoff-must-use-a-file."
+            "`references/turn-results-and-routing.md`: what the prior final JSON looks like."
+            "`references/flow-authoring.md`: how `inputs:` sits on an `agent` block."
+            "`src/rally/services/previous_turn_inputs.py`: the runtime source and the note-backed guard."
+
+        """**Load when:** the author is wiring a downstream agent to read upstream work, or debugging a note-backed-reopen refusal."""

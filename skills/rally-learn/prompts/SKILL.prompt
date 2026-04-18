@@ -1,0 +1,74 @@
+skill package RallyLearn: "Rally Learn"
+    metadata:
+        name: "rally-learn"
+        description: "Teach an agent how to author Rally end-to-end: the twelve principles that ground every choice, the flow.yaml schema, the turn-result contract, how to scope skills across four tiers, how previous-turn inputs flow between agents, how runtime operations behave (detach, resume, status, stop, watch), how memory works, how build and emit produce the compiled tree, how release classes map to version bumps, which porting anti-patterns keep recurring, and how to verify and ship. Use when a user asks how to write a Rally flow, agent, turn result, skill, or memory entry; how to port an existing agent system into Rally; how to onboard into the repo; or how to review a Rally change with the right mental model. Not for running an audit on existing code, not for resolving Doctrine compile errors (that is the Doctrine side), and not for adapter or runtime implementation work."
+        version: "1.0.0"
+        license: "MIT"
+    emit:
+        "references/principles.md": Principles
+        "references/getting-started.md": GettingStarted
+        "references/flow-authoring.md": FlowAuthoring
+        "references/skills-and-scoping.md": SkillsAndScoping
+        "references/turn-results-and-routing.md": TurnResultsAndRouting
+        "references/previous-turn-inputs.md": PreviousTurnInputs
+        "references/runtime-operations.md": RuntimeOperations
+        "references/memory.md": Memory
+        "references/build-and-emit.md": BuildAndEmit
+        "references/release-and-versioning.md": ReleaseAndVersioning
+        "references/porting-anti-patterns.md": PortingAntiPatterns
+        "references/verify-and-ship.md": VerifyAndShip
+        "references/authoring-patterns.md": AuthoringPatterns
+    "Teach Rally authoring end-to-end. Start with the twelve principles, pick the one surface the author is about to write, load the matching reference, cite a real path from `flows/software_engineering_demo/`, `flows/poem_loop/`, `stdlib/rally/`, or `src/rally/`, then guide a minimal working version. Always keep the filesystem-first rule, the thin-harness rule, and the four-truth-surface rule in front of every recommendation."
+    when_to_use: "When to use"
+        "Teach someone how to write a fresh Rally flow, agent, turn result, review, or skill from scratch."
+        "Port an existing agent system into Rally and explain which surface owns which job."
+        "Onboard a new teammate into this repo by walking them from principles to a verified first run."
+        "Review a Rally change by explaining why a surface is the right or wrong choice, with a real path to compare against."
+    when_not_to_use: "When not to use"
+        "Do not use this to audit an existing flow or package. A dedicated lint skill is the right tool for that."
+        "Do not use this to explain Doctrine compile errors (E101, E280, E289, E292, E314, E315, E477, E502). Those live on the Doctrine side."
+        "Do not use this to design adapter internals, runtime detach behavior, or lock-file contention. Rally sits on the authoring side of that line; adapter and runtime work lives in `src/rally/`."
+        "Do not use this to propose unshipped features. Teach only what lives in the repo today."
+    non_negotiables: "Non-negotiables"
+        "Keep the filesystem-first rule in front of every recommendation. State lives in files, not prompts."
+        "Keep the thin-harness rule in front of every recommendation. If a rule belongs in the harness, say so plainly and do not teach it here."
+        "Prefer typed surfaces (`output schema`, `route field`, `flow.yaml` fields) over prose for exact truth."
+        "Treat always-on prompt budget as a hard constraint. Every line the author ships on an allowlisted skill or in a shared prompt burns budget on every turn."
+        "Always cite a real path from `flows/software_engineering_demo/`, `flows/poem_loop/`, `stdlib/rally/`, `skills/rally-kernel/`, `skills/rally-memory/`, or `src/rally/` when teaching a construct. Do not invent snippets that are not in the shipped repo."
+        "Load only the reference the author's surface needs. Do not dump every reference at once."
+        "Stay read-only unless the author explicitly asks for an edit. Offer minimal working code when asked; never rewrite unrelated code."
+        "Teach plain language at about a 7th grade reading level. Keep Rally and Doctrine terms exact, but simplify the sentences around them."
+        "Fail loud. If the author is about to write something Rally will refuse at load time (note-backed reopen, unknown owner, missing `system_skills`, reserved `path:` key), say so and point at the matching rule in `references/flow-authoring.md`."
+    first_move: "First move"
+        "Ask which surface the author is writing: fresh flow, new agent, turn result, review, skill, memory entry, or release."
+        "If unclear, load `references/principles.md` first and ask the author to pick one surface from the reference map below."
+        "Match the surface to exactly one reference before proposing code."
+    workflow: "Workflow"
+        "Step 1 — Read principles. Load `references/principles.md` to ground every decision that follows."
+        "Step 2 — Pick the surface. Match the ask to one of: flow authoring, turn results, skills and scoping, previous-turn inputs, runtime operations, memory, build and emit, release and versioning, porting, verify."
+        "Step 3 — Load the matching reference. Read only that one file before proposing code."
+        "Step 4 — Cite a real path. Open the example at the path the reference points at. Copy its shape, not its content."
+        "Step 5 — Author minimal code. Use the smallest set of declarations that earns the job. Prefer explicit typed declarations over magic."
+        "Step 6 — Verify. Load `references/verify-and-ship.md` and run the matching `make` target for the surface that changed."
+        "Step 7 — Ship. If public compatibility changed, update `docs/VERSIONING.md` and `CHANGELOG.md` per the policy in `references/release-and-versioning.md`."
+    output_expectations: "Output expectations"
+        "Lead with the one-sentence recommendation before showing any code."
+        "Cite every claim about a construct with at least one real path from the shipped repo."
+        "Show the smallest working snippet that demonstrates the construct. Do not dump a full file unless the author asked for one."
+        "When the author is stuck between two surfaces, say which one to use and why, in one sentence, before showing either."
+        "If the author is about to push runtime behavior into Rally authoring, stop and explain the thin-harness rule before proceeding."
+        "End every teaching turn with the exact verify command the author should run next."
+    reference_map: "Reference map"
+        "`references/principles.md` owns the filesystem-first rule, the thin-harness rule, the four-truth-surface rule, the notes-are-advisory rule, and the twelve principles. Load this first, every time."
+        "`references/getting-started.md` owns the minimal end-to-end path: install Rally, scaffold a workspace, write a first flow, run it, inspect the run on disk. Load when the author is new to Rally."
+        "`references/flow-authoring.md` owns `flow.yaml` schema, `AGENTS.prompt` shape, path schemes (`home:`, `workspace:`, `host:`, `flow:`), per-agent required fields (`allowed_skills`, `system_skills`, `allowed_mcps`), reserved keys, and `runtime.env` precedence. Load when the author is wiring a flow."
+        "`references/skills-and-scoping.md` owns the four tiers (mandatory, system, flow-local, external), the allowlist rule, external-root registration, and reserved aliases. Load when the author is adding or binding a skill."
+        "`references/turn-results-and-routing.md` owns the four kinds (`handoff`, `done`, `blocker`, `sleep`), the five required base keys, the optional `agent_issues` field, the route-selector shape, and the review verdict contract. Load when the author is shaping a turn's typed answer."
+        "`references/previous-turn-inputs.md` owns the three supported previous-turn targets (prior final JSON, file-backed structured JSON, file-backed readable text) and the rule that notes carry no declaration identity. Load when the author is wiring downstream agents that read upstream work."
+        "`references/runtime-operations.md` owns the CLI (`rally run`, `rally resume`, `rally status`, `rally stop`, `rally watch`, `rally issue`, `rally memory`), the per-flow lock, `--step`, `--detach`, heartbeat, and reconciled status. Load when the author is operating a run or teaching someone how Rally behaves under the hood."
+        "`references/memory.md` owns the opt-in `rally-memory` stdlib skill, the markdown source of truth, the four subcommands (`search`, `use`, `save`, `refresh`), and the rule that memory never carries control truth. Load when the author is turning on or authoring against memory."
+        "`references/build-and-emit.md` owns `ensure_flow_assets_built`, the pyproject emit-target shape, the `build/` layout (`AGENTS.md`, `final_output.contract.json`, `schemas/*.schema.json`), and the rule that `build/` is compiler-owned. Load when the author is configuring emission or debugging a rebuild."
+        "`references/release-and-versioning.md` owns the four release classes (internal, additive, soft-deprecated, breaking), the version-line separation, the Doctrine-first publish order, and the CHANGELOG shape. Load before cutting a release."
+        "`references/porting-anti-patterns.md` owns the recurring mistakes that keep biting new Rally authors (second state machine, notes-as-database, bloated `allowed_skills`, grep-based tests, copy-paste shared law). Load when the author is porting an existing system."
+        "`references/verify-and-ship.md` owns the proof-path table, the `make verify` targets, the emitted-readback auditing rule, and the test-shape rule. Load before every commit."
+        "`references/authoring-patterns.md` owns the task-first chooser that maps a job to one surface, plus composition tips. Load when the author has a real job in hand and needs to pick between several plausible surfaces."

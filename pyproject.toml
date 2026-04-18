@@ -96,6 +96,16 @@ name = "demo-git"
 entrypoint = "skills/demo-git/prompts/SKILL.prompt"
 output_dir = "skills/demo-git/build"
 
+[[tool.doctrine.emit.targets]]
+name = "rally_learn_skill"
+entrypoint = "skills/rally-learn/prompts/SKILL.prompt"
+output_dir = "skills/rally-learn/build"
+
+[[tool.doctrine.emit.targets]]
+name = "rally_learn_public_skill"
+entrypoint = "skills/rally-learn/prompts/SKILL.prompt"
+output_dir = "skills/.curated/rally-learn"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

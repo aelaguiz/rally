@@ -149,7 +149,7 @@ output PoemWriterTurnResult[turn_results.BaseRallyTurnResult]: "Poem Writer Turn
 
 
 abstract agent PoemLoopRole[base.RallyManagedBaseAgent]:
-    inherit {rally_contract, read_first, how_to_take_a_turn}
+    inherit {rally_contract, read_first, shared_rules}
     system_context: PoemLoopSystemContext
     ground_truth: IssueLedgerGroundTruth
     primary_path: PrimaryPathRules
@@ -157,7 +157,7 @@ abstract agent PoemLoopRole[base.RallyManagedBaseAgent]:
 
 agent Muse[PoemLoopRole]:
     role: "Core job: turn the brief or latest critic review into one clear next draft direction for PoemWriter."
-    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, ground_truth, primary_path}
+    inherit {rally_contract, read_first, shared_rules, system_context, ground_truth, primary_path}
     your_job: MuseJob
     quality_bar: MuseQualityBar
     inputs: MuseInputs
@@ -174,7 +174,7 @@ agent Muse[PoemLoopRole]:
 
 agent PoemWriter[PoemLoopRole]:
     role: "Core job: turn Muse guidance into the requested poem and hand it to PoemCritic."
-    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, ground_truth, primary_path}
+    inherit {rally_contract, read_first, shared_rules, system_context, ground_truth, primary_path}
     your_job: PoemWriterJob
     quality_bar: PoemWriterQualityBar
     inputs: WriterInputs
@@ -195,7 +195,7 @@ agent PoemWriter[PoemLoopRole]:
 
 agent PoemCritic[PoemLoopRole]:
     role: "Core job: judge the poem with a real review, hand it back when it needs work, and finish only when it is ready."
-    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, ground_truth, primary_path}
+    inherit {rally_contract, read_first, shared_rules, system_context, ground_truth, primary_path}
     your_job: PoemCriticJob
     quality_bar: PoemCriticQualityBar
     review: PoemReview

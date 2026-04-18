@@ -1,0 +1,113 @@
+document Principles: "Principles"
+    """This file is the first thing the `rally-learn` skill loads. It teaches the twelve principles that ground every other reference in this package. Every recommendation in later references descends from one of these rules. If a choice in Rally feels hard, the answer is usually in here.
+
+The canonical prose home for these principles is `docs/RALLY_PRINCIPLES.md` in the Rally repo. The deeper constitutional design sits in `docs/RALLY_MASTER_DESIGN.md`. This file is the teaching version — short, direct, with one concrete move per rule."""
+
+    section core_split: "The Core Split"
+        """Rally is a filesystem-first agent harness. Doctrine is the authoring language underneath. The split is load-bearing. Rally's job is to materialize `flow.yaml`, wire Doctrine-compiled assets, run adapters, and keep run state on disk. Doctrine's job is to compile the authored prompts and contracts that Rally runs. If a rule is really about runtime state — scheduling, locking, tool orchestration, detach — it belongs in Rally. If it is about how an agent thinks about its job, it belongs in authored Doctrine."""
+
+    section twelve_principles: "The Twelve Principles"
+        section p1: "1. Filesystem Is The Source Of Truth"
+            """State lives in `flow.yaml`, in files under `runs/`, and in compiled artifacts under `build/`. Prompts are not state. If a reader cannot reconstruct the run by reading the filesystem, Rally has failed you — or you have written state where state does not belong.
+
+This shows up as the four runtime truth surfaces: `flow.yaml`, `home:issue.md`, the latest turn result JSON, and the compiled `AGENTS.md` + `final_output.contract.json` + `schemas/*.schema.json` pair under `flows/<flow>/build/agents/<slug>/`.
+
+One move to make: when you are about to encode a piece of state in the agent's prompt, stop and ask where on disk it should live instead."""
+
+        section p2: "2. The Harness Is Thin; Flows Do The Thinking"
+            """Rally does not reason about your domain. It does not decide what a turn means. It loads `flow.yaml`, builds the agent home, runs the adapter, parses the final JSON, and moves on. Every decision — what to output, whom to route to, when to block or sleep — belongs to the agent.
+
+This shows up in `src/rally/services/turn_runner.py` and the lack of any domain-specific branches in the runtime. There is no "mode" layer in Rally. There is only the turn result.
+
+One move to make: when you feel tempted to add a Rally-level policy ("if the agent says X, do Y"), rewrite that rule as an agent instruction instead."""
+
+        section p3: "3. Notes Are Advisory; Final JSON Is Control"
+            """`home:issue.md` is a shared run ledger for breadcrumbs, scratch work, and context a later reader might need. Turn results — the parsed JSON Rally reads after every turn — are the control surface. Rally routes on the JSON. It does not route on notes.
+
+This shows up in `skills/rally-kernel/prompts/SKILL.prompt` (notes are explicitly advisory) and in the Required / Advisory distinction on previous-turn-input declarations.
+
+One move to make: if you catch yourself writing "the next agent will read the note and know what to do," promote that note into a typed output with a file target instead."""
+
+        section p4: "4. Every Typed Handoff Must Use A File"
+            """When one agent hands Required output to the next, that handoff must use `target: File` with a `home:` path the flow owns. Notes carry no declaration identity. Rally refuses to reopen a note-backed Required input on the next turn.
+
+This shows up in `src/rally/services/previous_turn_inputs.py` — the guard raises a clear error if the previous-turn target is a note. The right shape is modeled in `flows/software_engineering_demo/prompts/roles/architect.prompt`.
+
+One move to make: every time you add an `input` with `requirement: Required`, confirm its source is a file-backed `target: File` path, not `base.RallyIssueNoteAppend`."""
+
+        section p5: "5. Do Not Repeat Law Across Layers"
+            """If `stdlib/rally/prompts/rally/` teaches a rule, do not copy it into flow-shared prompts or per-role prompts. Pick one owner per rule: stdlib, flow-shared, or role-specific. Every copy burns always-on prompt budget and creates drift the next time the rule changes.
+
+This shows up across every Rally flow. The rule lives in `stdlib/rally/prompts/rally/base_agent/AGENTS.prompt`. Flows inherit from it via `import rally.base_agent as base` and never paraphrase.
+
+One move to make: when you notice the same sentence in two layers, delete the lower copy and reference the higher one."""
+
+        section p6: "6. Export What You Import; Import What You Export"
+            """Under Doctrine v4, a flow is one namespace rooted at the directory holding its `AGENTS.prompt` or `SKILL.prompt`. Same-flow symbols resolve by bare name — no `import` needed. Cross-flow symbols need both `export` on the declaration and `import` in the consumer.
+
+This is the reason stdlib modules under `stdlib/rally/prompts/rally/` each live in their own directory with `AGENTS.prompt` at root. The cross-flow-consumed symbols carry `export`.
+
+One move to make: when you add a new cross-flow declaration in stdlib, put `export` on it before you reach for `import` on the other side."""
+
+        section p7: "7. Cite A Real Path When You Teach"
+            """Every claim about Rally behavior should anchor to a real file: `src/rally/services/...`, `docs/RALLY_*.md`, `flows/software_engineering_demo/...`, `stdlib/rally/prompts/rally/...`, or `skills/rally-*/`. Vague guidance ("Rally does X somewhere") produces "go read the code" pushback and trains authors to distrust the skill.
+
+This is why the reference map in `SKILL.md` names a file for every rule, and why examples in later references always include a path.
+
+One move to make: before you finish a sentence about Rally behavior, name the file that proves it."""
+
+        section p8: "8. When Rally Refuses, Re-Author The Surface"
+            """When Rally's loader or runtime refuses ("note-backed reopen not supported", "unknown owner", "missing `system_skills`", "active run already holds the lock"), it is not a bug to work around. It is a constraint that keeps the four truth surfaces honest. Fix the authored surface. Do not bypass the guard.
+
+This shows up in every loader-level validator in `src/rally/services/`. The error messages are the teaching surface; they point at the right fix.
+
+One move to make: when Rally rejects your flow, read the error out loud, find the surface it named, and fix that surface. Do not patch Rally itself unless you are sure the guard is wrong."""
+
+        section p9: "9. Skills Are Allowlists, Not Suggestion Boxes"
+            """Every skill in an agent's `allowed_skills:` list is validated at load time and burns always-on prompt budget. Adding "related" skills the agent will not actually call is pure drift. The rule is simple: add a skill to an agent only if that agent will call it.
+
+This shows up in `src/rally/services/agent_skill_validator.py` (the allowlist check) and in `docs/SKILL_SCOPING.md` (the four tiers).
+
+One move to make: when you add a skill to an agent, name the exact moment in the turn when that agent will call it. If you cannot, remove it."""
+
+        section p10: "10. One Active Run Per Flow"
+            """Rally enforces one active run per flow with a per-flow lock at `runs/locks/<FLOW_CODE>.lock`. The lock survives fork and releases on process death. Two instances of the same flow cannot run at once, by design.
+
+This shows up in `src/rally/services/run_lock.py` and in the active-run refusal messages Rally produces when a second run tries to start.
+
+One move to make: if you need parallel runs, make two flows. Do not try to defeat the lock."""
+
+        section p11: "11. Generated Readback Is Compiler-Owned"
+            """Files under `build/**` — the emitted `AGENTS.md`, `final_output.contract.json`, `schemas/*.schema.json` — are produced by Doctrine emit. They are not hand-editable. Re-emit from source.
+
+This shows up in `src/rally/services/flow_build.py:ensure_flow_assets_built`. `rally run` and `rally resume` call this before loading, so most authors never need to emit by hand.
+
+One move to make: if you find yourself about to edit a file under `build/`, stop and edit the matching `.prompt` in `prompts/` instead."""
+
+        section p12: "12. Memory Is Durable Context, Not Control"
+            """The `rally-memory` system skill stores agent observations across runs. It is searchable, durable, and per-agent-slug. It never carries control truth — no `done`, no `blocker`, no `sleep_duration_seconds`, no routing decision. Those live in turn results, on the current turn.
+
+This shows up in `skills/rally-memory/prompts/SKILL.prompt` and in `docs/RALLY_MEMORY.md`. The memory CLI commands (`search`, `use`, `save`, `refresh`) never touch the current turn's control surface.
+
+One move to make: when you feel tempted to save a pending action to memory, stop — the turn result is the right place for pending actions."""
+
+    section cheat_sheet: "Do / Do Not Cheat Sheet"
+        "Do:"
+        bullets do:
+            "Keep state on disk in the four truth surfaces."
+            "Keep Rally thin. Put domain thinking in the agent."
+            "Use `target: File` for every Required handoff."
+            "Cite one real path for every rule you teach."
+            "Allowlist only the skills an agent will actually call."
+            "Respect the per-flow lock."
+
+        "Do not:"
+        bullets dont:
+            "Encode state in prompts when it belongs on disk."
+            "Add a Rally-level policy layer for domain decisions."
+            "Use notes for typed handoffs."
+            "Hand-edit anything under `build/`."
+            "Bloat `allowed_skills` with skills the agent never calls."
+            "Work around Rally refusals instead of re-authoring the surface."
+
+        """**Load when:** the author starts any Rally task, is unsure which surface fits, or is about to push runtime behavior into authored doctrine."""

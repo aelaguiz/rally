@@ -1,0 +1,100 @@
+document VerifyAndShip: "Verify And Ship"
+    """This reference owns the proof path: which `make` target to run for which change, the Definition of Done before a commit, the emitted-readback audit rule, and the test shape Rally expects. The canonical prose home is `/Users/aelaguiz/workspace/rally/AGENTS.md` plus the per-target help text in the `Makefile`."""
+
+    section proof_path: "Proof Path Table"
+        "Run the narrowest target that proves the surface you changed."
+
+        markdown:
+            text: """| Command | When to run it |
+| --- | --- |
+| `uv sync --dev` | After pulling new code or adding a Python dep. Syncs the locked env. |
+| `npm ci` | Once per checkout. Installs the pinned `skills` CLI under `node_modules/`. |
+| `make setup` | Runs `uv sync --dev` and `npm ci` together. The normal entry point for a fresh clone. |
+| `make emit` | Compile flow and skill bundles. Run after any `.prompt` source change. |
+| `make skills` | Emit the public `rally-learn` tree and install it via the pinned `npx skills` CLI. |
+| `make tests` | Run the Rally unit suite (also re-emits first). |
+| `make verify-skill-install` | Prove the shipped `rally-learn` public tree matches a fresh emit. |
+| `make verify-package` | Prove the built wheel and sdist install cleanly in fresh temp envs. Includes `verify-skill-install`. |
+| `make verify` | The broader release proof: release-flow tests, package-release tests, full unit suite, `verify-package`, packaged-install integration test. |
+"""
+
+        "Rules:"
+        bullets rules:
+            "Run the narrowest command that proves the surface you changed."
+            "Run `make verify` before you cut a public release."
+            "If a dep is missing or the env cannot run a check, say that plainly instead of skipping."
+
+    section definition_of_done: "Definition Of Done"
+        "Every change ships with these points confirmed before you commit."
+
+        bullets items:
+            "Ran the relevant verify command for the surface you changed."
+            "Source, emitted tree, docs, and contributor instructions are aligned."
+            "Re-ran `make emit` if `.prompt` source changed. The emitted tree under `build/` must match source."
+            "If public compatibility changed, updated `docs/VERSIONING.md` and `CHANGELOG.md` per `references/release-and-versioning.md`."
+            "If a shipped first-party skill's source changed, re-emitted it. The public install tree must match source."
+            "Updated any `home:` path convention, turn-result field, or allowlist that this change touched."
+
+    section emitted_readback: "Emitted Readback Is Compiler-Owned"
+        """Files under `flows/*/build/**` and `skills/**/build/**` are produced by Doctrine emit. Do not hand-edit them. The rule is enforced by review, not by the filesystem — but the next emit silently overwrites the hand-edit, so the drift surfaces later as a mysterious bug."""
+
+        "When readback drifts from what you expect:"
+
+        sequence steps:
+            "Read the source `.prompt` file. The source is the truth."
+            "Re-emit: `make emit` (or let `rally run` / `rally resume` rebuild implicitly)."
+            "Diff the emitted tree. If it now matches, you had drift; if it still does not, the source itself is wrong."
+            "Never patch the emitted file. Fix the source and re-emit."
+
+        """Rally gitignores `flows/*/build/` and `skills/*/build/` so the source stays the shipped truth. Two first-party skill public trees (`skills/rally-kernel/build/SKILL.md`, `skills/rally-memory/build/SKILL.md`) are tracked because they ship as installed wheel assets; re-emit them via `make emit` before release."""
+
+    section test_shape: "The Test Shape Rally Expects"
+        """Rally tests live under `tests/unit/` (fast, pure) and `tests/integration/` (slow, real filesystem / real install). Prefer typed proof over prose proof."""
+
+        bullets shape:
+            "Assert on typed structure (`flow.yaml` loader output, `final_output.contract.json` fields, the emitted schema files) rather than grepping a prompt for a substring."
+            "Use real fixtures under `tests/fixtures/` or real flows under `flows/` — avoid hand-rolled inline YAML that drifts from schema changes."
+            "A test that reads a generated file must trigger emission first (`ensure_flow_assets_built` or the top of `make tests`)."
+            "Integration tests that build a wheel or sdist live in `tests/integration/test_packaged_install.py`. Run them under `make verify`."
+
+        """See `tests/unit/test_flow_loader.py` for a real example: it asserts on the loaded `FlowConfig` shape and the reserved-key guard, not on prompt text."""
+
+    section pre_commit: "Before Every Commit"
+        bullets items:
+            "Ran the verify target that matches the surface you changed."
+            "Source, docs, and `AGENTS.md` are aligned."
+            "If `.prompt` source changed, re-ran `make emit`."
+            "If a first-party skill source changed, re-emitted it and re-ran `make verify-skill-install`."
+            "If public compatibility changed, updated `docs/VERSIONING.md` and `CHANGELOG.md`."
+            "If you deleted any doc, first made a restore-point commit that contains the pre-deletion state."
+
+    section what_not_to_do: "What Not To Do"
+        bullets items:
+            "Do not use `--no-verify` to skip pre-commit hooks. Fix the problem the hook reported."
+            "Do not use `--no-gpg-sign` on a release tag. Public tags are signed annotated tags."
+            "Do not amend an existing commit when a hook fails. Create a new commit after fixing the issue."
+            "Do not commit emitted `build/` drift without re-running the matching emit command."
+            "Do not hand-edit emitted `AGENTS.md`, `final_output.contract.json`, `schemas/*.schema.json`, or `SKILL.md`. Edit the source `.prompt`, then re-emit."
+            "Do not move a stable tag after a bad release. Fix forward with a new version and mark the old release as `YANKED` in `CHANGELOG.md`."
+            "Do not bump the minor version for routine fixes. Prefer patch (`2.0.1` over `2.1.0`)."
+            "Do not skip `make verify` before a public release."
+
+    section doc_deletion: "Doc Deletion Safety"
+        """When you remove a doc that used to describe live behavior, follow this order so the pre-deletion state is preserved in history."""
+
+        sequence steps:
+            "Make one commit that only contains the current state of the doc(s) you plan to delete. Clear message, e.g. `backup: pre-delete dated migration docs`."
+            "Delete the doc(s) in the next commit."
+            "Update any links that pointed at the old doc."
+
+        """Apply this even when the docs look stale, low-quality, or obviously wrong. Git history is the archive — do not create `docs/archive/` as a long-term holding area."""
+
+    section related: "Related References"
+        bullets refs:
+            "`references/principles.md`: generated-readback-is-compiler-owned; the thin-harness rule."
+            "`references/build-and-emit.md`: how emit works under the hood."
+            "`references/release-and-versioning.md`: the release pipeline this proof path feeds."
+            "`Makefile`: the source of truth for targets."
+            "`docs/RALLY_MASTER_DESIGN.md`: the broader runtime proof picture."
+
+        """**Load when:** the author is about to commit, picking a verify target, auditing a drift complaint, or deleting a doc."""

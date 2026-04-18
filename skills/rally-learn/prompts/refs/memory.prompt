@@ -1,0 +1,87 @@
+document Memory: "Memory"
+    """This reference owns the `rally-memory` system skill: how to opt in, what it stores, the four CLI subcommands, and the rule that memory never carries control truth. The canonical prose home is `docs/RALLY_MEMORY.md`. The skill source is `skills/rally-memory/prompts/SKILL.prompt`. The stdlib declaration lives at `stdlib/rally/prompts/rally/memory/AGENTS.prompt`."""
+
+    section what_memory_is: "What Memory Is"
+        """`rally-memory` is a durable, searchable, per-agent-slug store for observations the agent wants to carry across runs. It is opt-in: Rally does not inject it unless the flow declares `system_skills: [rally-memory]` on the agent that should use it.
+
+Memory is for observations an agent wants to recall later — a fact it learned, a pattern it noticed, a constraint it should not forget. It is not a note (notes are per-run; memory is cross-run). It is not a control surface (control lives in the turn result)."""
+
+    section what_memory_is_not: "What Memory Is Not"
+        "Memory does not carry:"
+
+        bullets forbidden:
+            "`done`, `blocker`, `sleep`, or any other turn `kind`."
+            "Routing decisions — `next_owner` lives in the final JSON."
+            "`sleep_duration_seconds` or timing control."
+            "Current-turn state that belongs in the run's own `home:` directory."
+
+        "If memory ever looks like the right place for pending control state, you are confused. Use the turn result."
+
+    section opt_in: "Opt In Per Agent"
+        "Add `rally-memory` to the agent's `system_skills:` in `flow.yaml`:"
+
+        code:
+            language: yaml
+            text: """agents:
+  00_architect:
+    timeout_sec: 1200
+    allowed_skills: []
+    system_skills: [rally-memory]
+    allowed_mcps: []
+"""
+
+        "Only agents that declare `rally-memory` see the skill. Other agents in the same flow do not."
+
+    section storage_shape: "Storage Shape"
+        """Memory entries are markdown files — the source of truth is on disk. A QMD index is rebuildable from those markdowns.
+
+Directory layout:"""
+
+        code:
+            language: text
+            text: """runs/memory/entries/<FLOW_CODE>/<AGENT_SLUG>/
+  memory_0001.md
+  memory_0002.md
+  ...
+runs/memory/index.qmd       # rebuildable
+"""
+
+        "If the index drifts, delete it and run `rally memory refresh`. The source markdown is never regenerated from the index; the index is always regenerated from the markdown."
+
+    section four_commands: "The Four Subcommands"
+        markdown:
+            text: """| Command | Purpose |
+| --- | --- |
+| `rally memory search` | Full-text search across entries for the active agent slug. |
+| `rally memory use` | Show one specific entry by id. |
+| `rally memory save` | Save a new entry. Body comes from stdin. |
+| `rally memory refresh` | Rebuild the QMD index from the markdown source of truth. |
+"""
+
+        """Every command accepts `--agent-slug <slug>` to override the default. When unset, commands default to `$RALLY_AGENT_SLUG`, which Rally sets before every turn. When running under an agent, leave the default alone; when operating from your shell, pass `--agent-slug` explicitly."""
+
+    section when_to_save: "When To Save"
+        """The right time to save a memory is when the agent notices a durable fact worth recalling across runs:"""
+
+        bullets when:
+            "A constraint that will keep applying on future runs."
+            "A pattern that emerged over several runs."
+            "A naming convention or format the flow's domain requires."
+            "A prior decision the next run should honor."
+
+        """Do not save ephemeral state ("I'm about to do X next turn"). Do not save routing decisions. Do not save the last turn's final JSON — Rally keeps that in `runs/active/<ID>/home/sessions/<slug>/turn-<NNN>/final.json` already."""
+
+    section when_to_search: "When To Search"
+        """The agent searches memory when it needs durable prior knowledge. The natural moment is early in a turn, before the agent decides what to do. A short `rally memory search` call can surface relevant past observations. If nothing matches, the agent proceeds with the current turn's context alone.
+
+Do not search memory for something the agent can find more reliably in the current run's `home/`. The current run's state is faster to read and more authoritative for "what happened this run"."""
+
+    section related: "Related References"
+        bullets refs:
+            "`references/principles.md`: memory-is-durable-context-not-control."
+            "`references/skills-and-scoping.md`: `rally-memory` is a system-tier opt-in."
+            "`docs/RALLY_MEMORY.md`: canonical prose reference."
+            "`skills/rally-memory/prompts/SKILL.prompt`: the skill source."
+            "`stdlib/rally/prompts/rally/memory/AGENTS.prompt`: the stdlib declaration."
+
+        """**Load when:** the author is turning on memory for an agent, authoring a save or search call, or debugging missing-entry complaints."""

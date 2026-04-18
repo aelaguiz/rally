@@ -728,10 +728,10 @@ class FlowLoaderTests(unittest.TestCase):
         self.assertNotIn("rally-memory", flow_skills_source)
         self.assertNotIn("rally-memory", base_source)
         self.assertIn("workflow RallyReadFirst", base_source)
-        self.assertIn("workflow RallyHowToTakeATurn", base_source)
+        self.assertIn("workflow RallyManagedSharedRules", base_source)
         self.assertIn('skill RallyMemorySkill: "rally-memory"', memory_source)
         self.assertNotIn("workflow RallyReadFirst", memory_source)
-        self.assertNotIn("workflow RallyHowToTakeATurn", memory_source)
+        self.assertNotIn("workflow RallyManagedSharedRules", memory_source)
 
     def test_load_flow_definition_rejects_unsupported_contract_version(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

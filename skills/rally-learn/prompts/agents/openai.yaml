@@ -1,0 +1,10 @@
+interface:
+  display_name: "Rally Learn"
+  short_description: "Teach Rally authoring end-to-end: principles, flow.yaml, turn results, skills, memory, release"
+  default_prompt: "Use $rally-learn to teach me how to author <the surface I'm about to write>, then guide me through a minimal working example."
+
+policy:
+  allow_implicit_invocation: true
+
+dependencies:
+  tools: []

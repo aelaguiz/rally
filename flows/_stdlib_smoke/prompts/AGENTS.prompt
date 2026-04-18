@@ -214,7 +214,7 @@ review SmokeReview: "Smoke Review"
 
 agent PlanAuthor[base.RallyManagedBaseAgent]:
     role: "Write the repair plan and either pass the smoke test forward or finish it."
-    inherit {rally_contract, read_first, how_to_take_a_turn}
+    inherit {rally_contract, read_first, shared_rules}
     workflow: "Plan"
         "Write `home:artifacts/repair_plan.md`."
         "Pass the smoke test to RouteRepair only when it needs one more step."
@@ -242,7 +242,7 @@ agent PlanAuthor[base.RallyManagedBaseAgent]:
 
 agent RouteRepair[base.RallyManagedBaseAgent]:
     role: "Pick the next smoke-test owner from the emitted route choice."
-    inherit {rally_contract, read_first, how_to_take_a_turn}
+    inherit {rally_contract, read_first, shared_rules}
     workflow: "Route Repair"
         "Read `Previous Plan Author Turn` first so you know why PlanAuthor sent work here."
         "Choose whether the smoke test should close out now or loop back for one more pass."
@@ -262,7 +262,7 @@ agent RouteRepair[base.RallyManagedBaseAgent]:
 
 agent Closeout[base.RallyManagedBaseAgent]:
     role: "End the smoke test with a final `done` result."
-    inherit {rally_contract, read_first, how_to_take_a_turn}
+    inherit {rally_contract, read_first, shared_rules}
     workflow: "Closeout"
         "End the smoke test with one final `done` result."
     outputs[base.RallyManagedOutputs]: "Outputs"
