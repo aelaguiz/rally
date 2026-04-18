@@ -35,6 +35,7 @@ class TurnArtifactPaths:
     exec_jsonl_file: Path
     stderr_file: Path
     last_message_file: Path
+    previous_turn_inputs_file: Path
 
 
 @dataclass(frozen=True)
@@ -254,6 +255,9 @@ def prepare_adapter_turn_artifacts(
         exec_jsonl_file=turn_dir / "exec.jsonl",
         stderr_file=turn_dir / "stderr.log",
         last_message_file=turn_dir / "last_message.json",
+        # Save the exact appendix Rally injected for this turn so later readers
+        # can see prior-turn context without guessing from prompt text.
+        previous_turn_inputs_file=turn_dir / "previous_turn_inputs.md",
     )
 
 

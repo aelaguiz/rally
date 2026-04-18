@@ -1,4 +1,4 @@
-import shared.outputs
+from shared.outputs import PoemDraftDocument
 
 
 input IssueLedger: "Issue Ledger"
@@ -11,7 +11,7 @@ input PoemDraftFile: "Poem Draft File"
     source: File
         path: "home:artifacts/poem.md"
     shape: MarkdownDocument
-    structure: shared.outputs.PoemDraftDocument
+    structure: PoemDraftDocument
     requirement: Advisory
     basis_missing: "Draft Missing"
     "Use the current poem draft when this turn needs it."

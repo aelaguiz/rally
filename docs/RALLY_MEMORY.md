@@ -11,8 +11,7 @@ related:
   - docs/RALLY_RUNTIME.md
   - docs/RALLY_CLI_AND_LOGGING.md
   - stdlib/rally/prompts/rally/base_agent.prompt
-  - stdlib/rally/prompts/rally/issue_ledger.prompt
-  - stdlib/rally/prompts/rally/notes.prompt
+  - stdlib/rally/prompts/rally/memory.prompt
   - skills/rally-kernel/prompts/SKILL.prompt
   - flows/poem_loop/prompts/shared/inputs.prompt
   - flows/software_engineering_demo/prompts/shared/inputs.prompt
@@ -20,7 +19,7 @@ related:
   - src/rally/domain/flow.py
   - src/rally/services/flow_build.py
   - src/rally/services/flow_loader.py
-  - src/rally/services/framework_assets.py
+  - src/rally/services/builtin_assets.py
   - src/rally/services/home_materializer.py
   - src/rally/services/issue_ledger.py
   - src/rally/services/run_events.py
@@ -31,9 +30,9 @@ related:
 # Summary
 
 This file records the shipped Rally memory model.
-Rally now gives every Rally-managed agent one shared memory contract, one
-shared memory skill, and one repo-local memory store that stays separate from
-turn routing and note control.
+Rally now gives flows one shared memory contract, one optional
+`rally-memory` skill source in the Rally repo, and one repo-local memory
+store that stays separate from turn routing and note control.
 
 # Live Rules
 
@@ -50,8 +49,9 @@ turn routing and note control.
 What is shipped now:
 - shared memory contract in `stdlib/rally/prompts/rally/memory.prompt`
 - shared issue-ledger input and `RALLY_AGENT_SLUG` exposure in the shared base agent
-- built-in `rally-memory` skill source plus emitted readback beside `rally-kernel`
-- built-in skill wiring through `skill_bundles.py`, `flow_build.py`, `framework_assets.py`, and `workspace.py`
+- optional `rally-memory` skill source in `skills/rally-memory/`
+- optional skill wiring through `flow_build.py` when a flow allowlists `rally-memory`
+- default built-in resolution materializes `rally-kernel` for every run, while `rally-memory` stays opt-in
 - repo-local markdown memory truth under `runs/memory/entries/<flow_code>/<agent_slug>/`
 - repo-local QMD state under `runs/memory/qmd/index.sqlite` and `runs/memory/qmd/cache/`
 - pinned Node bridge under `tools/qmd_bridge/` on `@tobilu/qmd` `2.1.0`
@@ -63,12 +63,10 @@ What is shipped now:
 
 Proof already captured:
 - rebuilt `_stdlib_smoke`, `poem_loop`, and `software_engineering_demo`
-- focused test sweep covering flow build, framework assets, flow loading, CLI, issue ledger, run events, runner, and the new memory services
+- focused test sweep covering flow build, packaged assets, flow loading, CLI, issue ledger, runner, and the optional memory contract
 - full unit suite at current head
-- one bridge smoke proof that kept `~/.cache/qmd/` untouched on an empty scoped refresh
-- one real `POM-1` `poem_loop` proof that saved memory on turn 7, searched and used it on turn 9, and still ended `done` on turn 10
-- current `rally memory search` output that shows the canonical memory id, lesson title, and short snippet
-- `uv run pytest tests/unit -q` passes on current head
+- `uv run pytest tests/unit -q` -> `301 passed`
+- `uv run pytest tests/integration/test_packaged_install.py -q` -> `2 passed`
 
 Fresh audit check:
 - the full approved frontier has been rerun against current repo truth

@@ -70,17 +70,17 @@ class RootedPathTests(unittest.TestCase):
                     stdlib_path,
                     workspace_root=workspace_root,
                     flow_root=flow_root,
+                    stdlib_root=workspace_root / "framework" / "stdlib" / "rally",
                     context="stdlib schema",
                 ),
-                workspace_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
+                workspace_root / "framework" / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
             )
 
-    def test_resolve_stdlib_path_from_workspace_root(self) -> None:
+    def test_resolve_stdlib_path_requires_explicit_stdlib_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace_root = Path(temp_dir).resolve() / "workspace"
             flow_root = workspace_root / "flows" / "demo"
             flow_root.mkdir(parents=True)
-            (workspace_root / "stdlib" / "rally" / "schemas").mkdir(parents=True)
 
             stdlib_path = parse_rooted_path(
                 "stdlib:schemas/rally_turn_result.schema.json",
@@ -89,15 +89,13 @@ class RootedPathTests(unittest.TestCase):
                 example="stdlib:schemas/rally_turn_result.schema.json",
             )
 
-            self.assertEqual(
+            with self.assertRaisesRegex(RallyConfigError, "needs the Rally stdlib root"):
                 resolve_rooted_path(
                     stdlib_path,
                     workspace_root=workspace_root,
                     flow_root=flow_root,
                     context="stdlib schema",
-                ),
-                workspace_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
-            )
+                )
 
     def test_parse_workspace_and_host_paths(self) -> None:
         workspace_path = parse_rooted_path(

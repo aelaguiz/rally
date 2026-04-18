@@ -11,6 +11,11 @@ from rally.domain.flow import (
     ReviewFinalResponseContract,
     ReviewOutcomeContract,
     ReviewOutputContract,
+    RouteBranchContract,
+    RouteChoiceMemberContract,
+    RouteContract,
+    RouteSelectorContract,
+    RouteTargetContract,
 )
 from rally.domain.turn_result import BlockerTurnResult, DoneTurnResult, HandoffTurnResult
 from rally.errors import RallyStateError
@@ -53,7 +58,7 @@ class FinalResponseLoaderTests(unittest.TestCase):
             with self.assertRaisesRegex(RallyStateError, "does not contain valid JSON"):
                 load_turn_result(last_message_file=last_message)
 
-    def test_load_agent_final_response_maps_review_carrier_to_done_and_renders_note(self) -> None:
+    def test_load_agent_final_response_maps_review_carrier_to_done_and_returns_review_truth(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             last_message = Path(temp_dir) / "last_message.json"
             last_message.write_text(
@@ -73,9 +78,12 @@ class FinalResponseLoaderTests(unittest.TestCase):
             )
 
             self.assertEqual(loaded.turn_result, DoneTurnResult(summary="The poem is ready to keep."))
+            self.assertIsNotNone(loaded.review_truth)
+            self.assertEqual(loaded.review_truth.verdict, "accept")
+            self.assertEqual(loaded.review_truth.reviewed_artifact, "home:artifacts/poem.md")
+            self.assertEqual(loaded.review_truth.readback, "The poem is ready to keep.")
+            self.assertIsNone(loaded.review_truth.next_owner)
             self.assertIsNone(loaded.agent_issues)
-            self.assertIn("### Findings First", loaded.review_note_markdown or "")
-            self.assertIn("- Verdict: `accept`", loaded.review_note_markdown or "")
 
     def test_load_agent_final_response_maps_review_blocked_gate_to_blocker(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -100,6 +108,8 @@ class FinalResponseLoaderTests(unittest.TestCase):
             )
 
             self.assertEqual(loaded.turn_result, BlockerTurnResult(reason="The poem draft is missing."))
+            self.assertIsNotNone(loaded.review_truth)
+            self.assertEqual(loaded.review_truth.blocked_gate, "The poem draft is missing.")
 
     def test_load_agent_final_response_maps_split_control_ready_review_to_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -107,8 +117,12 @@ class FinalResponseLoaderTests(unittest.TestCase):
             last_message.write_text(
                 """{
   "verdict": "changes_requested",
+  "reviewed_artifact": "home:artifacts/poem.md",
+  "analysis_performed": "The middle image still needs work.",
+  "findings_first": "The poem needs one more draft.",
   "current_artifact": "home:artifacts/poem.md",
-  "next_owner": "poem_writer"
+  "next_owner": "poem_writer",
+  "blocked_gate": null
 }
 """,
                 encoding="utf-8",
@@ -120,8 +134,142 @@ class FinalResponseLoaderTests(unittest.TestCase):
             )
 
             self.assertEqual(loaded.turn_result, HandoffTurnResult(next_owner="poem_writer"))
+            self.assertIsNotNone(loaded.review_truth)
+            self.assertEqual(loaded.review_truth.next_owner, "poem_writer")
+            self.assertEqual(loaded.review_truth.current_artifact, "home:artifacts/poem.md")
             self.assertIsNone(loaded.agent_issues)
-            self.assertIn("- Next Owner: `poem_writer`", loaded.review_note_markdown or "")
+
+    def test_load_agent_final_response_routes_producer_handoff_from_route_selector(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            last_message = Path(temp_dir) / "last_message.json"
+            last_message.write_text(
+                """{
+  "kind": "handoff",
+  "next_route": "poem_critic",
+  "summary": null,
+  "reason": null,
+  "sleep_duration_seconds": null
+}
+""",
+                encoding="utf-8",
+            )
+
+            loaded = load_agent_final_response(
+                compiled_agent=_producer_agent_contract(
+                    selector_field=("next_route",),
+                    route_members={"poem_critic": "PoemCritic"},
+                ),
+                last_message_file=last_message,
+            )
+
+            self.assertEqual(loaded.turn_result, HandoffTurnResult(next_owner="PoemCritic"))
+            self.assertIsNone(loaded.review_truth)
+
+    def test_load_agent_final_response_routes_cross_module_producer_handoff_by_target_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            last_message = Path(temp_dir) / "last_message.json"
+            last_message.write_text(
+                """{
+  "kind": "handoff",
+  "next_route": "section_dossier_engineer",
+  "summary": null,
+  "reason": null,
+  "sleep_duration_seconds": null
+}
+""",
+                encoding="utf-8",
+            )
+
+            loaded = load_agent_final_response(
+                compiled_agent=_producer_agent_contract(
+                    selector_field=("next_route",),
+                    route_members={},
+                    route_targets={
+                        "section_dossier_engineer": RouteTargetContract(
+                            key="agents.section_dossier_engineer.SectionDossierEngineer",
+                            name="SectionDossierEngineer",
+                            title="Section Dossier Engineer",
+                            module_parts=("agents", "section_dossier_engineer"),
+                        )
+                    },
+                ),
+                last_message_file=last_message,
+            )
+
+            self.assertEqual(loaded.turn_result, HandoffTurnResult(next_owner="SectionDossierEngineer"))
+            self.assertIsNone(loaded.review_truth)
+
+    def test_load_agent_final_response_rejects_unknown_route_member(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            last_message = Path(temp_dir) / "last_message.json"
+            last_message.write_text(
+                """{
+  "kind": "handoff",
+  "next_route": "unknown_member",
+  "summary": null,
+  "reason": null,
+  "sleep_duration_seconds": null
+}
+""",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RallyStateError, "unknown route member `unknown_member`"):
+                load_agent_final_response(
+                    compiled_agent=_producer_agent_contract(
+                        selector_field=("next_route",),
+                        route_members={"poem_critic": "PoemCritic"},
+                    ),
+                    last_message_file=last_message,
+                )
+
+    def test_load_agent_final_response_rejects_handoff_without_selected_route(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            last_message = Path(temp_dir) / "last_message.json"
+            last_message.write_text(
+                """{
+  "kind": "handoff",
+  "next_route": null,
+  "summary": null,
+  "reason": null,
+  "sleep_duration_seconds": null
+}
+""",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RallyStateError, "cannot leave route field `next_route` empty"):
+                load_agent_final_response(
+                    compiled_agent=_producer_agent_contract(
+                        selector_field=("next_route",),
+                        route_members={"poem_critic": "PoemCritic"},
+                    ),
+                    last_message_file=last_message,
+                )
+
+    def test_load_agent_final_response_rejects_non_handoff_with_selected_route(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            last_message = Path(temp_dir) / "last_message.json"
+            last_message.write_text(
+                """{
+  "kind": "done",
+  "next_route": "poem_critic",
+  "summary": "done",
+  "reason": null,
+  "sleep_duration_seconds": null
+}
+""",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RallyStateError, "must not select route field `next_route`"):
+                load_agent_final_response(
+                    compiled_agent=_producer_agent_contract(
+                        selector_field=("next_route",),
+                        route_members={"poem_critic": "PoemCritic"},
+                    ),
+                    last_message_file=last_message,
+                )
 
     def test_load_agent_final_response_keeps_agent_issues_for_shared_turn_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -146,7 +294,7 @@ class FinalResponseLoaderTests(unittest.TestCase):
 
             self.assertEqual(loaded.turn_result, DoneTurnResult(summary="wrapped up"))
             self.assertEqual(loaded.agent_issues, "none")
-            self.assertIsNone(loaded.review_note_markdown)
+            self.assertIsNone(loaded.review_truth)
 
     def test_load_agent_final_response_rejects_blank_agent_issues(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -200,6 +348,7 @@ def _review_agent_contract(*, mode: str) -> CompiledAgentContract:
             "current_artifact": ("current_artifact",),
             "next_owner": ("next_owner",),
             "blocked_gate": ("blocked_gate",),
+            "failing_gates": ("failing_gates",),
         }
         final_response = ReviewFinalResponseContract(
             mode="split",
@@ -207,8 +356,13 @@ def _review_agent_contract(*, mode: str) -> CompiledAgentContract:
             declaration_name="PoemReviewControl",
             review_fields={
                 "verdict": ("verdict",),
+                "reviewed_artifact": ("reviewed_artifact",),
+                "analysis": ("analysis_performed",),
+                "readback": ("findings_first",),
                 "current_artifact": ("current_artifact",),
                 "next_owner": ("next_owner",),
+                "blocked_gate": ("blocked_gate",),
+                "failing_gates": ("failing_gates",),
             },
             control_ready=True,
         )
@@ -217,16 +371,17 @@ def _review_agent_contract(*, mode: str) -> CompiledAgentContract:
         slug="poem_critic",
         entrypoint=Path("/tmp/prompts/AGENTS.prompt"),
         markdown_path=Path("/tmp/build/poem_critic/AGENTS.md"),
-        contract_path=Path("/tmp/build/poem_critic/AGENTS.contract.json"),
+        metadata_file=Path("/tmp/build/poem_critic/final_output.contract.json"),
         contract_version=1,
         final_output=FinalOutputContract(
             exists=True,
+            contract_version=1,
             declaration_key="PoemReviewResponse" if mode == "carrier" else "PoemReviewControl",
             declaration_name="PoemReviewResponse" if mode == "carrier" else "PoemReviewControl",
-            format_mode="json_schema",
+            format_mode="json_object",
             schema_profile="OpenAIStructuredOutput",
-            schema_file=Path("/tmp/schema.json"),
-            example_file=Path("/tmp/example.json"),
+            generated_schema_file=Path("/tmp/schema.json"),
+            metadata_file=Path("/tmp/build/poem_critic/final_output.contract.json"),
         ),
         review=ReviewContract(
             exists=True,
@@ -253,22 +408,87 @@ def _review_agent_contract(*, mode: str) -> CompiledAgentContract:
     )
 
 
+def _producer_agent_contract(
+    *,
+    selector_field: tuple[str, ...],
+    route_members: dict[str, str],
+    route_targets: dict[str, RouteTargetContract] | None = None,
+) -> CompiledAgentContract:
+    branches: list[RouteBranchContract] = []
+    branch_targets = route_targets or {
+        member_wire: RouteTargetContract(
+            key=target_name,
+            name=target_name,
+            title=target_name,
+            module_parts=(),
+        )
+        for member_wire, target_name in route_members.items()
+    }
+    for member_wire, target in branch_targets.items():
+        branches.append(
+            RouteBranchContract(
+                target=target,
+                label=f"Route to {target.name}.",
+                summary=f"Route to {target.name}.",
+                choice_members=(
+                    RouteChoiceMemberContract(
+                        member_key=member_wire,
+                        member_title=target.name,
+                        member_wire=member_wire,
+                    ),
+                ),
+            )
+        )
+
+    return CompiledAgentContract(
+        name="PoemWriter",
+        slug="poem_writer",
+        entrypoint=Path("/tmp/prompts/AGENTS.prompt"),
+        markdown_path=Path("/tmp/build/poem_writer/AGENTS.md"),
+        metadata_file=Path("/tmp/build/poem_writer/final_output.contract.json"),
+        contract_version=1,
+        final_output=FinalOutputContract(
+            exists=True,
+            contract_version=1,
+            declaration_key="PoemWriterTurnResult",
+            declaration_name="PoemWriterTurnResult",
+            format_mode="json_object",
+            schema_profile="OpenAIStructuredOutput",
+            generated_schema_file=Path("/tmp/schema.json"),
+            metadata_file=Path("/tmp/build/poem_writer/final_output.contract.json"),
+        ),
+        route=RouteContract(
+            exists=True,
+            behavior="conditional",
+            has_unrouted_branch=True,
+            unrouted_review_verdicts=(),
+            selector=RouteSelectorContract(
+                surface="final_output",
+                field_path=selector_field,
+                null_behavior="no_route",
+            ),
+            branches=tuple(branches),
+        ),
+    )
+
+
 def _shared_turn_result_agent_contract() -> CompiledAgentContract:
     return CompiledAgentContract(
         name="ScopeLead",
         slug="scope_lead",
         entrypoint=Path("/tmp/prompts/AGENTS.prompt"),
         markdown_path=Path("/tmp/build/scope_lead/AGENTS.md"),
-        contract_path=Path("/tmp/build/scope_lead/AGENTS.contract.json"),
+        metadata_file=Path("/tmp/build/scope_lead/final_output.contract.json"),
         contract_version=1,
         final_output=FinalOutputContract(
             exists=True,
+            contract_version=1,
             declaration_key="rally.turn_results.RallyTurnResult",
             declaration_name="RallyTurnResult",
-            format_mode="json_schema",
+            format_mode="json_object",
             schema_profile="OpenAIStructuredOutput",
-            schema_file=Path("/tmp/schema.json"),
-            example_file=Path("/tmp/example.json"),
+            generated_schema_file=Path("/tmp/schema.json"),
+            metadata_file=Path("/tmp/build/scope_lead/final_output.contract.json"),
         ),
         review=None,
     )

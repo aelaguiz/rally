@@ -1,22 +1,38 @@
 from __future__ import annotations
 
+import json
 import re
-import subprocess
-import sys
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+import tomllib
 
 import yaml
 
+from rally.domain.flow import flow_agent_key_to_slug
 from rally.domain.rooted_path import HOME_ROOT, PathRoot, parse_rooted_path
 from rally.errors import RallyConfigError
-from rally.services.bundled_assets import workspace_owns_rally_builtins
-from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
-from rally.services.workspace import WorkspaceContext, workspace_context_from_root
-from rally.services.workspace_sync import sync_workspace_builtins
+from rally.services.agent_skill_validation import validate_flow_agent_skill_surfaces
+from rally.services.builtin_assets import (
+    RallyBuiltinAssets,
+    reject_reserved_builtin_skill_shadow,
+    resolve_rally_builtin_assets,
+)
+from rally.services.skill_bundles import (
+    MANDATORY_SKILL_NAMES,
+    resolve_external_skill_bundle_source,
+    resolve_skill_bundle_source,
+    split_external_skill_name,
+    validate_system_skill_name,
+)
+from rally.services.workspace import (
+    ExternalSkillRoot,
+    WorkspaceContext,
+    load_external_skill_roots_for_repo_root,
+    workspace_context_from_root,
+)
 
-BuildSubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
+DoctrineEmitKind = str
 
 
 @dataclass(frozen=True)
@@ -44,7 +60,6 @@ def ensure_flow_assets_built(
     workspace: WorkspaceContext | None = None,
     repo_root: Path | None = None,
     flow_name: str,
-    subprocess_run: BuildSubprocessRunner = subprocess.run,
 ) -> None:
     workspace_context = _coerce_workspace(workspace=workspace, repo_root=repo_root)
     repo_root = workspace_context.workspace_root
@@ -52,12 +67,38 @@ def ensure_flow_assets_built(
     if not config_path.is_file():
         raise RallyConfigError(f"Rally workspace pyproject is missing: `{config_path}`.")
 
-    sync_workspace_builtins(workspace=workspace_context)
-    skill_names = _load_flow_skill_names(repo_root=repo_root, flow_name=flow_name)
+    builtins = resolve_rally_builtin_assets(workspace=workspace_context)
+    external_skill_roots = workspace_context.external_skill_roots
+    (
+        allowed_skills_by_agent_key,
+        system_skills_by_agent_key,
+        external_skills_by_agent_key,
+    ) = _load_flow_agent_skill_tiers(
+        repo_root=repo_root,
+        flow_name=flow_name,
+        external_skill_roots=external_skill_roots,
+    )
+    skill_names = _union_flow_skill_names(
+        allowed_skills_by_agent_key=allowed_skills_by_agent_key,
+        system_skills_by_agent_key=system_skills_by_agent_key,
+    )
+    # Rally does not own the Doctrine build graph for external skills — the
+    # external workspace must have pre-emitted `build/SKILL.md`. Here we only
+    # validate that each referenced external skill exists and is consumable.
+    _validate_external_skill_bundles(
+        external_skills_by_agent_key=external_skills_by_agent_key,
+        external_skill_roots=external_skill_roots,
+    )
+    expected_agent_slugs = _load_flow_agent_slugs(repo_root=repo_root, flow_name=flow_name)
+    reject_reserved_builtin_skill_shadow(
+        workspace_root=repo_root,
+        builtins=builtins,
+    )
     _validate_prompt_rooted_paths(
         workspace=workspace_context,
         flow_name=flow_name,
         skill_names=skill_names,
+        builtins=builtins,
     )
 
     doctrine_skill_targets = tuple(
@@ -67,33 +108,59 @@ def ensure_flow_assets_built(
             workspace=workspace_context,
             repo_root=repo_root,
             skill_name=skill_name,
+            builtins=builtins,
         )
     )
 
-    _run_doctrine_emit(
-        workspace=workspace_context,
+    _emit_doctrine_targets(
         config_path=config_path,
-        subprocess_run=subprocess_run,
-        module_name="doctrine.emit_docs",
+        builtins=builtins,
+        emit_kind="docs",
         target_names=(flow_name,),
         failure_label=f"flow `{flow_name}`",
     )
-    _sync_role_soul_sidecars(workspace=workspace_context, flow_name=flow_name)
+    # Doctrine owns the full compiled agent package, including optional peer
+    # files such as `SOUL.md`. Rally only prunes retired legacy artifacts and
+    # validates the package boundary before runtime code consumes it.
+    _prune_retired_compiled_agent_artifacts(
+        repo_root / "flows" / flow_name / "build" / "agents",
+        expected_agent_slugs=expected_agent_slugs,
+    )
+    _validate_emitted_agent_packages(repo_root / "flows" / flow_name / "build" / "agents")
+    validate_flow_agent_skill_surfaces(
+        flow_file=repo_root / "flows" / flow_name / "flow.yaml",
+        build_agents_dir=repo_root / "flows" / flow_name / "build" / "agents",
+        allowed_skills_by_agent_key=allowed_skills_by_agent_key,
+        system_skills_by_agent_key=system_skills_by_agent_key,
+        external_skills_by_agent_key=external_skills_by_agent_key,
+    )
 
     if not doctrine_skill_targets:
         return
 
-    _run_doctrine_emit(
-        workspace=workspace_context,
+    _emit_doctrine_targets(
         config_path=config_path,
-        subprocess_run=subprocess_run,
-        module_name="doctrine.emit_skill",
+        builtins=builtins,
+        emit_kind="skill",
         target_names=doctrine_skill_targets,
         failure_label="Doctrine skill package(s)",
     )
 
 
-def _load_flow_skill_names(*, repo_root: Path, flow_name: str) -> tuple[str, ...]:
+def _union_flow_skill_names(
+    *,
+    allowed_skills_by_agent_key: dict[str, tuple[str, ...]],
+    system_skills_by_agent_key: dict[str, tuple[str, ...]],
+) -> tuple[str, ...]:
+    skill_names: set[str] = set(MANDATORY_SKILL_NAMES)
+    for names in allowed_skills_by_agent_key.values():
+        skill_names.update(names)
+    for names in system_skills_by_agent_key.values():
+        skill_names.update(names)
+    return tuple(sorted(skill_names))
+
+
+def _load_flow_agent_slugs(*, repo_root: Path, flow_name: str) -> tuple[str, ...]:
     flow_file = repo_root / "flows" / flow_name / "flow.yaml"
     if not flow_file.is_file():
         raise RallyConfigError(f"Flow definition does not exist: `{flow_file}`.")
@@ -105,19 +172,178 @@ def _load_flow_skill_names(*, repo_root: Path, flow_name: str) -> tuple[str, ...
     if not isinstance(raw_agents, dict):
         raise RallyConfigError(f"`{flow_file}` must define an `agents` mapping.")
 
-    skill_names = set(MANDATORY_SKILL_NAMES)
+    agent_slugs: list[str] = []
     for agent_key, raw_agent in raw_agents.items():
         if not isinstance(agent_key, str):
             raise RallyConfigError(f"`agents` keys in `{flow_file}` must be strings.")
         if not isinstance(raw_agent, dict):
             raise RallyConfigError(f"Agent `{agent_key}` in `{flow_file}` must decode to a mapping.")
-        raw_skills = raw_agent.get("allowed_skills", [])
-        if not isinstance(raw_skills, list) or not all(isinstance(skill, str) and skill for skill in raw_skills):
+        agent_slugs.append(flow_agent_key_to_slug(agent_key))
+    return tuple(sorted(agent_slugs))
+
+
+def _load_flow_agent_skill_tiers(
+    *,
+    repo_root: Path,
+    flow_name: str,
+    external_skill_roots: tuple[ExternalSkillRoot, ...] = (),
+) -> tuple[
+    dict[str, tuple[str, ...]],
+    dict[str, tuple[str, ...]],
+    dict[str, tuple[str, ...]],
+]:
+    flow_file = repo_root / "flows" / flow_name / "flow.yaml"
+    if not flow_file.is_file():
+        raise RallyConfigError(f"Flow definition does not exist: `{flow_file}`.")
+
+    payload = yaml.safe_load(flow_file.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RallyConfigError(f"`{flow_file}` must decode to a mapping.")
+    raw_agents = payload.get("agents")
+    if not isinstance(raw_agents, dict):
+        raise RallyConfigError(f"`{flow_file}` must define an `agents` mapping.")
+
+    registered_aliases = {entry.alias for entry in external_skill_roots}
+    allowed_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
+    system_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
+    external_skills_by_agent_key: dict[str, tuple[str, ...]] = {}
+    for agent_key, raw_agent in raw_agents.items():
+        if not isinstance(agent_key, str):
+            raise RallyConfigError(f"`agents` keys in `{flow_file}` must be strings.")
+        if not isinstance(raw_agent, dict):
+            raise RallyConfigError(f"Agent `{agent_key}` in `{flow_file}` must decode to a mapping.")
+        allowed_skills = _require_flow_agent_string_list(
+            raw_agent,
+            key="allowed_skills",
+            agent_key=agent_key,
+            flow_file=flow_file,
+        )
+        system_skills = _require_flow_agent_string_list(
+            raw_agent,
+            key="system_skills",
+            agent_key=agent_key,
+            flow_file=flow_file,
+        )
+        external_skills = _parse_optional_external_skills(
+            raw_agent,
+            agent_key=agent_key,
+            flow_file=flow_file,
+            registered_aliases=registered_aliases,
+        )
+        seen: set[str] = set()
+        for skill_name in system_skills:
+            if skill_name in seen:
+                raise RallyConfigError(
+                    f"`system_skills` for agent `{agent_key}` in `{flow_file}` "
+                    f"must not repeat `{skill_name}`."
+                )
+            seen.add(skill_name)
+            validate_system_skill_name(skill_name)
+        allowed_set = set(allowed_skills)
+        system_set = set(system_skills)
+        external_unqualified = {
+            split_external_skill_name(name)[1] for name in external_skills
+        }
+        for left_name, left_set, right_name, right_set in (
+            ("allowed_skills", allowed_set, "system_skills", system_set),
+            ("allowed_skills", allowed_set, "external_skills", external_unqualified),
+            ("system_skills", system_set, "external_skills", external_unqualified),
+        ):
+            overlap = sorted(left_set & right_set)
+            if overlap:
+                joined = ", ".join(f"`{name}`" for name in overlap)
+                raise RallyConfigError(
+                    f"Agent `{agent_key}` in `{flow_file}` lists {joined} in both "
+                    f"`{left_name}` and `{right_name}`. A skill belongs to exactly one tier."
+                )
+        allowed_skills_by_agent_key[agent_key] = allowed_skills
+        system_skills_by_agent_key[agent_key] = system_skills
+        external_skills_by_agent_key[agent_key] = external_skills
+    return (
+        allowed_skills_by_agent_key,
+        system_skills_by_agent_key,
+        external_skills_by_agent_key,
+    )
+
+
+def _parse_optional_external_skills(
+    raw_agent: dict,
+    *,
+    agent_key: str,
+    flow_file: Path,
+    registered_aliases: set[str],
+) -> tuple[str, ...]:
+    raw_value = raw_agent.get("external_skills")
+    if raw_value is None:
+        return ()
+    if not isinstance(raw_value, list) or any(
+        not isinstance(item, str) or not item for item in raw_value
+    ):
+        raise RallyConfigError(
+            f"Agent `{agent_key}` in `{flow_file}` must define `external_skills` as a list "
+            "of non-empty `<alias>:<skill>` strings (or omit it)."
+        )
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw_entry in raw_value:
+        entry = raw_entry.strip()
+        if entry in seen:
             raise RallyConfigError(
-                f"Agent `{agent_key}` in `{flow_file}` must define `allowed_skills` as a list of strings."
+                f"`external_skills` for agent `{agent_key}` in `{flow_file}` must not repeat `{entry}`."
             )
-        skill_names.update(raw_skills)
-    return tuple(sorted(skill_names))
+        seen.add(entry)
+        alias, skill_name = split_external_skill_name(entry)
+        if alias not in registered_aliases:
+            available = ", ".join(f"`{name}`" for name in sorted(registered_aliases)) or "(none)"
+            raise RallyConfigError(
+                f"Unknown external skill root alias `{alias}` in `external_skills` for agent "
+                f"`{agent_key}` in `{flow_file}`. Registered aliases: {available}. Register it "
+                "under `[tool.rally.workspace.external_skill_roots]` in pyproject.toml."
+            )
+        normalized.append(f"{alias}:{skill_name}")
+    return tuple(normalized)
+
+
+def _validate_external_skill_bundles(
+    *,
+    external_skills_by_agent_key: dict[str, tuple[str, ...]],
+    external_skill_roots: tuple[ExternalSkillRoot, ...],
+) -> None:
+    roots_by_alias = {entry.alias: entry.root for entry in external_skill_roots}
+    seen: set[str] = set()
+    for qualified_names in external_skills_by_agent_key.values():
+        for qualified_name in qualified_names:
+            if qualified_name in seen:
+                continue
+            seen.add(qualified_name)
+            alias, skill_name = split_external_skill_name(qualified_name)
+            root = roots_by_alias[alias]  # alias already validated upstream
+            bundle = resolve_external_skill_bundle_source(
+                root=root,
+                alias=alias,
+                skill_name=skill_name,
+            )
+            # Verify the bundle is actually consumable (markdown frontmatter or
+            # pre-emitted Doctrine build) before Doctrine runs downstream.
+            bundle.runtime_source_dir()
+
+
+def _require_flow_agent_string_list(
+    raw_agent: dict,
+    *,
+    key: str,
+    agent_key: str,
+    flow_file: Path,
+) -> tuple[str, ...]:
+    raw_value = raw_agent.get(key)
+    if raw_value is None or (
+        not isinstance(raw_value, list)
+        or not all(isinstance(item, str) and item for item in raw_value)
+    ):
+        raise RallyConfigError(
+            f"Agent `{agent_key}` in `{flow_file}` must define `{key}` as a list of non-empty strings."
+        )
+    return tuple(raw_value)
 
 
 def _should_emit_skill_build(
@@ -125,120 +351,151 @@ def _should_emit_skill_build(
     workspace: WorkspaceContext,
     repo_root: Path,
     skill_name: str,
+    builtins: RallyBuiltinAssets,
 ) -> bool:
     bundle = resolve_skill_bundle_source(
         repo_root=repo_root,
         skill_name=skill_name,
+        builtins=builtins,
     )
-    if bundle.kind != "doctrine":
-        return False
-    if skill_name in MANDATORY_SKILL_NAMES:
-        return workspace_owns_rally_builtins(pyproject_path=workspace.pyproject_path)
-    return True
+    return bundle.kind == "doctrine"
 
 
-def _run_doctrine_emit(
+def _emit_doctrine_targets(
     *,
-    workspace: WorkspaceContext,
     config_path: Path,
-    subprocess_run: BuildSubprocessRunner,
-    module_name: str,
+    builtins: RallyBuiltinAssets,
+    emit_kind: DoctrineEmitKind,
     target_names: tuple[str, ...],
     failure_label: str,
 ) -> None:
-    command = [
-        sys.executable,
-        "-m",
-        module_name,
-        "--pyproject",
-        str(config_path),
-    ]
-    for target_name in target_names:
-        command.extend(["--target", target_name])
     try:
-        completed = subprocess_run(
-            command,
-            cwd=workspace.workspace_root,
-            capture_output=True,
-            text=True,
-            check=False,
+        from doctrine.diagnostics import DoctrineError
+        from doctrine.emit_common import load_emit_targets
+        from doctrine.emit_docs import emit_target
+        from doctrine.emit_skill import emit_target_skill
+    except ImportError as exc:
+        raise RallyConfigError(f"Failed to import Doctrine while rebuilding {failure_label}: {exc}.") from exc
+
+    try:
+        provided_prompt_roots = _provided_prompt_roots_for_config(
+            config_path=config_path,
+            builtins=builtins,
         )
-    except OSError as exc:
-        raise RallyConfigError(f"Failed to start Doctrine rebuild for {failure_label}: {exc}.") from exc
+        emit_targets = load_emit_targets(
+            config_path,
+            provided_prompt_roots=provided_prompt_roots,
+        )
+        for target_name in target_names:
+            target = emit_targets.get(target_name)
+            if target is None:
+                raise RallyConfigError(f"Doctrine emit target `{target_name}` is missing from `{config_path}`.")
+            if emit_kind == "docs":
+                emit_target(target)
+            elif emit_kind == "skill":
+                emit_target_skill(target)
+            else:
+                raise AssertionError(f"Unknown Doctrine emit kind: {emit_kind}")
+    except DoctrineError as exc:
+        raise RallyConfigError(f"Failed to rebuild {failure_label} with Doctrine: {exc}") from exc
 
-    if completed.returncode == 0:
-        return
 
-    detail = completed.stderr.strip() or completed.stdout.strip() or f"{module_name} failed."
-    raise RallyConfigError(f"Failed to rebuild {failure_label} with `{module_name}`: {detail}")
-
-
-def _sync_role_soul_sidecars(*, workspace: WorkspaceContext, flow_name: str) -> None:
-    roles_root = workspace.workspace_root / "flows" / flow_name / "prompts" / "roles"
-    build_agents_root = workspace.workspace_root / "flows" / flow_name / "build" / "agents"
-    expected_role_slugs: set[str] = set()
-
-    if roles_root.is_dir():
-        for role_dir in sorted(roles_root.iterdir()):
-            if not role_dir.is_dir():
-                continue
-            soul_prompt = role_dir / "SOUL.prompt"
-            if not soul_prompt.is_file():
-                continue
-            expected_role_slugs.add(role_dir.name)
-            rendered = _render_sidecar_prompt(
-                prompt_path=soul_prompt,
-                project_config_path=workspace.pyproject_path,
-                flow_name=flow_name,
+def _provided_prompt_roots_for_config(
+    *,
+    config_path: Path,
+    builtins: RallyBuiltinAssets,
+) -> tuple[object, ...]:
+    configured_roots = _configured_additional_prompt_roots(config_path)
+    builtin_root = builtins.stdlib_prompts_root.resolve()
+    if builtin_root in configured_roots:
+        return ()
+    for configured_root in configured_roots:
+        if configured_root.parts[-3:] == ("stdlib", "rally", "prompts"):
+            raise RallyConfigError(
+                f"`{config_path}` must not configure Rally stdlib prompt root `{configured_root}`. "
+                "Rally passes its stdlib prompt root to Doctrine during framework-managed builds."
             )
-            target_dir = build_agents_root / role_dir.name
-            target_dir.mkdir(parents=True, exist_ok=True)
-            (target_dir / "SOUL.md").write_text(rendered, encoding="utf-8")
+    return builtins.provided_prompt_roots()
 
+
+def _configured_additional_prompt_roots(config_path: Path) -> set[Path]:
+    try:
+        raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise RallyConfigError(f"`{config_path}` must contain valid TOML.") from exc
+    compile_config = raw.get("tool", {}).get("doctrine", {}).get("compile", {})
+    if not isinstance(compile_config, dict):
+        return set()
+    raw_roots = compile_config.get("additional_prompt_roots", [])
+    if raw_roots is None:
+        return set()
+    if not isinstance(raw_roots, list) or not all(isinstance(root, str) for root in raw_roots):
+        raise RallyConfigError("`tool.doctrine.compile.additional_prompt_roots` must be a list of strings.")
+    return {
+        (config_path.parent / root).resolve() if not Path(root).is_absolute() else Path(root).resolve()
+        for root in raw_roots
+    }
+
+
+def _prune_retired_compiled_agent_artifacts(
+    build_agents_root: Path,
+    *,
+    expected_agent_slugs: tuple[str, ...],
+) -> None:
     if not build_agents_root.is_dir():
         return
-
-    for agent_dir in sorted(build_agents_root.iterdir()):
-        if not agent_dir.is_dir() or agent_dir.name in expected_role_slugs:
+    expected_dirs = set(expected_agent_slugs)
+    for existing_dir in sorted(build_agents_root.iterdir()):
+        if not existing_dir.is_dir() or existing_dir.name in expected_dirs:
             continue
-        for sidecar_name in ("SOUL.md", "SOUL.contract.json"):
-            sidecar_path = agent_dir / sidecar_name
-            if sidecar_path.is_file():
-                sidecar_path.unlink()
+        shutil.rmtree(existing_dir)
+    for old_sidecar in build_agents_root.glob("*/AGENTS.contract.json"):
+        old_sidecar.unlink()
 
 
-def _render_sidecar_prompt(
-    *,
-    prompt_path: Path,
-    project_config_path: Path,
-    flow_name: str,
-) -> str:
-    try:
-        from doctrine.compiler import CompilationSession
-        from doctrine.diagnostics import DoctrineError
-        from doctrine.emit_common import root_concrete_agents
-        from doctrine.parser import parse_file
-        from doctrine.project_config import load_project_config
-        from doctrine.renderer import render_markdown
-    except ImportError as exc:
-        raise RallyConfigError(
-            f"Failed to import Doctrine while rendering role sidecars for flow `{flow_name}`: {exc}."
-        ) from exc
+def _validate_emitted_agent_packages(build_agents_root: Path) -> None:
+    if not build_agents_root.is_dir():
+        raise RallyConfigError(f"Doctrine emit did not create compiled agents under `{build_agents_root}`.")
 
-    try:
-        prompt_file = parse_file(prompt_path)
-        agent_names = root_concrete_agents(prompt_file)
-        if len(agent_names) != 1:
+    agent_dirs = [path for path in sorted(build_agents_root.iterdir()) if path.is_dir()]
+    if not agent_dirs:
+        raise RallyConfigError(f"Doctrine emit did not create any compiled agents under `{build_agents_root}`.")
+
+    for agent_dir in agent_dirs:
+        markdown_path = agent_dir / "AGENTS.md"
+        metadata_file = agent_dir / "final_output.contract.json"
+        if not markdown_path.is_file() or not metadata_file.is_file():
             raise RallyConfigError(
-                f"Role sidecar `{prompt_path}` must compile exactly one concrete agent, found {len(agent_names)}."
+                f"Compiled agent directory `{agent_dir}` must contain `AGENTS.md` and `final_output.contract.json`."
             )
-        project_config = load_project_config(project_config_path)
-        session = CompilationSession(prompt_file, project_config=project_config)
-        compiled_agents = session.compile_agents(agent_names)
-    except DoctrineError as exc:
-        raise RallyConfigError(f"Failed to compile role sidecar `{prompt_path}`: {exc}") from exc
+        payload = _load_final_output_metadata(metadata_file)
+        final_output = payload.get("final_output")
+        if not isinstance(final_output, dict) or final_output.get("exists") is not True:
+            raise RallyConfigError(f"`{metadata_file}` must declare an existing final output.")
+        emitted_schema_relpath = final_output.get("emitted_schema_relpath")
+        if not isinstance(emitted_schema_relpath, str) or not emitted_schema_relpath:
+            raise RallyConfigError(f"`{metadata_file}` must declare `final_output.emitted_schema_relpath`.")
+        schema_path = (agent_dir / emitted_schema_relpath).resolve()
+        try:
+            schema_path.relative_to(agent_dir.resolve())
+        except ValueError as exc:
+            raise RallyConfigError(
+                f"`{metadata_file}` final_output.emitted_schema_relpath must stay inside `{agent_dir}`."
+            ) from exc
+        if not schema_path.is_file():
+            raise RallyConfigError(
+                f"`{metadata_file}` points at missing emitted schema `{schema_path}`."
+            )
 
-    return render_markdown(compiled_agents[0])
+
+def _load_final_output_metadata(metadata_file: Path) -> dict[str, object]:
+    try:
+        payload = json.loads(metadata_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RallyConfigError(f"`{metadata_file}` must contain valid JSON.") from exc
+    if not isinstance(payload, dict):
+        raise RallyConfigError(f"`{metadata_file}` must contain a top-level object.")
+    return payload
 
 
 def _coerce_workspace(*, workspace: WorkspaceContext | None, repo_root: Path | None) -> WorkspaceContext:
@@ -256,15 +513,17 @@ def _validate_prompt_rooted_paths(
     workspace: WorkspaceContext,
     flow_name: str,
     skill_names: tuple[str, ...],
+    builtins: RallyBuiltinAssets,
 ) -> None:
     prompt_roots: list[Path] = [
         workspace.workspace_root / "flows" / flow_name / "prompts",
-        workspace.workspace_root / "stdlib" / "rally" / "prompts",
+        builtins.stdlib_prompts_root,
     ]
     for skill_name in skill_names:
         bundle = resolve_skill_bundle_source(
             repo_root=workspace.workspace_root,
             skill_name=skill_name,
+            builtins=builtins,
         )
         if bundle.kind != "doctrine" or bundle.doctrine_entrypoint is None:
             continue

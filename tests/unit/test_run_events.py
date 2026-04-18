@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -68,6 +69,63 @@ class RunEventTests(unittest.TestCase):
             self.assertIn("adapter=codex", stream.getvalue())
             self.assertIn("start=01_scope_lead", stream.getvalue())
             self.assertIn("agents=4", stream.getvalue())
+
+    def test_recorder_writes_raw_and_final_json_without_rendering_them(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir).resolve() / "runs" / "DMO-1"
+            run_dir.mkdir(parents=True)
+            stream = io.StringIO()
+            recorder = RunEventRecorder(
+                run_dir=run_dir,
+                run_id="DMO-1",
+                flow_code="DMO",
+                consumer=build_terminal_display(
+                    stream=stream,
+                    context=_display_context(),
+                ),
+            )
+
+            payload_file = run_dir / "home" / "sessions" / "scope_lead" / "turn-001" / "last_message.json"
+            payload_file.parent.mkdir(parents=True, exist_ok=True)
+            payload_file.write_text(
+                json.dumps({"kind": "handoff", "next_owner": "change_engineer"}) + "\n",
+                encoding="utf-8",
+            )
+
+            recorder.emit_adapter_json(
+                source="codex",
+                raw_line='{"type":"thread.started","thread_id":"session-1"}\n',
+                turn_index=1,
+                agent_key="01_scope_lead",
+                agent_slug="scope_lead",
+            )
+            recorder.emit_final_json(
+                payload={"kind": "handoff", "next_owner": "change_engineer"},
+                payload_file=payload_file,
+                turn_index=1,
+                agent_key="01_scope_lead",
+                agent_slug="scope_lead",
+            )
+            recorder.close()
+
+            events = _read_jsonl(run_dir / "logs" / "events.jsonl")
+            rendered_file = run_dir / "logs" / "rendered.log"
+            agent_log = _read_jsonl(run_dir / "logs" / "agents" / "scope_lead.jsonl")
+
+            self.assertEqual([event["code"] for event in events], ["RAWJSON", "FINALJSON"])
+            self.assertEqual(events[0]["data"]["payload_source"], "adapter_stdout")
+            self.assertEqual(events[0]["data"]["adapter_event_type"], "thread.started")
+            self.assertEqual(events[0]["data"]["raw_payload"]["thread_id"], "session-1")
+            self.assertEqual(events[1]["data"]["payload_source"], "last_message")
+            self.assertEqual(events[1]["data"]["result_kind"], "handoff")
+            self.assertEqual(events[1]["data"]["raw_payload"]["next_owner"], "change_engineer")
+            self.assertEqual(
+                events[1]["data"]["payload_file"],
+                "home/sessions/scope_lead/turn-001/last_message.json",
+            )
+            self.assertEqual([event["code"] for event in agent_log], ["RAWJSON", "FINALJSON"])
+            self.assertFalse(rendered_file.exists())
+            self.assertIn("Rally DMO-1", stream.getvalue())
 
     def test_render_plain_event_line_is_scan_friendly(self) -> None:
         line = render_plain_event_line(
@@ -321,5 +379,11 @@ def _display_context(
             AgentDisplayIdentity(key="04_acceptance_critic", slug="acceptance_critic"),
         ),
     )
+
+
+def _read_jsonl(path: Path) -> list[dict[str, object]]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
 if __name__ == "__main__":
     unittest.main()

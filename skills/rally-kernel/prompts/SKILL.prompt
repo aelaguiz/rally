@@ -1,71 +1,53 @@
 skill package RallyKernel: "Rally Kernel"
     metadata:
         name: "rally-kernel"
-        description: "Shared Rally turn skill for leaving issue notes, adding flat structured note fields, and ending a turn with the declared final JSON. Use it when a Rally-managed agent needs to leave a note, write that note with `$RALLY_CLI_BIN issue note`, add `--field key=value` labels to that note, or shape final JSON without inventing another way to end the turn. Do not use it for flow-local planning, runtime code changes, or direct `home:issue.md` edits."
+        description: "Shared Rally note skill for saving one short run note through Rally CLI."
 
-    "Use this skill on Rally-managed turns when you need Rally's shared note and end-turn rules."
-    "Do not use it to repeat flow-local prompt instructions."
-    "Rally loads this skill on every Rally-managed turn. Flows do not need to list it by hand."
+    "Use this skill when a later reader needs one short saved note on this run."
+    "This skill is for note work only. It does not replace the turn's declared output."
 
-    bullets when_to_use: "When to use"
-        leave_note: "You need to leave a note on the current Rally run before the turn ends."
-        flat_labels: "You need to add short machine-readable note fields such as `kind` or `lane`."
-        final_json: "You need to end the turn with the final JSON this turn declares."
-        keep_boundary: "You need to keep the line clear between saved notes and turn control."
+    quick_model: "Quick model"
+        bullets points:
+            "Use Rally CLI for notes."
 
-    bullets canonical_user_asks: "Canonical user asks"
-        leave_note: "\"Leave a note on this Rally run before you end the turn.\""
-        structured_note: "\"Leave a structured Rally note with `--field` labels.\""
-        rally_path: "\"Use the Rally note path, not direct file edits.\""
-        final_json: "\"End the turn with valid Rally JSON without inventing a second return path.\""
+    when_to_use: "When to use"
+        bullets cases:
+            "A later reader needs one short saved note on this run."
+            "The note also needs short `--field key=value` labels."
 
-    bullets when_not_to_use: "When not to use"
-        local_work: "The work is local planning, code change, proof, or review inside a flow."
-        runtime_work: "The task is implementing Rally runtime code such as CLI parsing, ledger writes, or adapter launch behavior."
-        prose_route: "The turn is trying to pass work, mark the run done, block, or sleep through note prose instead of final JSON."
-        cross_run_memory: "The lesson should help a later run. Use `rally-memory` for cross-run memory instead of this skill."
+    hard_rules: "Hard rules"
+        bullets rules:
+            "Write notes with `\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\"`."
+            "Do not edit `home:issue.md` directly."
+            "Keep `--field` labels short and flat."
+            "Fail loud if `RALLY_CLI_BIN`, `RALLY_WORKSPACE_DIR`, or `RALLY_RUN_ID` is missing instead of guessing the active run or CLI path."
+            "If Rally already saves a review result to `home:issue.md`, do not add a second note unless the flow asks for one."
 
-    bullets non_negotiables: "Non-negotiables"
-        notes_are_context: "Notes are context only. They never decide who works next or whether the run is done, blocked, or sleeping."
-        notes_are_run_local: "Keep notes run-local. Use `rally-memory` for cross-run lessons."
-        field_labels_only: "Structured note fields are labels only. Keep them short and flat."
-        no_route_truth: "Note fields never carry `next_owner`, `done`, `blocker`, or `sleep` truth."
-        no_direct_edits: "Do not edit `home:issue.md` directly."
-        cli_path: "Write notes with `\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\"`."
-        fail_loud: "Fail loud if `RALLY_CLI_BIN`, `RALLY_WORKSPACE_DIR`, or `RALLY_RUN_ID` is missing instead of guessing the active run or CLI path."
-        provided_by_rally: "Rally provides this skill on Rally-managed turns. Flows do not need to allowlist it by hand."
-        final_path: "End the turn through the adapter's final JSON path, not through a second CLI command or prose side path."
-        handoff_owner: "When you use `handoff`, set `next_owner` to the owner key declared by the flow."
-        review_exception: "Some review-native turns end with Doctrine review JSON that Rally can read. Those turns may not need a second saved note."
-
-    sequence first_move: "First move"
-        confirm_turn: "Confirm this is a Rally-managed turn, that `RALLY_WORKSPACE_DIR` points at the active workspace root, that `RALLY_CLI_BIN` points at Rally CLI, and that `RALLY_RUN_ID` is present."
-        decide_note: "Decide whether a later reader needs a short note."
-        decide_fields: "If yes, decide whether the note also needs flat `--field key=value` labels."
-        write_note: "Write one short markdown note through the Rally CLI."
-        shape_result: "Shape the final turn result to match the declared JSON schema for this turn."
+    first_move: "First move"
+        sequence steps:
+            "Confirm `RALLY_CLI_BIN`, `RALLY_RUN_ID`, and the active Rally workspace are present."
+            "Decide whether a later reader needs one short saved note."
 
     workflow: "Workflow"
-        sequence steps: "Steps"
-            decide_need: "Decide whether a note is really needed. Use a note only when later readers would lose important context that does not belong in the flow's main file or in the final turn result itself."
-            write_note: "Write the note through Rally CLI when needed."
-            keep_note_short: "Keep the note short. Save context, decisions, exact commands, or constraints that later turns should read. Do not restate the whole file or copy the final JSON."
-            keep_fields_simple: "Keep structured fields simple. Use short flat labels such as `kind`, `lane`, `artifact`, or `review_mode`. Put the human explanation in the note body, not in the field names."
-            end_with_json: "End the turn with strict final JSON. Many turns use the shared Rally turn result. On that shared shape, send `agent_issues` with one short issue or `none`. Review-native turns may use declared Doctrine review JSON instead. The skill helps you shape that result, but it does not replace the adapter return path."
-            keep_route_truth_out: "Keep route truth out of notes. If the turn routes, let final JSON carry `next_owner`."
+        sequence steps:
+            "Use a note only when later readers would lose context that does not belong in the main file."
+            "Write the note through Rally CLI when needed."
+            "Keep the note short. Save context, exact commands, or constraints."
+            "Keep `--field` labels simple. Put the human explanation in the note body, not in the field names."
+            "When the turn ends on the shared Rally turn result, you may send `agent_issues` with one short issue or `none`. It is passive diagnostics and never changes route, done, blocker, or sleep behavior."
 
-        code stdin_note: "Preferred stdin form" advisory
-            language: bash
-            text: """
+    code stdin_note: "Preferred stdin form" advisory
+        language: bash
+        text: """
 "$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID" <<'EOF'
 ### Note
 - Explain the context worth preserving for the next owner or later turn.
 EOF
 """
 
-        code structured_note: "Flat field form" advisory
-            language: bash
-            text: """
+    code structured_note: "Flat field form" advisory
+        language: bash
+        text: """
 "$RALLY_CLI_BIN" issue note \\
   --run-id "$RALLY_RUN_ID" \\
   --field kind=producer_handoff \\
@@ -75,17 +57,18 @@ Kept the body short. Read the field labels first, then this note.
 EOF
 """
 
-        bullets short_forms: "Short forms"
-            text_flag: "Use `--text` when a one-line note is clearer than stdin."
-            file_flag: "Use `--file` when the note already exists in a small prepared file."
-            more_forms: "Read `references/note_examples.md` when you need the exact alternate note forms."
+    short_forms: "Short forms"
+        bullets forms:
+            "Use `--text` when a one-line note is clearer than stdin."
+            "Use `--file` when the note already exists in a small prepared file."
+            "Read `references/note_examples.md` when you need the exact alternate note forms."
 
-    bullets output_expectations: "Output expectations"
-        final_only: "When no saved context is needed, the turn may emit only the final JSON result."
-        note_plus_final: "When saved context is needed, the turn writes one note through Rally CLI and still ends with one final JSON result."
-        review_saved: "When Rally already saves a review-native final response into `home:issue.md`, do not add a second note unless the flow asks for it."
-        no_second_path: "The skill never creates a second trusted routing path, second turn-ending command, or direct file-write shortcut."
+    output_expectations: "Output expectations"
+        bullets rules:
+            "When no saved context is needed, do not write a note."
+            "When saved context is needed, write one note only."
 
-    bullets reference_map: "Reference map"
-        note_examples: "Use `references/note_examples.md` for the exact note command forms."
-        no_extra_files: "No extra `references/` or `scripts/` should ship in v1 unless review or repeated execution failures prove they are needed."
+    reference_map: "Reference map"
+        bullets references:
+            "Use `references/note_examples.md` for the exact note command forms."
+            "No extra `references/` or `scripts/` should ship in v1 unless review or repeated execution failures prove they are needed."

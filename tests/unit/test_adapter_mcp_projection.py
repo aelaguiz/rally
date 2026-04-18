@@ -397,28 +397,36 @@ def _demo_flow(
     flow_root = workspace_root / "flows" / "demo"
     prompt_path = flow_root / "prompts" / "AGENTS.prompt"
     markdown_path = flow_root / "build" / "agents" / "scope_lead" / "AGENTS.md"
-    contract_path = flow_root / "build" / "agents" / "scope_lead" / "AGENTS.contract.json"
+    metadata_file = flow_root / "build" / "agents" / "scope_lead" / "final_output.contract.json"
     final_output = FinalOutputContract(
         exists=True,
+        contract_version=1,
         declaration_key="DemoTurnResult",
         declaration_name="DemoTurnResult",
-        format_mode="json_schema",
+        format_mode="json_object",
         schema_profile="OpenAIStructuredOutput",
-        schema_file=workspace_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json",
-        example_file=workspace_root / "stdlib" / "rally" / "examples" / "rally_turn_result.example.json",
+        generated_schema_file=flow_root
+        / "build"
+        / "agents"
+        / "scope_lead"
+        / "schemas"
+        / "rally_turn_result.schema.json",
+        metadata_file=metadata_file,
     )
     agent = FlowAgent(
         key="01_scope_lead",
         slug="scope_lead",
         timeout_sec=60,
         allowed_skills=(),
+        system_skills=(),
+        external_skills=(),
         allowed_mcps=allowed_mcps,
         compiled=CompiledAgentContract(
             name="ScopeLead",
             slug="scope_lead",
             entrypoint=prompt_path,
             markdown_path=markdown_path,
-            contract_path=contract_path,
+            metadata_file=metadata_file,
             contract_version=1,
             final_output=final_output,
         ),
@@ -428,7 +436,6 @@ def _demo_flow(
         code="DMO",
         root_dir=flow_root,
         flow_file=flow_root / "flow.yaml",
-        prompt_entrypoint=prompt_path,
         build_agents_dir=flow_root / "build" / "agents",
         setup_home_script=None,
         start_agent_key=agent.key,
@@ -437,7 +444,7 @@ def _demo_flow(
         runtime_env=runtime_env or {},
         host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
         agents={agent.key: agent},
-        adapter=AdapterConfig(name=adapter_name, prompt_input_command=None, args={}),
+        adapter=AdapterConfig(name=adapter_name, args={}),
     )
 
 

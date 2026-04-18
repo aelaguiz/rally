@@ -1,24 +1,27 @@
-enum ReviewMode: "Review Mode"
-    architect_review: "architect-review"
-    developer_review: "developer-review"
-    qa_review: "qa-review"
+import rally.review_results as review_results
 
 
-json schema CriticReviewSchema: "Critic Review Schema"
-    profile: OpenAIStructuredOutput
-    file: "schemas/critic_review.schema.json"
+# Group the carried base fields when the child only keeps the shared review
+# body and example.
+output schema EngineeringReviewSchema[review_results.BaseRallyReviewSchema]: "Engineering Review Schema"
+    inherit {verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail}
+
+    override example:
+        verdict: "accept"
+        reviewed_artifact: "home:issue.md"
+        analysis_performed: "The architect pass names the real repo path, stays on the current branch, and gives Developer one clear next step."
+        findings_first: "The architect pass is ready for development."
+        current_artifact: "home:issue.md"
+        next_owner: "developer"
+        failure_detail: null
 
 
-output shape CriticReviewJson: "Critic Review JSON"
-    kind: JsonObject
-    schema: CriticReviewSchema
-    example_file: "examples/critic_review.example.json"
-
-    field_notes: "Field Notes"
-        "Use `architect`, `developer`, or `qa_docs_tester` for `next_owner` when the review routes."
-        "Use `home:issue.md` for `reviewed_artifact` and `current_artifact`."
-        "Use `null` for `next_owner` when the review accepts the final QA pass."
-        "Use `null` for `failure_detail` when the review accepts."
+# Keep the JSON shape explicit because the schema override is the main thing a
+# reader needs to spot here.
+output shape EngineeringReviewJson[review_results.BaseRallyReviewJson]: "Engineering Review JSON"
+    inherit kind
+    override schema: EngineeringReviewSchema
+    inherit field_notes
 
 
 schema ArchitectReviewContract: "Architect Review Contract"
@@ -66,47 +69,30 @@ schema QaReviewContract: "QA Review Contract"
             "Confirm the proof is real and easy to read back."
 
         finish_ready: "Finish Ready"
-            "Confirm Critic can honestly end the run."
+            "Confirm the flow can honestly end now."
 
 
-output CriticReviewResponse: "Critic Review Response"
-    target: TurnResponse
-    shape: CriticReviewJson
-    requirement: Required
+output EngineeringReviewResponse[review_results.BaseRallyReviewResponse]: "Engineering Review Response"
+    inherit target
+    override shape: EngineeringReviewJson
+    inherit {requirement, verdict, findings_first, failure_detail}
 
-    verdict: "Verdict"
-        "Say whether the reviewed pass is accepted or needs changes."
-
-    reviewed_artifact: "Reviewed Artifact"
+    override reviewed_artifact: "Reviewed Artifact"
         "Use `home:issue.md`."
 
-    analysis_performed: "Review Summary"
+    override analysis_performed: "Review Summary"
         "Explain the review in 2-4 plain sentences."
-        "Say what is ready."
-        "Say what is still missing when the review rejects."
 
-    findings_first: "Findings First"
-        "Start with the main finding, then the next move."
-        "Keep it short and plain."
-
-    current_artifact: "Current Artifact" when present(current_artifact):
+    override current_artifact: "Current Artifact" when present(current_artifact):
         "Use `home:issue.md`."
 
-    next_owner: "Next Owner" when present(next_owner):
+    override next_owner: "Next Owner" when present(next_owner):
         "Use {{Architect:key}} when Architect needs another pass."
         "Use {{Developer:key}} when the next repo change belongs to Developer."
         "Use {{QaDocsTester:key}} when the accepted developer pass is ready for QA."
 
-    failure_detail: "Failure Detail" when verdict == ReviewVerdict.changes_requested:
-        blocked_gate: "Blocked Gate" when present(blocked_gate):
-            "Name the blocker when review cannot start honestly."
+    inherit {trust_surface, standalone_read}
 
-        failing_gates: "Failing Gates"
-            "List the exact failing gates in authored order."
 
-    trust_surface:
-        current_artifact
-
-    standalone_read: "Standalone Read"
-        "This review should stand on its own."
-        "A downstream owner should know the verdict, the next owner when one exists, and the main reason."
+output EngineeringReviewFinalResponse[EngineeringReviewResponse]: "Engineering Review Final Response"
+    inherit {target, shape, requirement, verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail, trust_surface, standalone_read}

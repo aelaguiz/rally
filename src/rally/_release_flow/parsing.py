@@ -8,10 +8,10 @@ from rally._package_release import load_doctrine_dependency_line, load_package_r
 from rally._release_flow.common import release_error, run_checked
 from rally._release_flow.models import (
     CHANGELOG_SECTION_RE,
-    COMPILED_CONTRACT_VERSION_RE,
     CURRENT_DOCTRINE_FLOOR_RE,
     CURRENT_DOCTRINE_PACKAGE_LINE_RE,
     CURRENT_PUBLIC_RELEASE_VERSION_RE,
+    FINAL_OUTPUT_CONTRACT_VERSION_RE,
     HEADER_FIELD_ORDER,
     ChangelogSection,
     ReleaseEntry,
@@ -182,28 +182,28 @@ def load_workspace_version(repo_root: Path) -> int:
     return version
 
 
-def load_compiled_contract_version(repo_root: Path) -> int:
+def load_final_output_contract_version(repo_root: Path) -> int:
     flow_loader_path = repo_root / "src" / "rally" / "services" / "flow_loader.py"
     text = _read_text(
         flow_loader_path,
         code="E531",
-        summary="Missing compiled contract version",
-        detail="`src/rally/services/flow_loader.py` is required so Rally can read the compiled contract version.",
+        summary="Missing final-output contract version",
+        detail="`src/rally/services/flow_loader.py` is required so Rally can read the final-output contract version.",
     )
-    match = COMPILED_CONTRACT_VERSION_RE.search(text)
+    match = FINAL_OUTPUT_CONTRACT_VERSION_RE.search(text)
     if match is None:
         raise release_error(
             "E531",
-            "Missing compiled contract version",
-            "`src/rally/services/flow_loader.py` must define `SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS = frozenset({...})`.",
+            "Missing final-output contract version",
+            "`src/rally/services/flow_loader.py` must define `SUPPORTED_FINAL_OUTPUT_CONTRACT_VERSIONS = frozenset({...})`.",
             location=flow_loader_path,
         )
     versions = [int(part.strip()) for part in match.group("versions").split(",") if part.strip()]
     if not versions:
         raise release_error(
             "E531",
-            "Missing compiled contract version",
-            "Rally could not parse any compiled contract version from `SUPPORTED_COMPILED_AGENT_CONTRACT_VERSIONS`.",
+            "Missing final-output contract version",
+            "Rally could not parse any final-output contract version from `SUPPORTED_FINAL_OUTPUT_CONTRACT_VERSIONS`.",
             location=flow_loader_path,
         )
     return max(versions)

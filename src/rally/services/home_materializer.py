@@ -17,9 +17,18 @@ from rally.services.issue_editor import edit_issue_file_in_editor, resolve_inter
 from rally.services.issue_ledger import snapshot_issue_log
 from rally.services.run_events import RunEventRecorder
 from rally.services.run_store import find_run_dir
-from rally.services.skill_bundles import MANDATORY_SKILL_NAMES, resolve_skill_bundle_source
-from rally.services.workspace import WorkspaceContext, workspace_context_from_root
-from rally.services.workspace_sync import sync_workspace_builtins
+from rally.services.builtin_assets import RallyBuiltinAssets, resolve_rally_builtin_assets
+from rally.services.skill_bundles import (
+    MANDATORY_SKILL_NAMES,
+    resolve_external_skill_bundle_source,
+    resolve_skill_bundle_source,
+    split_external_skill_name,
+)
+from rally.services.workspace import (
+    ExternalSkillRoot,
+    WorkspaceContext,
+    workspace_context_from_root,
+)
 
 _HOME_READY_MARKER = ".rally_home_ready"
 
@@ -65,11 +74,17 @@ def materialize_run_home(
         run_id=run_record.id,
         event_recorder=event_recorder,
     )
-    sync_workspace_builtins(workspace=workspace_context)
+    builtins = resolve_rally_builtin_assets(workspace=workspace_context)
     _sync_compiled_agents(run_home=run_home, flow=flow)
     # Refresh each agent's stable skill view here. The runner activates one
     # of these views into the live `home/skills/` tree right before launch.
-    _refresh_agent_skill_views(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
+    _refresh_agent_skill_views(
+        repo_root=workspace_context.workspace_root,
+        run_home=run_home,
+        flow=flow,
+        builtins=builtins,
+        external_skill_roots=workspace_context.external_skill_roots,
+    )
     _copy_allowed_mcps(repo_root=workspace_context.workspace_root, run_home=run_home, flow=flow)
     get_adapter(flow.adapter.name).prepare_home(
         repo_root=workspace_context.workspace_root,
@@ -288,6 +303,9 @@ def _home_ready_marker(run_home: Path) -> Path:
 
 
 def _sync_compiled_agents(*, run_home: Path, flow: FlowDefinition) -> None:
+    # Copy each compiled agent package directory whole so compiler-owned peers
+    # such as `SOUL.md` survive into the run home without Rally re-emitting
+    # them or treating them as a second prompt surface.
     _sync_named_directories(
         target_root=run_home / "agents",
         sources_by_name={
@@ -323,7 +341,14 @@ def activate_agent_skills(*, run_home: Path, agent: FlowAgent) -> None:
     _sync_named_directories(target_root=run_home / "skills", sources_by_name=skill_sources)
 
 
-def _refresh_agent_skill_views(*, repo_root: Path, run_home: Path, flow: FlowDefinition) -> None:
+def _refresh_agent_skill_views(
+    *,
+    repo_root: Path,
+    run_home: Path,
+    flow: FlowDefinition,
+    builtins: RallyBuiltinAssets,
+    external_skill_roots: tuple[ExternalSkillRoot, ...] = (),
+) -> None:
     sessions_root = run_home / "sessions"
     expected_agent_slugs = {agent.slug for agent in flow.agents.values()}
     for existing in sorted(sessions_root.iterdir()):
@@ -331,14 +356,17 @@ def _refresh_agent_skill_views(*, repo_root: Path, run_home: Path, flow: FlowDef
             continue
         _remove_path(existing / "skills")
 
+    external_roots_by_alias = {entry.alias: entry.root for entry in external_skill_roots}
     for agent in flow.agents.values():
         skill_view_root = _agent_skill_view_root(run_home=run_home, agent_slug=agent.slug)
         skill_view_root.mkdir(parents=True, exist_ok=True)
         _sync_named_directories(
             target_root=skill_view_root,
-            sources_by_name=_resolve_skill_sources(
+            sources_by_name=_resolve_agent_skill_sources(
                 repo_root=repo_root,
-                skill_names=_agent_skill_names(agent),
+                agent=agent,
+                builtins=builtins,
+                external_roots_by_alias=external_roots_by_alias,
             ),
         )
 
@@ -357,14 +385,51 @@ def _copy_allowed_mcps(*, repo_root: Path, run_home: Path, flow: FlowDefinition)
     _sync_named_directories(target_root=run_home / "mcps", sources_by_name=mcp_sources)
 
 
-def _resolve_skill_sources(*, repo_root: Path, skill_names: tuple[str, ...]) -> dict[str, Path]:
+def _resolve_agent_skill_sources(
+    *,
+    repo_root: Path,
+    agent: FlowAgent,
+    builtins: RallyBuiltinAssets,
+    external_roots_by_alias: Mapping[str, Path],
+) -> dict[str, Path]:
+    # The per-agent view is keyed by the unqualified skill name — that is the
+    # directory name adapters expose to the agent (`.claude/skills/<name>/`).
+    # The tier the skill came from is an authoring concept that does not leak
+    # into the runtime layout.
     skill_sources: dict[str, Path] = {}
-    for skill_name in skill_names:
+
+    for skill_name in (*MANDATORY_SKILL_NAMES, *agent.allowed_skills, *agent.system_skills):
+        if skill_name in skill_sources:
+            continue
         bundle = resolve_skill_bundle_source(
             repo_root=repo_root,
             skill_name=skill_name,
+            builtins=builtins,
         )
         skill_sources[skill_name] = bundle.runtime_source_dir()
+
+    for qualified_name in agent.external_skills:
+        alias, unqualified = split_external_skill_name(qualified_name)
+        root = external_roots_by_alias.get(alias)
+        if root is None:
+            raise RallyConfigError(
+                f"External skill `{qualified_name}` referenced by agent `{agent.key}` has no "
+                f"registered root alias `{alias}`. Register it under "
+                "`[tool.rally.workspace.external_skill_roots]` in pyproject.toml."
+            )
+        if unqualified in skill_sources:
+            raise RallyConfigError(
+                f"Agent `{agent.key}` expects two skills named `{unqualified}`: one from a "
+                f"workspace or stdlib tier, and one from `external_skills` "
+                f"(`{qualified_name}`). Rename one to avoid the collision."
+            )
+        bundle = resolve_external_skill_bundle_source(
+            root=root,
+            alias=alias,
+            skill_name=unqualified,
+        )
+        skill_sources[unqualified] = bundle.runtime_source_dir()
+
     return skill_sources
 
 
@@ -395,11 +460,16 @@ def _load_agent_skill_view_sources(*, skill_view_root: Path, agent: FlowAgent) -
 
 
 def _agent_skill_names(agent: FlowAgent) -> tuple[str, ...]:
+    external_unqualified = tuple(
+        split_external_skill_name(name)[1] for name in agent.external_skills
+    )
     return tuple(
         sorted(
             {
                 *(MANDATORY_SKILL_NAMES),
                 *(agent.allowed_skills),
+                *(agent.system_skills),
+                *external_unqualified,
             }
         )
     )

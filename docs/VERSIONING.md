@@ -3,12 +3,12 @@
 This file is the canonical home for Rally versioning, release rules, and
 Doctrine compatibility guidance.
 
-Current public Rally release version: v0.1.1
-Current Rally package version: 0.1.1
+Current public Rally release version: v1.0.0
+Current Rally package version: 1.0.0
 Current workspace manifest version: 1
-Current compiled agent contract version: 1
-Current minimum Doctrine release: v1.0.2
-Current supported Doctrine package line: doctrine-agents>=1.0.2,<2
+Current final-output contract version: 1
+Current minimum Doctrine release: v2.0.0
+Current supported Doctrine package line: doctrine-agents>=2.0.0,<3
 
 ## The Version Lines
 
@@ -22,7 +22,7 @@ The Rally release version tracks one public shipped release or prerelease.
 - Beta tags use `vX.Y.Z-beta.N`.
 - RC tags use `vX.Y.Z-rc.N`.
 - Release major bumps cover any public surface that now needs user action,
-  even when Rally's workspace or compiled-contract lines stay the same.
+  even when Rally's workspace or final-output contract lines stay the same.
 - Release minor bumps cover backward-compatible public additions and soft
   deprecations.
 - Release patch bumps cover internal-only or other non-breaking public fixes.
@@ -33,8 +33,9 @@ Rally also ships narrower version lines.
 
 - `version` under `[tool.rally.workspace]` only versions the Rally workspace
   manifest contract. It is not the Rally release version.
-- `contract_version` in compiled `AGENTS.contract.json` files only versions the
-  compiled agent contract shape. It is not the Rally release version.
+- `contract_version` in emitted `final_output.contract.json` files only
+  versions the final-output metadata shape. It is not the Rally release
+  version.
 - The package metadata version in `pyproject.toml` versions the published
   Python package. It is not a Doctrine release or language version.
 - `import_name`, `pypi_environment`, and `testpypi_environment` under
@@ -42,8 +43,9 @@ Rally also ships narrower version lines.
   explicit in `pyproject.toml`.
 - The published distribution name is `rally-agents`, while the Python import
   package and CLI stay `rally`.
-- The Doctrine dependency floor and package line only describe which public
-  Doctrine release line Rally requires. They are not Rally release versions.
+- The Doctrine dependency floor and package line describe Rally's public
+  release metadata. Repo-local WIP builds may still use an editable Doctrine
+  checkout through `tool.uv.sources`.
 - For public stable releases, `vX.Y.Z` maps to package version `X.Y.Z`.
 - For public beta releases, `vX.Y.Z-beta.N` maps to package version `X.Y.ZbN`.
 - For public rc releases, `vX.Y.Z-rc.N` maps to package version `X.Y.ZrcN`.
@@ -51,7 +53,7 @@ Rally also ships narrower version lines.
   not match that release-package version.
 
 For the workspace manifest surface, use [README.md](../README.md).
-For the compiled contract surface, use
+For the final-output contract surface, use
 [docs/RALLY_MASTER_DESIGN.md](RALLY_MASTER_DESIGN.md).
 
 ## Release Classes
@@ -66,12 +68,12 @@ Every public release uses one release class.
 - `soft-deprecated`: behavior still works, but Rally now tells users what to
   move away from and how to move early. Release kind: `Non-breaking`.
 - `breaking`: any shipped public surface now needs user action. This includes
-  CLI breaks, workspace-layout breaks, compiled-contract breaks, or external
+  CLI breaks, workspace-layout breaks, final-output contract breaks, or external
   install and upgrade steps that now need human action. Release kind:
   `Breaking`.
 
-Breaking releases outside the workspace or compiled-contract surface may keep
-those narrower version lines unchanged.
+Breaking releases outside the workspace or final-output contract surface may
+keep those narrower version lines unchanged.
 
 ## Required Breaking-Change Payload
 
@@ -215,10 +217,13 @@ forget the others. Trusted Publishing matches those values exactly.
 
 ## Doctrine Compatibility
 
-- Rally depends on one explicit minimum Doctrine public release. Today that
-  floor is `v1.0.2`.
-- Rally's public package metadata must keep `doctrine-agents>=1.0.2,<2` until the
+- Rally public releases depend on one explicit minimum Doctrine public release.
+  Today that floor is `v2.0.0`.
+- Rally's public package metadata must keep `doctrine-agents>=2.0.0,<3` until the
   compatibility policy changes in the same release.
+- Repo-local WIP work may use editable `../doctrine` through
+  `tool.uv.sources`. Do not use the public package index as proof for a
+  dev-Doctrine compiler change.
 - If the Doctrine floor changes, update all of these together:
   - `pyproject.toml`
   - `docs/VERSIONING.md`
@@ -229,8 +234,8 @@ forget the others. Trusted Publishing matches those values exactly.
   temp environments with no manual Doctrine preinstall.
 - `make verify` must keep Rally's richer host-workspace packaged-install proof
   green on top of that clean-install smoke.
-- If an older env or lockfile still points at package `doctrine`, refresh it
-  to `doctrine-agents>=1.0.2,<2`.
+- If an older env or lockfile still points at package `doctrine` or an older
+  `doctrine-agents<2` pin, refresh it to `doctrine-agents>=2.0.0,<3`.
 - Rally's release version is not Doctrine's release version and not Doctrine's
   language version.
 
@@ -248,8 +253,8 @@ If a public release is wrong:
 
 - Do not ship silent breakage.
 - If a change breaks host-repo setup, workspace layout, `rally` CLI behavior,
-  compiled contract files, or another stable public surface, update this file
-  in the same change.
+  final-output contract files, or another stable public surface, update this
+  file in the same change.
 - Say who is affected.
 - Say what changed.
 - Give exact upgrade steps.

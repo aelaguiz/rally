@@ -30,9 +30,9 @@ Add a new Rally flow, `software_engineering_demo`, that starts from
 `home/issue.md`, bootstraps a demo repo when none exists, keeps work growing on
 top of the last accepted demo branch, and runs this loop:
 
-`Architect -> Critic -> Developer -> Critic -> QaDocsTester -> Critic`
+`Architect -> ArchitectReviewer -> Developer -> DeveloperReviewer -> QaDocsTester -> QaReviewer`
 
-The flow ends only when Critic says the issue is truly done.
+The flow ends only when `QaReviewer` says the issue is truly done.
 
 ## Problem
 
@@ -45,22 +45,22 @@ honest repo bootstrap for a repeatable engineering loop.
 ## Approach
 
 Use the fullest clean Doctrine surface we already have for prompts: abstract
-agents, shared workflows, typed inputs and outputs, role `grounding`, routed
-review behavior, Doctrine `review_family`, workflow law, and skill-package
-emit. Pair that with Rally's existing `runtime.prompt_input_command` so
-grounding can stand on real run facts like branch name, git cleanliness,
-carry-forward source, and the latest accepted critic verdict. Keep
-`route_only` as a small Critic-only escape hatch for control states that have
-no real artifact to review.
+agents, shared workflows, typed inputs and outputs, routed review behavior,
+Doctrine `review_family`, workflow law, and skill-package emit. Keep the shared
+ledger in `home:issue.md` as the one cross-turn note surface. Make agents read
+the repo and deterministic tools directly instead of injecting extra prompt
+summaries each turn. Keep producer routing on Doctrine `final_output.route`,
+keep review routing on split review JSON, then let Rally copy that JSON into
+one `Rally Turn Result` block for each successful turn.
 
 ## What shipped
 
 1. Reuse the shipped mixed-skill path and add `demo-git` as the showcase's
    second Doctrine-authored skill beside current markdown skills.
-2. Add the demo repo bootstrap, runtime fact input path, dirty-git guardrails,
-   and carry-forward branch history path.
-3. Author the new flow as a Doctrine showcase with explicit grounding and the
-   real skill mix it will use.
+2. Add the demo repo bootstrap, dirty-git guardrails, and carry-forward branch
+   history path.
+3. Author the new flow as a Doctrine showcase with explicit reviewer lanes and
+   the real skill mix it will use.
 4. Prove the loop on a blank demo repo and then on a second issue that builds
    on the first run, then sync the live docs to shipped truth.
 
@@ -68,8 +68,8 @@ no real artifact to review.
 
 - `home/issue.md` stays the only shared run ledger.
 - No second handoff artifact, packet, or sidecar control path.
-- Critic runs after every owner turn and is the only owner that can end the
-  flow as done.
+- Every producer turn goes straight to its matching reviewer.
+- Only `QaReviewer` may end the flow as done.
 - Every turn that changes the demo repo must commit before handoff.
 - New issues must branch from the last accepted demo tip instead of starting
   from scratch.
@@ -89,7 +89,7 @@ Current proof keeps the showcase honest:
 
 - Doctrine rebuilds landed for `_stdlib_smoke`, `poem_loop`,
   `software_engineering_demo`, and `demo-git`
+- Rally now injects `AGENTS.md` plus a generated previous-turn appendix when a
+  compiled contract asks for prior outputs
 - the full unit suite passes on current head
 - live `SED-3` and `SED-4` run artifacts proved the shipped loop
-
-

@@ -1,72 +1,221 @@
-import rally.base_agent
-import rally.turn_results
-import shared.inputs
-import shared.outputs
-import shared.contracts
-import shared.review
+import rally.base_agent as base
+import rally.turn_results as turn_results
+import shared.inputs as inputs
+import shared.outputs as outputs
+import shared.contracts as contracts
+import shared.review as review
+import roles.muse
 import roles.poem_writer
 import roles.poem_critic
 
 
-inputs PoemLoopInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
-    inherit rally_workspace_dir
-
-    inherit rally_run_id
-    inherit rally_flow_code
-    inherit rally_agent_slug
+inputs PoemLoopInputs[base.RallyManagedInputs]: "Inputs"
     inherit issue_ledger
 
-    poem_draft_file: "Poem Draft File"
-        shared.inputs.PoemDraftFile
+    poem_draft_file: inputs.PoemDraftFile
 
 
-abstract agent PoemLoopRole[rally.base_agent.RallyManagedBaseAgent]:
-    inherit rally_contract
-    inherit read_first
-    inherit how_to_take_a_turn
-    system_context: shared.contracts.PoemLoopSystemContext
-    ground_truth: shared.contracts.IssueLedgerGroundTruth
-    primary_path: shared.contracts.PrimaryPathRules
+input PreviousMuseTurn: "Previous Muse Turn"
+    source: base.RallyPreviousTurnOutput
+    requirement: Advisory
+    "Use the exact previous Muse turn JSON when PoemWriter starts a new draft."
+
+
+input PreviousPoemReview: "Previous Poem Review"
+    source: base.RallyPreviousTurnOutput
+        output: review.PoemReviewFinalResponse
+    requirement: Advisory
+    "Use the exact previous PoemCritic review JSON when Muse is revising after a reject loop."
+
+
+# Group the shared inherited wrappers when Muse keeps them unchanged.
+# Use the one-line wrapper form when the new slot is only one direct ref.
+inputs MuseInputs[PoemLoopInputs]: "Muse Inputs"
+    inherit {issue_ledger, poem_draft_file}
+
+    previous_poem_review: PreviousPoemReview
+
+
+inputs WriterInputs[PoemLoopInputs]: "Writer Inputs"
+    inherit {issue_ledger, poem_draft_file}
+
+    previous_muse_turn: PreviousMuseTurn
+
+
+output schema MuseTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Muse Turn Result Schema"
+    route field next_route: "Next Route"
+        poem_writer: "Send the guidance to PoemWriter." -> PoemWriter
+        nullable
+        note: "Use null only when Muse must block or sleep."
+
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
+
+    field poem_type: "Poem Type"
+        type: string
+        nullable
+        min_length: 1
+        note: "The poem type Muse wants next."
+
+    field subject: "Subject"
+        type: string
+        nullable
+        min_length: 1
+        note: "The poem subject Muse wants next."
+
+    field creative_direction: "Creative Direction"
+        type: string
+        nullable
+        min_length: 1
+        note: "The main image, mood, or angle for the next draft."
+
+    field revision_goal: "Revision Goal"
+        type: string
+        nullable
+        min_length: 1
+        note: "The clearest thing PoemWriter should fix or sharpen next."
+
+
+output shape MuseTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Muse Turn Result JSON"
+    inherit kind
+    override schema: MuseTurnResultSchema
+
+    override field_notes: "Field Notes"
+        bullets rules:
+            "Always send every field in this schema."
+            "Use `null` for fields that do not apply."
+            "`kind` tells Rally what to do next."
+            "Use `handoff` when `next_route` is `poem_writer`."
+            "Do not use `done` here."
+            "Use `null` for `next_route` only when you block or sleep."
+            "Set the poem fields when you hand off a new draft direction."
+
+
+output MuseTurnResult[turn_results.BaseRallyTurnResult]: "Muse Turn Result"
+    inherit target
+    override shape: MuseTurnResultJson
+    inherit requirement
+
+    next_route: "Next Route" when route.exists
+        "Use `poem_writer` when the next draft direction is clear."
+
+    poem_type: "Poem Type"
+        "Name the poem type Muse wants next."
+
+    subject: "Subject"
+        "Name the subject Muse wants next."
+
+    creative_direction: "Creative Direction"
+        "Name the main image, mood, or angle for the next draft."
+
+    revision_goal: "Revision Goal"
+        "Name the clearest thing PoemWriter should fix or sharpen next."
+
+
+output schema PoemWriterTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Poem Writer Turn Result Schema"
+    route field next_route: "Next Route"
+        poem_critic: "Send the draft to PoemCritic." -> PoemCritic
+        nullable
+        note: "Use null only when the writer must block or sleep."
+
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
+
+    field inspiration: "Inspiration"
+        type: string
+        nullable
+        min_length: 1
+        note: "Short image, mood, or idea that shaped the draft."
+
+
+output shape PoemWriterTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Poem Writer Turn Result JSON"
+    inherit kind
+    override schema: PoemWriterTurnResultSchema
+
+    override field_notes: "Field Notes"
+        bullets rules:
+            "Always send every field in this schema."
+            "Use `null` for fields that do not apply."
+            "`kind` tells Rally what to do next."
+            "Use `handoff` when `next_route` is `poem_critic`."
+            "Do not use `done` here."
+            "Use `null` for `next_route` only when you block or sleep."
+            "Set `inspiration` to one short phrase when you hand off a draft."
+            "Use `null` for `inspiration` when you block or sleep."
+
+
+output PoemWriterTurnResult[turn_results.BaseRallyTurnResult]: "Poem Writer Turn Result"
+    inherit target
+    override shape: PoemWriterTurnResultJson
+    inherit requirement
+
+    next_route: "Next Route" when route.exists
+        "Use `poem_critic` when the draft is ready for review."
+
+    inspiration: "Inspiration"
+        "Name one short image, mood, or idea that shaped the draft."
+        "Use `null` when you block or sleep."
+
+
+abstract agent PoemLoopRole[base.RallyManagedBaseAgent]:
+    inherit {rally_contract, read_first, how_to_take_a_turn}
+    system_context: contracts.PoemLoopSystemContext
+    ground_truth: contracts.IssueLedgerGroundTruth
+    primary_path: contracts.PrimaryPathRules
+
+
+agent Muse[PoemLoopRole]:
+    role: "Core job: turn the brief or latest critic review into one clear next draft direction for PoemWriter."
+    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, ground_truth, primary_path}
+    your_job: roles.muse.MuseJob
+    quality_bar: roles.muse.MuseQualityBar
+    inputs: MuseInputs
+    outputs[base.RallyManagedOutputs]: "Outputs"
+        inherit issue_note
+
+        turn_result: "Turn Result"
+            MuseTurnResult
+    skills: base.RallyManagedSkills
+    final_output:
+        output: MuseTurnResult
+        route: next_route
 
 
 agent PoemWriter[PoemLoopRole]:
-    role: "Core job: write the requested poem and hand it to PoemCritic."
-    inherit rally_contract
-    inherit read_first
-    inherit how_to_take_a_turn
-    inherit system_context
-    inherit ground_truth
-    inherit primary_path
+    role: "Core job: turn Muse guidance into the requested poem and hand it to PoemCritic."
+    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, ground_truth, primary_path}
     your_job: roles.poem_writer.PoemWriterJob
     quality_bar: roles.poem_writer.PoemWriterQualityBar
-    inputs: PoemLoopInputs
-    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
-        override issue_note: "Issue Note"
-            shared.outputs.WriterIssueNote
-
-        poem_draft: "Poem Draft"
-            shared.outputs.PoemDraft
+    inputs: WriterInputs
+    outputs[base.RallyManagedOutputs]: "Outputs"
+        # Keep `Turn Result` explicit because the wrapper title still helps the
+        # emitted readback. The other two wrappers are safe on one line because
+        # they only forward one declaration and add no local prose.
+        override issue_note: outputs.WriterIssueNote
+        poem_draft: outputs.PoemDraft
 
         turn_result: "Turn Result"
-            rally.turn_results.RallyTurnResult
-    skills: rally.base_agent.RallyManagedSkills
-    final_output: rally.turn_results.RallyTurnResult
+            PoemWriterTurnResult
+    skills: base.RallyManagedSkills
+    final_output:
+        output: PoemWriterTurnResult
+        route: next_route
 
 
 review PoemReview: "Poem Review"
-    subject: shared.inputs.PoemDraftFile
-    contract: shared.review.PoemReviewContract
-    comment_output: shared.review.PoemReviewResponse
+    subject: inputs.PoemDraftFile
+    contract: review.PoemReviewContract
+    comment_output: review.PoemReviewResponse
 
+    # Bare names mean identity binds.
+    # Keep explicit paths only where the review semantic name changes.
     fields:
-        verdict: verdict
-        reviewed_artifact: reviewed_artifact
+        verdict
+        reviewed_artifact
         analysis: analysis_performed
         readback: findings_first
-        current_artifact: current_artifact
+        current_artifact
         failing_gates: failure_detail.failing_gates
         blocked_gate: failure_detail.blocked_gate
-        next_owner: next_owner
+        next_owner
 
     basis_checks: "Basis Checks"
         block "The poem draft is missing." when shared.inputs.PoemDraftFile.basis_missing
@@ -75,30 +224,38 @@ review PoemReview: "Poem Review"
         accept "The poem meets the review contract." when contract.passes
 
     on_accept: "If Accepted"
-        current artifact shared.inputs.PoemDraftFile via shared.review.PoemReviewResponse.current_artifact
+        current artifact inputs.PoemDraftFile via review.PoemReviewResponse.current_artifact
 
     on_reject: "If Rejected"
         when present(blocked_gate):
             current none
 
         when missing(blocked_gate):
-            current artifact shared.inputs.PoemDraftFile via shared.review.PoemReviewResponse.current_artifact
-            route "Poem needs another draft." -> PoemWriter
+            current artifact inputs.PoemDraftFile via review.PoemReviewResponse.current_artifact
+            route "Poem needs another draft." -> Muse
 
 
 agent PoemCritic[PoemLoopRole]:
     role: "Core job: judge the poem with a real review, hand it back when it needs work, and finish only when it is ready."
-    inherit rally_contract
-    inherit read_first
-    inherit how_to_take_a_turn
-    inherit system_context
-    inherit ground_truth
-    inherit primary_path
+    inherit {rally_contract, read_first, how_to_take_a_turn, system_context, ground_truth, primary_path}
     your_job: roles.poem_critic.PoemCriticJob
     quality_bar: roles.poem_critic.PoemCriticQualityBar
     review: PoemReview
     inputs: PoemLoopInputs
+    # Keep this wrapper explicit because it carries two direct outputs under one
+    # local title.
     outputs: "Outputs"
-        shared.review.PoemReviewResponse
-    skills: rally.base_agent.RallyManagedSkills
-    final_output: shared.review.PoemReviewResponse
+        review.PoemReviewResponse
+        review.PoemReviewFinalResponse
+    skills: base.RallyManagedSkills
+    final_output:
+        output: review.PoemReviewFinalResponse
+        review_fields:
+            verdict
+            reviewed_artifact
+            analysis: analysis_performed
+            readback: findings_first
+            current_artifact
+            blocked_gate: failure_detail.blocked_gate
+            failing_gates: failure_detail.failing_gates
+            next_owner

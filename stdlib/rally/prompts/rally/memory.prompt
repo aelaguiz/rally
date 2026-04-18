@@ -1,10 +1,17 @@
+# Memory stays opt-in.
+# The base agent does not import this file, so a flow must choose memory when
+# older lessons are worth the extra turn cost.
 skill RallyMemorySkill: "rally-memory"
-    purpose: "Use the shared Rally memory skill to search, use, save, and refresh cross-run memory through Rally CLI."
+    purpose: "Use the shared Rally memory skill when an older lesson could help on this turn or when you learned one worth keeping."
 
     use_when: "Use When"
-        "Use this for tasks like past work."
-        "Use this when you had to fix your own work and learned a lesson worth keeping."
+        bullets cases:
+            "Past work like this could help."
+            "You learned a short lesson worth keeping."
 
+# The document shape makes saved lessons plain and repeatable.
+# It is separate from `home:issue.md` notes because memory crosses runs while
+# notes explain one run.
 document RallyMemoryEntryDocument: "Rally Memory Entry"
     section lesson: "Lesson"
         "State the lesson in plain words."
@@ -14,20 +21,3 @@ document RallyMemoryEntryDocument: "Rally Memory Entry"
 
     section what_to_do: "What To Do"
         "Say the next action in plain steps."
-
-
-workflow RallyReadFirst: "Read First"
-    read_order: "Read Order"
-        "Read the issue first."
-        "Then read this role's local rules, files, and outputs."
-        "Check memory for tasks like this one."
-
-
-workflow RallyHowToTakeATurn: "Memory Turn Rules"
-    turn_sequence: "Turn Sequence"
-        "Start with the current issue and this role's local job."
-        "For tasks like this one, check `rally-memory` first."
-        "Use a memory only when it clearly fits this issue, role, and repo state."
-        "If you had to fix your own work, save the general lesson for later."
-        "Keep notes run-local and keep memory cross-run."
-        "Keep routing, `done`, `blocker`, and `sleep` in final JSON, not in memory."

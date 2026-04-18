@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 import json
 from pathlib import Path
-from typing import Mapping, Protocol
+from typing import Any, Mapping, Protocol
 
 
 @dataclass(frozen=True)
@@ -123,6 +123,65 @@ class RunEventRecorder:
             agent_slug=draft.agent_slug,
         )
 
+    def emit_adapter_json(
+        self,
+        *,
+        source: str,
+        raw_line: str,
+        turn_index: int | None = None,
+        agent_key: str | None = None,
+        agent_slug: str | None = None,
+    ) -> RunEvent | None:
+        stripped = raw_line.strip()
+        if not stripped:
+            return None
+        try:
+            payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            return None
+        adapter_event_type = _adapter_event_type(payload)
+        return self.emit(
+            source=source,
+            kind="debug",
+            code="RAWJSON",
+            message=_raw_json_message(source=source, adapter_event_type=adapter_event_type),
+            data={
+                "payload_source": "adapter_stdout",
+                "raw_line": stripped,
+                "raw_payload": payload,
+                "adapter_event_type": adapter_event_type,
+            },
+            turn_index=turn_index,
+            agent_key=agent_key,
+            agent_slug=agent_slug,
+        )
+
+    def emit_final_json(
+        self,
+        *,
+        payload: Mapping[str, object],
+        payload_file: Path,
+        turn_index: int | None = None,
+        agent_key: str | None = None,
+        agent_slug: str | None = None,
+    ) -> RunEvent:
+        result_kind = payload.get("kind")
+        return self.emit(
+            source="rally",
+            kind="debug",
+            code="FINALJSON",
+            message=f"Loaded final JSON payload from `{_display_path(self._run_dir, payload_file)}`.",
+            data={
+                "payload_source": "last_message",
+                "raw_payload": dict(payload),
+                "result_kind": result_kind if isinstance(result_kind, str) else None,
+                "payload_file": _display_path(self._run_dir, payload_file),
+            },
+            turn_index=turn_index,
+            agent_key=agent_key,
+            agent_slug=agent_slug,
+        )
+
     def close(self) -> None:
         self._consumer.close()
 
@@ -132,6 +191,8 @@ class RunEventRecorder:
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(dict(payload), sort_keys=True))
             handle.write("\n")
+
+
 def render_plain_event_line(event: RunEvent) -> str:
     timestamp = _short_time(event.ts)
     agent_label = event.agent_key or event.agent_slug or "rally"
@@ -143,6 +204,29 @@ def should_render_event(event: RunEvent) -> bool:
     if event.kind == "debug":
         return event.level in {"warning", "error"}
     return True
+
+
+def _adapter_event_type(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    raw_value = payload.get("type")
+    if isinstance(raw_value, str) and raw_value.strip():
+        return raw_value.strip()
+    return None
+
+
+def _raw_json_message(*, source: str, adapter_event_type: str | None) -> str:
+    adapter_name = source.replace("_", " ")
+    if adapter_event_type is not None:
+        return f"{adapter_name} JSON event `{adapter_event_type}`."
+    return f"{adapter_name} JSON payload."
+
+
+def _display_path(run_dir: Path, path: Path) -> str:
+    try:
+        return path.relative_to(run_dir).as_posix()
+    except ValueError:
+        return path.as_posix()
 
 
 def _render_time(now: datetime | None = None) -> str:

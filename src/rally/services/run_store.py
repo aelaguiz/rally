@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import os
 import re
 import shutil
@@ -13,8 +14,9 @@ import yaml
 
 from rally.domain.flow import normalize_flow_code
 from rally.domain.flow import FlowDefinition
-from rally.domain.run import RunRecord, RunState, RunStatus
+from rally.domain.run import RUN_STATE_SCHEMA_VERSION, RunRecord, RunState, RunStatus
 from rally.errors import RallyStateError
+from rally.services.atomic_io import write_atomic
 
 _RUN_ID_RE = re.compile(r"^(?P<flow_code>[A-Z]{3})-(?P<sequence>\d+)$")
 
@@ -43,6 +45,8 @@ def create_run(
     *,
     repo_root: Path,
     flow: FlowDefinition,
+    model_override: str | None = None,
+    reasoning_effort_override: str | None = None,
     now: datetime | None = None,
 ) -> RunRecord:
     timestamp = _render_time(now)
@@ -64,6 +68,8 @@ def create_run(
         adapter_name=flow.adapter.name,
         start_agent_key=flow.start_agent_key,
         created_at=timestamp,
+        model_override=model_override,
+        reasoning_effort_override=reasoning_effort_override,
     )
     state = RunState(
         status=RunStatus.PENDING,
@@ -142,12 +148,19 @@ def load_run_record(*, run_dir: Path) -> RunRecord:
         start_agent_key=_require_string(payload, "start_agent_key", context=str(run_dir / "run.yaml")),
         created_at=_require_string(payload, "created_at", context=str(run_dir / "run.yaml")),
         issue_file=_require_string(payload, "issue_file", context=str(run_dir / "run.yaml")),
+        model_override=_optional_string(payload, "model_override"),
+        reasoning_effort_override=_optional_string(payload, "reasoning_effort_override"),
     )
 
 
 def write_run_record(*, run_dir: Path, record: RunRecord) -> Path:
     path = run_dir / "run.yaml"
-    _write_yaml_map(path, asdict(record))
+    payload = asdict(record)
+    if record.model_override is None:
+        payload.pop("model_override", None)
+    if record.reasoning_effort_override is None:
+        payload.pop("reasoning_effort_override", None)
+    _write_yaml_map(path, payload)
     return path
 
 
@@ -171,6 +184,10 @@ def load_run_state(*, run_dir: Path) -> RunState:
         sleep_reason=_optional_string(payload, "sleep_reason"),
         blocker_reason=_optional_string(payload, "blocker_reason"),
         done_summary=_optional_string(payload, "done_summary"),
+        pid=_optional_positive_int(payload, "pid"),
+        process_create_time=_optional_float(payload, "process_create_time"),
+        pgid=_optional_positive_int(payload, "pgid"),
+        schema_version=_schema_version(payload),
     )
 
 
@@ -182,24 +199,67 @@ def write_run_state(*, run_dir: Path, state: RunState) -> Path:
     return path
 
 
-@contextmanager
-def flow_lock(*, repo_root: Path, flow_code: str) -> Iterator[Path]:
+def flow_lock_path(*, repo_root: Path, flow_code: str) -> Path:
     flow_code = _require_flow_code(flow_code, context="Flow code")
     locks_dir = repo_root / "runs" / "locks"
     locks_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = locks_dir / f"{flow_code}.lock"
+    return locks_dir / f"{flow_code}.lock"
+
+
+def acquire_flow_lock_fd(*, repo_root: Path, flow_code: str) -> int:
+    """Open and exclusively lock the flow lock file, returning the raw fd.
+
+    The caller owns the fd and is responsible for closing it when the lock
+    should be released. The lock is automatically released on process death
+    (``fcntl.flock`` is tied to the open file description, not the process,
+    and the kernel cleans up on exit).
+
+    Returns the fd with ``LOCK_EX | LOCK_NB`` already applied. Raises
+    ``RallyStateError`` if another process holds the lock.
+
+    This form exists so detached runs can keep the lock across a ``fork`` —
+    the child inherits the locked fd and the parent exits via ``os._exit``
+    without closing it.
+    """
+    lock_path = flow_lock_path(repo_root=repo_root, flow_code=flow_code)
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError as exc:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc:
+        os.close(fd)
         raise RallyStateError(
             f"Flow `{flow_code}` is already locked by another Rally command."
         ) from exc
+    except OSError:
+        os.close(fd)
+        raise
+    # Truncate and record PID for operator debugging. The flock (not the file
+    # content) is what actually grants exclusion.
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(str(os.getpid()))
-        yield lock_path
+        os.ftruncate(fd, 0)
+        os.pwrite(fd, f"{os.getpid()}\n".encode("ascii"), 0)
+    except OSError:
+        # Writing the PID is best-effort; do not let it tear down the lock.
+        pass
+    return fd
+
+
+@contextmanager
+def flow_lock(*, repo_root: Path, flow_code: str) -> Iterator[Path]:
+    """Context manager that holds the flow lock for the duration of ``with``.
+
+    Prefer :func:`acquire_flow_lock_fd` when the caller needs the lock to
+    outlive the current function (e.g. across a ``fork`` for detached runs).
+    """
+    fd = acquire_flow_lock_fd(repo_root=repo_root, flow_code=flow_code)
+    try:
+        yield flow_lock_path(repo_root=repo_root, flow_code=flow_code)
     finally:
-        lock_path.unlink(missing_ok=True)
+        # Closing the fd releases the flock atomically.
+        try:
+            os.close(fd)
+        except OSError:
+            pass
 
 
 def _iter_known_run_dirs(repo_root: Path) -> Iterator[Path]:
@@ -224,8 +284,7 @@ def _load_yaml_map(path: Path) -> dict[str, object]:
 
 
 def _write_yaml_map(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    write_atomic(path, yaml.safe_dump(payload, sort_keys=False))
 
 
 def _render_time(now: datetime | None) -> str:
@@ -252,6 +311,33 @@ def _require_int(payload: dict[str, object], field: str, *, context: str) -> int
     value = payload.get(field)
     if not isinstance(value, int) or value < 0:
         raise RallyStateError(f"{context} requires non-negative integer field `{field}`.")
+    return value
+
+
+def _optional_positive_int(payload: dict[str, object], field: str) -> int | None:
+    value = payload.get(field)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise RallyStateError(f"Optional field `{field}` must be null or a positive integer.")
+    return value
+
+
+def _optional_float(payload: dict[str, object], field: str) -> float | None:
+    value = payload.get(field)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RallyStateError(f"Optional field `{field}` must be null or a number.")
+    return float(value)
+
+
+def _schema_version(payload: dict[str, object]) -> int:
+    value = payload.get("schema_version")
+    if value is None:
+        return 1
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise RallyStateError("Optional field `schema_version` must be a positive integer.")
     return value
 
 

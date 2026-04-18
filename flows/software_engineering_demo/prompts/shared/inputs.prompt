@@ -10,10 +10,3 @@ input DemoRepoRoot: "Demo Repo Root"
     shape: DirectoryPath
     requirement: Required
     "Use this directory as the one demo repo for the flow."
-
-
-input RuntimeGroundingFacts: "Runtime Grounding Facts"
-    source: Prompt
-    shape: JsonObject
-    requirement: Required
-    "Use the runtime facts section that Rally appends to the prompt."

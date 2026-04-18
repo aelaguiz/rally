@@ -14,14 +14,15 @@ from rally._package_release import load_doctrine_dependency_line, load_package_r
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+DOCTRINE_REPO_ROOT = REPO_ROOT.parent / "doctrine"
 EXPECTED_DOCTRINE_PACKAGE_LINE = load_doctrine_dependency_line(REPO_ROOT)
 
 
 class PackagedInstallTests(unittest.TestCase):
-    def test_built_wheel_runs_installed_cli_and_keeps_emit_support_files_in_host_repo(self) -> None:
+    def test_built_wheel_runs_installed_cli_and_uses_emitted_json_package_in_host_repo(self) -> None:
         self._assert_packaged_artifact_runtime("wheel")
 
-    def test_built_sdist_runs_installed_cli_and_keeps_emit_support_files_in_host_repo(self) -> None:
+    def test_built_sdist_runs_installed_cli_and_uses_emitted_json_package_in_host_repo(self) -> None:
         self._assert_packaged_artifact_runtime("sdist")
 
     def _assert_packaged_artifact_runtime(self, artifact_type: str) -> None:
@@ -38,13 +39,13 @@ class PackagedInstallTests(unittest.TestCase):
             python_bin = self._venv_python(venv_root)
             rally_bin = self._venv_rally(venv_root)
             self._run([str(python_bin), "-m", "pip", "install", str(artifact_path)])
+            self._install_dev_doctrine_checkout(python_bin=python_bin)
 
             help_result = self._run([str(rally_bin), "--help"], cwd=temp_root)
             self.assertIn("usage: rally", help_result.stdout)
             self.assertIn("run", help_result.stdout)
             self.assertIn("resume", help_result.stdout)
-            self.assertIn("status", help_result.stdout)
-            self.assertIn("workspace", help_result.stdout)
+            self.assertNotIn("workspace sync", help_result.stdout)
 
             self._write_host_workspace(host_root)
 
@@ -60,46 +61,62 @@ class PackagedInstallTests(unittest.TestCase):
             )
             self.assertNotEqual(version_result.stdout.strip(), "0.0.0")
 
-            sync_result = self._run([str(rally_bin), "workspace", "sync"], cwd=host_root)
-            self.assertIn("Synced Rally built-ins into", sync_result.stdout)
+            assets_result = self._run_python(
+                python_bin=python_bin,
+                cwd=host_root,
+                source=textwrap.dedent(
+                    """\
+                    from pathlib import Path
+                    from rally.services.builtin_assets import resolve_rally_builtin_assets
+
+                    assets = resolve_rally_builtin_assets(workspace_root=Path.cwd())
+                    print(assets.source_kind)
+                    print((assets.stdlib_prompts_root / "rally" / "turn_results.prompt").is_file())
+                    print((assets.skill_runtime_dir("rally-kernel") / "SKILL.md").is_file())
+                    """
+                ),
+            )
+            self.assertEqual(assets_result.stdout.splitlines(), ["installed_distribution", "True", "True"])
             self.assertFalse((host_root / "runs" / "active").exists())
 
-            self.assertTrue((host_root / "stdlib" / "rally" / "schemas" / "rally_turn_result.schema.json").is_file())
-            self.assertTrue((host_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertTrue((host_root / "skills" / "rally-memory" / "SKILL.md").is_file())
-
-            self._run(
-                [
-                    str(python_bin),
-                    "-m",
-                    "doctrine.emit_docs",
-                    "--pyproject",
-                    str(host_root / "pyproject.toml"),
-                    "--target",
-                    "demo",
-                ],
-                cwd=host_root,
-            )
-
-            contract_path = host_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "AGENTS.contract.json"
-            contract_payload = json.loads(contract_path.read_text(encoding="utf-8"))
-            final_output = contract_payload["final_output"]
-
-            self.assertEqual(
-                final_output["schema_file"],
-                "stdlib/rally/schemas/rally_turn_result.schema.json",
-            )
-            self.assertEqual(
-                final_output["example_file"],
-                "stdlib/rally/examples/rally_turn_result.example.json",
-            )
-            self.assertNotIn("../rally/", contract_path.read_text(encoding="utf-8"))
+            self.assertFalse((host_root / "stdlib" / "rally").exists())
+            self.assertFalse((host_root / "skills" / "rally-kernel").exists())
+            self.assertFalse((host_root / "skills" / "rally-memory").exists())
 
             run_result = self._run([str(rally_bin), "run", "demo"], cwd=host_root, check=False)
             self.assertEqual(run_result.returncode, 2)
             self.assertIn("waiting for `", run_result.stderr)
             self.assertIn("home/issue.md", run_result.stderr)
             self.assertIn("rally resume DMO-1", run_result.stderr)
+            self.assertFalse((host_root / "stdlib" / "rally").exists())
+            self.assertFalse((host_root / "skills" / "rally-kernel").exists())
+
+            agent_dir = host_root / "flows" / "demo" / "build" / "agents" / "scope_lead"
+            contract_path = agent_dir / "final_output.contract.json"
+            contract_payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            final_output = contract_payload["final_output"]
+
+            self.assertEqual(
+                final_output["emitted_schema_relpath"],
+                "schemas/rally_turn_result.schema.json",
+            )
+            self.assertTrue((agent_dir / final_output["emitted_schema_relpath"]).is_file())
+            self.assertFalse((agent_dir / "AGENTS.contract.json").exists())
+            self.assertNotIn("../rally/", contract_path.read_text(encoding="utf-8"))
+
+            review_agent_dir = host_root / "flows" / "demo" / "build" / "agents" / "scope_reviewer"
+            review_contract_path = review_agent_dir / "final_output.contract.json"
+            review_contract_payload = json.loads(review_contract_path.read_text(encoding="utf-8"))
+            review_final_output = review_contract_payload["final_output"]
+
+            self.assertEqual(
+                review_final_output["emitted_schema_relpath"],
+                "schemas/scope_review_final_response.schema.json",
+            )
+            self.assertTrue((review_agent_dir / review_final_output["emitted_schema_relpath"]).is_file())
+            self.assertEqual(review_contract_payload["review"]["final_response"]["mode"], "split")
+            self.assertTrue(review_contract_payload["review"]["final_response"]["control_ready"])
+            self.assertNotIn("../rally/", review_contract_path.read_text(encoding="utf-8"))
 
             run_dir = host_root / "runs" / "active" / "DMO-1"
             self.assertTrue((run_dir / "run.yaml").is_file())
@@ -159,6 +176,13 @@ class PackagedInstallTests(unittest.TestCase):
     def _run_python(self, *, python_bin: Path, cwd: Path, source: str) -> subprocess.CompletedProcess[str]:
         return self._run([str(python_bin), "-c", source], cwd=cwd)
 
+    def _install_dev_doctrine_checkout(self, *, python_bin: Path) -> None:
+        self.assertTrue(
+            DOCTRINE_REPO_ROOT.is_dir(),
+            f"Expected local Doctrine checkout at `{DOCTRINE_REPO_ROOT}` for dev-runner proof.",
+        )
+        self._run([str(python_bin), "-m", "pip", "install", str(DOCTRINE_REPO_ROOT)])
+
     def _expected_doctrine_metadata_line(self) -> str:
         package_name, remainder = EXPECTED_DOCTRINE_PACKAGE_LINE.split(">=", 1)
         lower_bound, upper_bound = remainder.split(",<", 1)
@@ -191,6 +215,12 @@ class PackagedInstallTests(unittest.TestCase):
                   01_scope_lead:
                     timeout_sec: 60
                     allowed_skills: []
+                    system_skills: []
+                    allowed_mcps: []
+                  02_scope_reviewer:
+                    timeout_sec: 60
+                    allowed_skills: []
+                    system_skills: []
                     allowed_mcps: []
                 runtime:
                   adapter: codex
@@ -205,7 +235,102 @@ class PackagedInstallTests(unittest.TestCase):
             textwrap.dedent(
                 """\
                 import rally.base_agent
+                import rally.review_results
                 import rally.turn_results
+
+
+                input ScopeDraftFile: "Scope Draft File"
+                    source: File
+                        path: "home:artifacts/scope.md"
+                    shape: MarkdownDocument
+                    requirement: Required
+                    basis_missing: "Basis Missing"
+                    "Use the scope draft as the review subject."
+
+
+                workflow ScopeReviewContract: "Scope Review Contract"
+                    artifact_named: "Artifact Named"
+                        "Check that the review names the scope draft path."
+
+
+                output ScopeReviewResponse: "Scope Review Response"
+                    target: TurnResponse
+                    shape: rally.review_results.BaseRallyReviewJson
+                    requirement: Required
+
+                    verdict: "Verdict"
+                        "Say whether the review accepts the scope draft or asks for changes."
+
+                    reviewed_artifact: "Reviewed Artifact"
+                        "Use `home:artifacts/scope.md`."
+
+                    analysis_performed: "Review Summary"
+                        "Explain the review in 2-4 plain sentences."
+
+                    findings_first: "Findings First"
+                        "Start with the main finding, then the next move."
+
+                    current_artifact: "Current Artifact" when present(current_artifact):
+                        "Use `home:artifacts/scope.md` when the scope draft still stands."
+
+                    next_owner: "Next Owner" when present(next_owner):
+                        "Use the next owner key when the review routes."
+
+                    failure_detail: "Failure Detail" when verdict == ReviewVerdict.changes_requested:
+                        blocked_gate: "Blocked Gate" when present(blocked_gate):
+                            "Name the blocker when the review could not start."
+
+                        failing_gates: "Failing Gates"
+                            "List the exact failing review gates in authored order."
+
+                    trust_surface:
+                        current_artifact
+
+                    standalone_read: "Standalone Read"
+                        "This review should stand on its own."
+
+
+                output ScopeReviewFinalResponse[ScopeReviewResponse]: "Scope Review Final Response"
+                    inherit target
+                    inherit shape
+                    inherit requirement
+                    inherit verdict
+                    inherit reviewed_artifact
+                    inherit analysis_performed
+                    inherit findings_first
+                    inherit current_artifact
+                    inherit next_owner
+                    inherit failure_detail
+                    inherit trust_surface
+                    inherit standalone_read
+
+
+                review ScopeReview: "Scope Review"
+                    subject: ScopeDraftFile
+                    contract: ScopeReviewContract
+                    comment_output: ScopeReviewResponse
+
+                    fields:
+                        verdict: verdict
+                        reviewed_artifact: reviewed_artifact
+                        analysis: analysis_performed
+                        readback: findings_first
+                        current_artifact: current_artifact
+                        blocked_gate: failure_detail.blocked_gate
+                        failing_gates: failure_detail.failing_gates
+                        next_owner: next_owner
+
+                    basis_checks: "Basis Checks"
+                        block "The scope draft is missing." when ScopeDraftFile.basis_missing
+
+                    contract_checks: "Contract Checks"
+                        accept "The scope review contract passes." when contract.passes
+
+                    on_accept:
+                        current artifact ScopeDraftFile via ScopeReviewResponse.current_artifact
+
+                    on_reject:
+                        current artifact ScopeDraftFile via ScopeReviewResponse.current_artifact
 
 
                 agent ScopeLead[rally.base_agent.RallyManagedBaseAgent]:
@@ -215,18 +340,59 @@ class PackagedInstallTests(unittest.TestCase):
                     workflow: "Finish"
                         "Finish the task and stop."
                     inherit rally_contract
-                    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
-                        inherit rally_workspace_dir
-                        inherit rally_run_id
-                        inherit rally_flow_code
-                        inherit rally_agent_slug
-                        inherit issue_ledger
+                    inputs: "Inputs"
+                        issue_ledger: "Issue Ledger"
+                            rally.base_agent.RallyIssueLedger
+                        rally_workspace_dir: "Rally Workspace Dir"
+                            rally.base_agent.RallyWorkspaceDir
+                        rally_run_id: "Rally Run ID"
+                            rally.base_agent.RallyRunId
+                        rally_flow_code: "Rally Flow Code"
+                            rally.base_agent.RallyFlowCode
+                        rally_agent_slug: "Rally Agent Slug"
+                            rally.base_agent.RallyAgentSlug
                     outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
                         inherit issue_note
                         turn_result: "Turn Result"
                             rally.turn_results.RallyTurnResult
                     skills: rally.base_agent.RallyManagedSkills
                     final_output: rally.turn_results.RallyTurnResult
+
+
+                agent ScopeReviewer[rally.base_agent.RallyManagedBaseAgent]:
+                    role: "Review the scope draft and end with structured review JSON."
+                    inherit read_first
+                    inherit how_to_take_a_turn
+                    inherit rally_contract
+                    review: ScopeReview
+                    inputs: "Inputs"
+                        issue_ledger: "Issue Ledger"
+                            rally.base_agent.RallyIssueLedger
+                        rally_workspace_dir: "Rally Workspace Dir"
+                            rally.base_agent.RallyWorkspaceDir
+                        rally_run_id: "Rally Run ID"
+                            rally.base_agent.RallyRunId
+                        rally_flow_code: "Rally Flow Code"
+                            rally.base_agent.RallyFlowCode
+                        rally_agent_slug: "Rally Agent Slug"
+                            rally.base_agent.RallyAgentSlug
+                        scope_draft_file: "Scope Draft File"
+                            ScopeDraftFile
+                    outputs: "Outputs"
+                        ScopeReviewResponse
+                        ScopeReviewFinalResponse
+                    skills: rally.base_agent.RallyManagedSkills
+                    final_output:
+                        output: ScopeReviewFinalResponse
+                        review_fields:
+                            verdict: verdict
+                            reviewed_artifact: reviewed_artifact
+                            analysis: analysis_performed
+                            readback: findings_first
+                            current_artifact: current_artifact
+                            blocked_gate: failure_detail.blocked_gate
+                            failing_gates: failure_detail.failing_gates
+                            next_owner: next_owner
                 """
             ),
             encoding="utf-8",
@@ -241,9 +407,6 @@ class PackagedInstallTests(unittest.TestCase):
 
                 [tool.rally.workspace]
                 version = 1
-
-                [tool.doctrine.compile]
-                additional_prompt_roots = ["stdlib/rally/prompts"]
 
                 [tool.doctrine.emit]
 

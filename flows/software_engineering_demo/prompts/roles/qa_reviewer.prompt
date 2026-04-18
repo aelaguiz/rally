@@ -1,0 +1,29 @@
+workflow QaReviewerJob: "Your Job"
+    mission: "Mission"
+        "Review the QA pass honestly and end only when the issue is truly done."
+
+    success: "Success"
+        "The review starts with the main finding."
+        "The verdict matches the issue ledger, repo state, and real proof."
+        "The run ends only when the issue is truly met."
+        "Developer gets one clear next move when QA finds real gaps."
+
+    failure: "Failure"
+        "The review ends the run early."
+        "The review ignores proof gaps or requirement misses."
+        "The review routes without saying the main reason."
+
+    process: "Process"
+        "Read the latest QA note and the current repo state."
+        "Judge the work against the QA review contract."
+        "End the run only when the issue is truly met."
+        "Route back to Developer when repo work still remains."
+        "End with the declared review JSON."
+
+    output_contract: "Output Contract"
+        "Use the review to say the main finding, the next owner when work remains, and the failing gates when they matter."
+
+
+workflow QaReviewerQualityBar: "Quality Bar"
+    "Strong QA review is hard to bluff and hard to end early."
+    "Weak QA review says `done` without the proof path."

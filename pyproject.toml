@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rally-agents"
-version = "0.1.1"
+version = "1.0.0"
 description = "Program complex multi-agent workflows with a typed DSL, a CLI-first runtime, and repo-local run state."
 readme = "README.md"
 license = "MIT"
@@ -32,7 +32,8 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "doctrine-agents>=1.0.2,<2",
+    "doctrine-agents>=2.0.0,<3",
+    "psutil>=6,<7",
     "PyYAML>=6.0.3,<7",
     "rich>=15.0.0,<16",
 ]
@@ -48,6 +49,9 @@ Security = "https://github.com/aelaguiz/rally/security/policy"
 
 [project.scripts]
 rally = "rally.cli:main"
+
+[tool.uv.sources]
+doctrine-agents = { path = "../doctrine", editable = true }
 
 [tool.rally.workspace]
 version = 1
@@ -98,14 +102,11 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-rally = ["_bundled/**/*"]
-
-[tool.setuptools.exclude-package-data]
-rally = [
-    "_bundled/**/__pycache__/*",
-    "_bundled/**/*.pyc",
-]
+[tool.setuptools.data-files]
+"rally_assets/stdlib/rally/prompts/rally" = ["stdlib/rally/prompts/rally/*.prompt"]
+"rally_assets/skills/rally-kernel" = ["skills/rally-kernel/build/SKILL.md"]
+"rally_assets/skills/rally-kernel/references" = ["skills/rally-kernel/build/references/*"]
+"rally_assets/skills/rally-memory" = ["skills/rally-memory/build/SKILL.md"]
 
 [dependency-groups]
 dev = [

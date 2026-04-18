@@ -1,59 +1,57 @@
 skill package RallyMemory: "Rally Memory"
     metadata:
         name: "rally-memory"
-        description: "Shared Rally memory skill for searching, using, saving, and refreshing cross-run memory through Rally CLI. Use it for tasks like past work or when you had to fix your own work and learned a lesson worth keeping."
+        description: "Shared Rally memory skill for searching, using, saving, and refreshing cross-run memory through Rally CLI."
 
-    "Use this skill on Rally-managed turns when cross-run memory could help."
-    "Do not use it to replace the issue, notes, or final JSON."
-    "Rally loads this skill on every Rally-managed turn. Flows do not need to list it by hand."
+    "Use this skill when past work could help on this turn."
+    "This skill is for memory work only. It does not replace the turn's declared output."
 
-    bullets when_to_use: "When to use"
-        search_memory: "Check memory for tasks like this one."
-        use_memory: "You found a memory that clearly fits this role and issue."
-        save_memory: "If you had to fix your own work, save the general lesson for later."
-        repair_index: "The memory index needs a refresh from the markdown source files."
+    quick_model: "Quick model"
+        bullets points:
+            "Memory keeps cross-run lessons."
 
-    bullets when_not_to_use: "When not to use"
-        no_guessing: "Do not search memory before you understand the current issue."
-        no_note_replacement: "Do not use memory to replace run-local notes."
-        no_route_truth: "Do not use memory to pass routing, `done`, `blocker`, or `sleep` truth."
-        no_direct_writes: "Do not edit memory files or QMD state directly."
+    when_to_use: "When to use"
+        bullets cases:
+            "Past work like this could help."
+            "You found a memory that clearly fits this role and issue."
+            "You had to fix your own work and learned a short lesson worth keeping."
+            "The memory index needs a refresh from the markdown source files."
 
-    bullets non_negotiables: "Non-negotiables"
-        cli_only: "Use Rally CLI for memory actions."
-        scope_truth: "Rally scopes memory by flow and agent."
-        memory_is_context: "Memory is context only. Final JSON still controls the turn."
-        save_short: "Save only short reusable lessons."
-        fail_loud: "Fail loud if `RALLY_CLI_BIN`, `RALLY_RUN_ID`, or `RALLY_AGENT_SLUG` is missing."
+    hard_rules: "Hard rules"
+        bullets rules:
+            "Use Rally CLI for memory actions."
+            "Use a memory only when it clearly fits this issue and role."
+            "Save only short reusable lessons."
+            "Do not edit memory files or QMD state directly."
+            "Fail loud if `RALLY_CLI_BIN`, `RALLY_RUN_ID`, or `RALLY_AGENT_SLUG` is missing."
 
-    sequence first_move: "First move"
-        read_issue: "Read the issue and this role's local rules first."
-        decide_need: "Decide whether this task looks like past work or whether you just learned a lesson worth keeping."
-        choose_action: "Choose `search`, `use`, `save`, or `refresh` through Rally CLI."
+    first_move: "First move"
+        sequence steps:
+            "Decide whether past work could help or whether you just learned a lesson worth keeping."
+            "Choose `search`, `use`, `save`, or `refresh` through Rally CLI."
 
     workflow: "Workflow"
-        sequence steps: "Steps"
-            search_first: "For tasks like this one, start with `search`."
-            use_selected: "Use `use` only after you pick one memory that clearly fits."
-            keep_save_small: "If you had to fix your own work, use `save` to keep the general lesson."
-            refresh_rebuilds: "Use `refresh` when the index needs to rebuild from markdown files."
-            keep_issue_primary: "Keep the issue and local repo state primary. Memory is support context."
+        bullets rules:
+            "For tasks like this one, start with `search`."
+            "Use `use` only after you pick one memory that clearly fits."
+            "If you had to fix your own work, use `save` to keep the general lesson."
+            "Use `refresh` when the index needs to rebuild from markdown files."
 
-        code search_example: "Search Example" advisory
-            language: bash
-            text: """
+    code search_example: "Search Example" advisory
+        language: bash
+        text: """
 "$RALLY_CLI_BIN" memory search --run-id "$RALLY_RUN_ID" --query "narrow the review before rewrite"
 """
 
-        code use_example: "Use Example" advisory
-            language: bash
-            text: """
+    code use_example: "Use Example" advisory
+        language: bash
+        text: """
 "$RALLY_CLI_BIN" memory use --run-id "$RALLY_RUN_ID" mem_example_id
 """
 
-        code save_example: "Save Example" advisory
-            language: bash
-            text: """
+    code save_example: "Save Example" advisory
+        language: bash
+        text: """
 "$RALLY_CLI_BIN" memory save --run-id "$RALLY_RUN_ID" <<'EOF'
 # Lesson
 Ask for one concrete revision target before asking for a full rewrite.
@@ -66,13 +64,13 @@ Write the one concrete target, then hand off with normal final JSON.
 EOF
 """
 
-        code refresh_example: "Refresh Example" advisory
-            language: bash
-            text: """
+    code refresh_example: "Refresh Example" advisory
+        language: bash
+        text: """
 "$RALLY_CLI_BIN" memory refresh --run-id "$RALLY_RUN_ID"
 """
 
-    bullets output_expectations: "Output expectations"
-        search_is_discovery: "Use `search` for discovery only."
-        use_and_save_visible: "`use` and `save` should become visible Rally records."
-        no_second_path: "This skill never creates a second turn-ending path."
+    output_expectations: "Output expectations"
+        bullets rules:
+            "Use `search` for discovery only."
+            "`use` and `save` should become visible Rally records."

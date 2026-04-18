@@ -15,14 +15,32 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from rally.domain.run import ResumeRequest, RunRequest, RunStatus
+from rally.domain.flow import (
+    AdapterConfig,
+    CompiledAgentContract,
+    FinalOutputContract,
+    FlowAgent,
+    FlowDefinition,
+    FlowHostInputs,
+    IoContract,
+    PreviousTurnInputContract,
+    RouteBranchContract,
+    RouteChoiceMemberContract,
+    RouteContract,
+    RouteSelectorContract,
+    RouteTargetContract,
+)
+from rally.domain.run import ResumeRequest, RunRecord, RunRequest, RunStatus
 from rally.errors import RallyConfigError, RallyUsageError
+from rally.services.final_response_loader import load_agent_final_response
 from rally.services.flow_build import ensure_flow_assets_built as build_flow_assets
-from rally.services.bundled_assets import ensure_workspace_builtins_synced
+from rally.services.flow_loader import _load_compiled_agent_contract
 from rally.services.issue_editor import IssueEditorResult
 from rally.services.issue_ledger import ORIGINAL_ISSUE_END_MARKER
+from rally.services.run_events import RunEventRecorder
 from rally.services.run_store import archive_run, find_run_dir, load_run_state, write_run_state
-from rally.services.runner import resume_run, run_flow
+from rally.services.runner import _build_agent_prompt, _resolve_next_agent, resume_run, run_flow
+from rally.services.workspace import workspace_context_from_root
 from rally.terminal.display import AgentDisplayIdentity, DisplayContext, build_terminal_display
 
 
@@ -32,6 +50,520 @@ class RunnerTests(unittest.TestCase):
         self._build_patcher = patch("rally.services.runner.ensure_flow_assets_built", autospec=True)
         self.ensure_flow_assets_built = self._build_patcher.start()
         self.addCleanup(self._build_patcher.stop)
+
+    def test_build_agent_prompt_returns_compiled_agents_markdown_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            for directory_name in ("flows", "skills", "mcps", "stdlib", "runs"):
+                (repo_root / directory_name).mkdir(parents=True, exist_ok=True)
+            (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally-test'\n", encoding="utf-8")
+
+            run_dir = repo_root / "runs" / "active" / "DMO-1"
+            run_home = run_dir / "home"
+            agent_markdown = run_home / "agents" / "demo_agent" / "AGENTS.md"
+            agent_markdown.parent.mkdir(parents=True, exist_ok=True)
+            agent_markdown.write_text("# Demo Agent\n\nRead the ledger.\n", encoding="utf-8")
+            (agent_markdown.parent / "SOUL.md").write_text("# Demo Soul\n\nIgnored by Rally.\n", encoding="utf-8")
+
+            workspace = workspace_context_from_root(repo_root)
+            final_output = FinalOutputContract(
+                exists=True,
+                contract_version=1,
+                declaration_key="DemoTurnResult",
+                declaration_name="DemoTurnResult",
+                format_mode="json_object",
+                schema_profile="OpenAIStructuredOutput",
+                generated_schema_file=None,
+                metadata_file=None,
+            )
+            compiled = CompiledAgentContract(
+                name="DemoAgent",
+                slug="demo_agent",
+                entrypoint=repo_root / "flows" / "demo" / "prompts" / "AGENTS.prompt",
+                markdown_path=agent_markdown,
+                metadata_file=run_home / "agents" / "demo_agent" / "final_output.contract.json",
+                contract_version=1,
+                final_output=final_output,
+            )
+            agent = FlowAgent(
+                key="01_demo_agent",
+                slug="demo_agent",
+                timeout_sec=60,
+                allowed_skills=(),
+                system_skills=(),
+                external_skills=(),
+                allowed_mcps=(),
+                compiled=compiled,
+            )
+            flow = FlowDefinition(
+                name="demo",
+                code="DMO",
+                root_dir=repo_root / "flows" / "demo",
+                flow_file=repo_root / "flows" / "demo" / "flow.yaml",
+                build_agents_dir=repo_root / "flows" / "demo" / "build" / "agents",
+                setup_home_script=None,
+                start_agent_key="01_demo_agent",
+                max_command_turns=8,
+                guarded_git_repos=(),
+                runtime_env={},
+                host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
+                agents={"01_demo_agent": agent},
+                adapter=AdapterConfig(name="codex", args={}),
+            )
+            run_record = RunRecord(
+                id="DMO-1",
+                flow_name="demo",
+                flow_code="DMO",
+                adapter_name="codex",
+                start_agent_key="01_demo_agent",
+                created_at="2026-04-15T00:00:00Z",
+            )
+            recorder = RunEventRecorder(run_dir=run_dir, run_id="DMO-1", flow_code="DMO")
+
+            prompt = _build_agent_prompt(
+                workspace=workspace,
+                run_home=run_home,
+                flow=flow,
+                run_record=run_record,
+                agent=agent,
+                recorder=recorder,
+                turn_index=1,
+                previous_turn_inputs_file=run_home / "sessions" / "demo_agent" / "turn-001" / "previous_turn_inputs.md",
+            )
+
+            self.assertEqual(prompt, "# Demo Agent\n\nRead the ledger.\n")
+            self.assertEqual(
+                (run_home / "sessions" / "demo_agent" / "turn-001" / "previous_turn_inputs.md").read_text(
+                    encoding="utf-8"
+                ),
+                "",
+            )
+
+    def test_build_agent_prompt_appends_previous_turn_inputs_and_saves_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            for directory_name in ("flows", "skills", "mcps", "stdlib", "runs"):
+                (repo_root / directory_name).mkdir(parents=True, exist_ok=True)
+            (repo_root / "pyproject.toml").write_text("[project]\nname = 'rally-test'\n", encoding="utf-8")
+
+            run_dir = repo_root / "runs" / "active" / "DMO-1"
+            run_home = run_dir / "home"
+            current_markdown = run_home / "agents" / "reader_agent" / "AGENTS.md"
+            current_markdown.parent.mkdir(parents=True, exist_ok=True)
+            current_markdown.write_text("# Reader Agent\n\nRead the ledger.\n", encoding="utf-8")
+
+            previous_turn_dir = run_home / "sessions" / "source_agent" / "turn-001"
+            previous_turn_dir.mkdir(parents=True, exist_ok=True)
+            (previous_turn_dir / "last_message.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "done",
+                        "summary": "ready",
+                        "reason": None,
+                        "sleep_duration_seconds": None,
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            workspace = workspace_context_from_root(repo_root)
+            previous_agent = FlowAgent(
+                key="01_source_agent",
+                slug="source_agent",
+                timeout_sec=60,
+                allowed_skills=(),
+                system_skills=(),
+                external_skills=(),
+                allowed_mcps=(),
+                compiled=CompiledAgentContract(
+                    name="SourceAgent",
+                    slug="source_agent",
+                    entrypoint=repo_root / "flows" / "demo" / "prompts" / "source_agent.prompt",
+                    markdown_path=run_home / "agents" / "source_agent" / "AGENTS.md",
+                    metadata_file=repo_root
+                    / "flows"
+                    / "demo"
+                    / "build"
+                    / "agents"
+                    / "source_agent"
+                    / "final_output.contract.json",
+                    contract_version=1,
+                    final_output=FinalOutputContract(
+                        exists=True,
+                        contract_version=1,
+                        declaration_key="SharedTurnResult",
+                        declaration_name="SharedTurnResult",
+                        format_mode="json_object",
+                        schema_profile="OpenAIStructuredOutput",
+                        generated_schema_file=repo_root / "flows" / "demo" / "build" / "agents" / "source_agent" / "schema.json",
+                        metadata_file=repo_root
+                        / "flows"
+                        / "demo"
+                        / "build"
+                        / "agents"
+                        / "source_agent"
+                        / "final_output.contract.json",
+                    ),
+                ),
+            )
+            current_agent = FlowAgent(
+                key="02_reader_agent",
+                slug="reader_agent",
+                timeout_sec=60,
+                allowed_skills=(),
+                system_skills=(),
+                external_skills=(),
+                allowed_mcps=(),
+                compiled=CompiledAgentContract(
+                    name="ReaderAgent",
+                    slug="reader_agent",
+                    entrypoint=repo_root / "flows" / "demo" / "prompts" / "reader_agent.prompt",
+                    markdown_path=current_markdown,
+                    metadata_file=repo_root
+                    / "flows"
+                    / "demo"
+                    / "build"
+                    / "agents"
+                    / "reader_agent"
+                    / "final_output.contract.json",
+                    contract_version=1,
+                    final_output=FinalOutputContract(
+                        exists=True,
+                        contract_version=1,
+                        declaration_key="ReaderTurnResult",
+                        declaration_name="ReaderTurnResult",
+                        format_mode="json_object",
+                        schema_profile="OpenAIStructuredOutput",
+                        generated_schema_file=repo_root / "flows" / "demo" / "build" / "agents" / "reader_agent" / "schema.json",
+                        metadata_file=repo_root
+                        / "flows"
+                        / "demo"
+                        / "build"
+                        / "agents"
+                        / "reader_agent"
+                        / "final_output.contract.json",
+                    ),
+                    io=IoContract(
+                        previous_turn_inputs=(
+                            PreviousTurnInputContract(
+                                input_key="PreviousTurnResult",
+                                input_name="Previous Turn Result",
+                                selector_kind="default_final_output",
+                                selector_text="Exact previous final output",
+                                resolved_declaration_key="SharedTurnResult",
+                                resolved_declaration_name="SharedTurnResult",
+                                derived_contract_mode="structured_json",
+                                requirement="Advisory",
+                            ),
+                        ),
+                        outputs=(),
+                        output_bindings=(),
+                    ),
+                ),
+            )
+            flow = FlowDefinition(
+                name="demo",
+                code="DMO",
+                root_dir=repo_root / "flows" / "demo",
+                flow_file=repo_root / "flows" / "demo" / "flow.yaml",
+                build_agents_dir=repo_root / "flows" / "demo" / "build" / "agents",
+                setup_home_script=None,
+                start_agent_key="01_source_agent",
+                max_command_turns=8,
+                guarded_git_repos=(),
+                runtime_env={},
+                host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
+                agents={
+                    previous_agent.key: previous_agent,
+                    current_agent.key: current_agent,
+                },
+                adapter=AdapterConfig(name="codex", args={}),
+            )
+            run_record = RunRecord(
+                id="DMO-1",
+                flow_name="demo",
+                flow_code="DMO",
+                adapter_name="codex",
+                start_agent_key="01_source_agent",
+                created_at="2026-04-15T00:00:00Z",
+            )
+            recorder = RunEventRecorder(run_dir=run_dir, run_id="DMO-1", flow_code="DMO")
+            previous_turn_inputs_file = run_home / "sessions" / "reader_agent" / "turn-002" / "previous_turn_inputs.md"
+
+            prompt = _build_agent_prompt(
+                workspace=workspace,
+                run_home=run_home,
+                flow=flow,
+                run_record=run_record,
+                agent=current_agent,
+                recorder=recorder,
+                turn_index=2,
+                previous_turn_inputs_file=previous_turn_inputs_file,
+            )
+
+            appendix = previous_turn_inputs_file.read_text(encoding="utf-8")
+            self.assertEqual(
+                prompt,
+                "# Reader Agent\n\nRead the ledger.\n\n" + appendix,
+            )
+            self.assertIn("## Previous Turn Inputs", appendix)
+            self.assertIn('"summary": "ready"', appendix)
+
+    def test_resolve_next_agent_accepts_cross_module_route_target_name_from_loaded_response(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            last_message = repo_root / "last_message.json"
+            last_message.write_text(
+                """{
+  "kind": "handoff",
+  "next_route": "section_dossier_engineer",
+  "summary": null,
+  "reason": null,
+  "sleep_duration_seconds": null
+}
+""",
+                encoding="utf-8",
+            )
+
+            routed_agent = CompiledAgentContract(
+                name="ProjectLead",
+                slug="project_lead",
+                entrypoint=repo_root / "flows" / "demo" / "prompts" / "AGENTS.prompt",
+                markdown_path=repo_root / "flows" / "demo" / "build" / "agents" / "project_lead" / "AGENTS.md",
+                metadata_file=repo_root
+                / "flows"
+                / "demo"
+                / "build"
+                / "agents"
+                / "project_lead"
+                / "final_output.contract.json",
+                contract_version=1,
+                final_output=FinalOutputContract(
+                    exists=True,
+                    contract_version=1,
+                    declaration_key="ProjectLeadTurnResult",
+                    declaration_name="ProjectLeadTurnResult",
+                    format_mode="json_object",
+                    schema_profile="OpenAIStructuredOutput",
+                    generated_schema_file=repo_root / "schema.json",
+                    metadata_file=repo_root / "final_output.contract.json",
+                ),
+                route=RouteContract(
+                    exists=True,
+                    behavior="conditional",
+                    has_unrouted_branch=True,
+                    unrouted_review_verdicts=(),
+                    selector=RouteSelectorContract(
+                        surface="final_output",
+                        field_path=("next_route",),
+                        null_behavior="no_route",
+                    ),
+                    branches=(
+                        RouteBranchContract(
+                            target=RouteTargetContract(
+                                key="agents.section_dossier_engineer.SectionDossierEngineer",
+                                name="SectionDossierEngineer",
+                                title="Section Dossier Engineer",
+                                module_parts=("agents", "section_dossier_engineer"),
+                            ),
+                            label="Route to Section Dossier Engineer.",
+                            summary="Route to Section Dossier Engineer.",
+                            choice_members=(
+                                RouteChoiceMemberContract(
+                                    member_key="section_dossier_engineer",
+                                    member_title="Section Dossier Engineer",
+                                    member_wire="section_dossier_engineer",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            downstream_agent = FlowAgent(
+                key="01_section_dossier_engineer",
+                slug="section_dossier_engineer",
+                timeout_sec=60,
+                allowed_skills=(),
+                system_skills=(),
+                external_skills=(),
+                allowed_mcps=(),
+                compiled=CompiledAgentContract(
+                    name="SectionDossierEngineer",
+                    slug="section_dossier_engineer",
+                    entrypoint=repo_root / "flows" / "demo" / "prompts" / "section_dossier_engineer.prompt",
+                    markdown_path=repo_root
+                    / "flows"
+                    / "demo"
+                    / "build"
+                    / "agents"
+                    / "section_dossier_engineer"
+                    / "AGENTS.md",
+                    metadata_file=repo_root
+                    / "flows"
+                    / "demo"
+                    / "build"
+                    / "agents"
+                    / "section_dossier_engineer"
+                    / "final_output.contract.json",
+                    contract_version=1,
+                    final_output=FinalOutputContract(
+                        exists=True,
+                        contract_version=1,
+                        declaration_key="SectionDossierEngineerTurnResult",
+                        declaration_name="SectionDossierEngineerTurnResult",
+                        format_mode="json_object",
+                        schema_profile="OpenAIStructuredOutput",
+                        generated_schema_file=repo_root / "schema.json",
+                        metadata_file=repo_root / "final_output.contract.json",
+                    ),
+                ),
+            )
+            flow = FlowDefinition(
+                name="demo",
+                code="DMO",
+                root_dir=repo_root / "flows" / "demo",
+                flow_file=repo_root / "flows" / "demo" / "flow.yaml",
+                build_agents_dir=repo_root / "flows" / "demo" / "build" / "agents",
+                setup_home_script=None,
+                start_agent_key=downstream_agent.key,
+                max_command_turns=8,
+                guarded_git_repos=(),
+                runtime_env={},
+                host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
+                agents={downstream_agent.key: downstream_agent},
+                adapter=AdapterConfig(name="codex", args={}),
+            )
+
+            loaded = load_agent_final_response(
+                compiled_agent=routed_agent,
+                last_message_file=last_message,
+            )
+
+            resolved = _resolve_next_agent(flow=flow, next_owner=loaded.turn_result.next_owner)
+
+            self.assertEqual(loaded.turn_result.next_owner, "SectionDossierEngineer")
+            self.assertIs(resolved, downstream_agent)
+
+    def test_build_agent_prompt_injects_previous_json_for_stdlib_smoke_route_repair(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sandbox_root = Path(temp_dir).resolve()
+            for directory_name in ("flows", "skills", "mcps", "stdlib", "runs"):
+                (sandbox_root / directory_name).mkdir(parents=True, exist_ok=True)
+            (sandbox_root / "pyproject.toml").write_text("[project]\nname = 'rally-test'\n", encoding="utf-8")
+
+            run_dir = sandbox_root / "runs" / "active" / "DMO-1"
+            run_home = run_dir / "home"
+
+            build_root = repo_root / "flows" / "_stdlib_smoke" / "build" / "agents"
+            route_repair_dir = build_root / "route_repair"
+            plan_author_dir = build_root / "plan_author"
+
+            route_repair_markdown = run_home / "agents" / "route_repair" / "AGENTS.md"
+            route_repair_markdown.parent.mkdir(parents=True, exist_ok=True)
+            route_repair_markdown.write_text(
+                (route_repair_dir / "AGENTS.md").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+            route_repair_compiled = _load_compiled_agent_contract(
+                repo_root=repo_root,
+                agent_dir=route_repair_dir,
+                markdown_path=route_repair_dir / "AGENTS.md",
+                metadata_file=route_repair_dir / "final_output.contract.json",
+            )
+            plan_author_compiled = _load_compiled_agent_contract(
+                repo_root=repo_root,
+                agent_dir=plan_author_dir,
+                markdown_path=plan_author_dir / "AGENTS.md",
+                metadata_file=plan_author_dir / "final_output.contract.json",
+            )
+            route_repair_agent = FlowAgent(
+                key="02_route_repair",
+                slug="route_repair",
+                timeout_sec=60,
+                allowed_skills=(),
+                system_skills=(),
+                external_skills=(),
+                allowed_mcps=(),
+                compiled=replace(route_repair_compiled, markdown_path=route_repair_markdown),
+            )
+            plan_author_agent = FlowAgent(
+                key="01_plan_author",
+                slug="plan_author",
+                timeout_sec=60,
+                allowed_skills=(),
+                system_skills=(),
+                external_skills=(),
+                allowed_mcps=(),
+                compiled=plan_author_compiled,
+            )
+            flow = FlowDefinition(
+                name="_stdlib_smoke",
+                code="DMO",
+                root_dir=repo_root / "flows" / "_stdlib_smoke",
+                flow_file=repo_root / "flows" / "_stdlib_smoke" / "flow.yaml",
+                build_agents_dir=build_root,
+                setup_home_script=None,
+                start_agent_key="01_plan_author",
+                max_command_turns=8,
+                guarded_git_repos=(),
+                runtime_env={},
+                host_inputs=FlowHostInputs(required_env=(), required_files=(), required_directories=()),
+                agents={
+                    plan_author_agent.key: plan_author_agent,
+                    route_repair_agent.key: route_repair_agent,
+                },
+                adapter=AdapterConfig(name="codex", args={}),
+            )
+            previous_turn_dir = run_home / "sessions" / "plan_author" / "turn-001"
+            previous_turn_dir.mkdir(parents=True, exist_ok=True)
+            (previous_turn_dir / "last_message.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "handoff",
+                        "next_route": "route_repair",
+                        "summary": None,
+                        "reason": None,
+                        "sleep_duration_seconds": None,
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            workspace = workspace_context_from_root(sandbox_root)
+            run_record = RunRecord(
+                id="DMO-1",
+                flow_name="_stdlib_smoke",
+                flow_code="DMO",
+                adapter_name="codex",
+                start_agent_key="01_plan_author",
+                created_at="2026-04-15T00:00:00Z",
+            )
+            recorder = RunEventRecorder(run_dir=run_dir, run_id="DMO-1", flow_code="DMO")
+            previous_turn_inputs_file = run_home / "sessions" / "route_repair" / "turn-002" / "previous_turn_inputs.md"
+
+            prompt = _build_agent_prompt(
+                workspace=workspace,
+                run_home=run_home,
+                flow=flow,
+                run_record=run_record,
+                agent=route_repair_agent,
+                recorder=recorder,
+                turn_index=2,
+                previous_turn_inputs_file=previous_turn_inputs_file,
+            )
+
+            appendix = previous_turn_inputs_file.read_text(encoding="utf-8")
+            self.assertIn("### PreviousPlanAuthorTurn", appendix)
+            self.assertIn('"kind": "handoff"', appendix)
+            self.assertIn('"next_route": "route_repair"', appendix)
+            self.assertIn("## Previous Turn Inputs", prompt)
 
     def test_run_flow_creates_pending_run_until_issue_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -62,6 +594,78 @@ class RunnerTests(unittest.TestCase):
             self.assertNotIn("brief_file", run_yaml_text)
             self.assertIn("Prepared run home shell", rendered_text)
             self.assertIn("waiting for `home/issue.md`", rendered_text)
+
+    def test_run_flow_persists_overrides_and_uses_them_in_display_and_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            seed_path = repo_root / "issue.md"
+            seed_path.write_text("Fix the pagination bug.\n", encoding="utf-8")
+            fake_run = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-1",
+                        "last_message": {
+                            "kind": "done",
+                            "next_owner": None,
+                            "summary": "override run",
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                        },
+                    }
+                ]
+            )
+            stream = _FakeTtyStream()
+
+            def display_factory(run_record, flow):
+                return build_terminal_display(
+                    stream=stream,
+                    context=DisplayContext(
+                        run_id=run_record.id,
+                        flow_name=flow.name,
+                        flow_code=flow.code,
+                        adapter_name=flow.adapter.name,
+                        model_name=str(flow.adapter.args.get("model")),
+                        reasoning_effort=str(flow.adapter.args.get("reasoning_effort")),
+                        start_agent_key=flow.start_agent_key,
+                        agent_count=len(flow.agents),
+                        agent_identities=tuple(
+                            AgentDisplayIdentity(key=agent.key, slug=agent.slug)
+                            for agent in flow.agents.values()
+                        ),
+                    ),
+                )
+
+            result = run_flow(
+                repo_root=repo_root,
+                request=RunRequest(
+                    flow_name="demo",
+                    issue_seed_path=seed_path,
+                    model_override="gpt-5.4-mini",
+                    reasoning_effort_override="high",
+                ),
+                subprocess_run=fake_run,
+                display_factory=display_factory,
+            )
+
+            run_dir = find_run_dir(repo_root=repo_root, run_id="DMO-1")
+            run_yaml_text = (run_dir / "run.yaml").read_text(encoding="utf-8")
+            launch_record = json.loads(
+                (run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").read_text(encoding="utf-8")
+            )
+            tty_text = _strip_ansi(stream.getvalue())
+
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("model_override: gpt-5.4-mini", run_yaml_text)
+            self.assertIn("reasoning_effort_override: high", run_yaml_text)
+            self.assertIn("Model gpt-5.4-mini", tty_text)
+            self.assertIn("Thinking high", tty_text)
+            self.assertIn("-m", launch_record["command"])
+            self.assertEqual(
+                launch_record["command"][launch_record["command"].index("-m") + 1],
+                "gpt-5.4-mini",
+            )
+            self.assertIn('model_reasoning_effort="high"', launch_record["command"])
 
     def test_resume_run_after_issue_exists_hands_off_and_records_logs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -138,14 +742,26 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("Fix the pagination bug.", issue_text)
             self.assertIn("Rally Run Started", issue_text)
             self.assertIn("Rally Turn Result", issue_text)
-            self.assertIn("Rally Done", issue_text)
+            self.assertNotIn("Rally Done", issue_text)
             self.assertIn("## Rally Run Started\n- Run ID: `DMO-1`\n- Time:", issue_text)
             self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
-            self.assertIn("## Rally Done\n- Run ID: `DMO-1`\n- Turn: `2`", issue_text)
+            self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `2`", issue_text)
             self.assertIn("\n---\n\n## Rally Turn Result", issue_text)
+            self.assertIn("```json\n{\n  \"kind\": \"handoff\"", issue_text)
+            self.assertIn('"next_owner": "change_engineer"', issue_text)
+            self.assertIn('"summary": "verified"', issue_text)
             self.assertIn("session-1", session_text)
             self.assertIn('"code": "RUN"', events_text)
+            self.assertIn('"code": "RAWJSON"', events_text)
+            self.assertIn('"code": "FINALJSON"', events_text)
+            self.assertIn('"payload_source": "adapter_stdout"', events_text)
+            self.assertIn('"payload_source": "last_message"', events_text)
+            self.assertIn('"adapter_event_type": "thread.started"', events_text)
+            self.assertIn('"raw_payload": {"kind": "handoff", "next_owner": "change_engineer"', events_text)
+            self.assertIn('"raw_payload": {"kind": "done", "next_owner": null, "reason": null, "sleep_duration_seconds": null, "summary": "verified"}', events_text)
+            self.assertIn('"next_owner": "change_engineer"', events_text)
             self.assertIn('"code": "SESSION"', agent_log_text)
+            self.assertIn('"code": "RAWJSON"', agent_log_text)
             self.assertIn("Investigating the bug", rendered_text)
             self.assertIn("Tracing the pagination path", rendered_text)
             self.assertIn('rg -n "page" src', rendered_text)
@@ -200,7 +816,7 @@ class RunnerTests(unittest.TestCase):
 
             self.assertEqual(result.status, RunStatus.DONE)
             self.assertIn("- Agent Issues: Needed clearer fixture naming.", issue_text)
-            self.assertIn("## Rally Done\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
+            self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
 
     def test_run_flow_step_pauses_after_one_turn(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -551,7 +1167,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(second_result.status, RunStatus.DONE)
             self.assertEqual(state.status, RunStatus.DONE)
             self.assertIn("Rally Paused", issue_text)
-            self.assertIn("Rally Done", issue_text)
+            self.assertNotIn("Rally Done", issue_text)
+            self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `2`", issue_text)
 
     def test_resume_run_step_from_paused_advances_one_more_turn(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -715,14 +1332,29 @@ class RunnerTests(unittest.TestCase):
                         "thread_id": "session-poem-1",
                         "last_message": {
                             "kind": "handoff",
-                            "next_owner": "poem_critic",
+                            "next_route": "poem_writer",
                             "summary": None,
                             "reason": None,
                             "sleep_duration_seconds": None,
+                            "poem_type": "sonnet",
+                            "subject": "moon",
+                            "creative_direction": "Make the moon feel close, tidal, and silver.",
+                            "revision_goal": "Give the draft one strong night image.",
                         },
                     },
                     {
                         "thread_id": "session-poem-2",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_route": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                            "inspiration": "silver tide",
+                        },
+                    },
+                    {
+                        "thread_id": "session-poem-3",
                         "last_message": {
                             "verdict": "accept",
                             "reviewed_artifact": "home:artifacts/poem.md",
@@ -756,27 +1388,47 @@ class RunnerTests(unittest.TestCase):
 
             run_dir = find_run_dir(repo_root=repo_root, run_id="POM-1")
             issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
-            prompt_text = fake_run.calls[0]["kwargs"]["input"]
+            prompt_text = fake_run.calls[1]["kwargs"]["input"]
+            previous_turn_inputs = (
+                run_dir / "home" / "sessions" / "poem_writer" / "turn-002" / "previous_turn_inputs.md"
+            ).read_text(encoding="utf-8")
 
             self.assertEqual(result.run_id, "POM-1")
             self.assertEqual(result.status, RunStatus.DONE)
             self.assertIsNone(result.current_agent_key)
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "skills" / "rally-memory").exists())
             self.assertIn("## Skills", prompt_text)
             self.assertIn("### rally-kernel", prompt_text)
-            self.assertIn("### rally-memory", prompt_text)
-            self.assertIn("### Issue Note", prompt_text)
+            self.assertNotIn("### rally-memory", prompt_text)
+            self.assertIn("### Saved Run Note", prompt_text)
             self.assertNotIn("\n### Writer Issue Note\n", prompt_text)
-            self.assertIn("Use the shared `rally-kernel` skill for that note.", prompt_text)
-            self.assertIn('Append With: `"$RALLY_CLI_BIN" issue note --run-id "$RALLY_RUN_ID"`', prompt_text)
+            self.assertNotIn("### Rally Workspace Dir", prompt_text)
+            self.assertNotIn("### Rally Run ID", prompt_text)
+            self.assertNotIn("### Rally Flow Code", prompt_text)
+            self.assertNotIn("### Rally Agent Slug", prompt_text)
+            self.assertIn("Rally is the shared control plane for this run.", prompt_text)
+            self.assertIn("Use `home:issue.md` as the shared ledger for this run.", prompt_text)
+            self.assertNotIn("### Read Order", prompt_text)
+            self.assertNotIn("### Turn Sequence", prompt_text)
+            self.assertNotIn("Use the shared `rally-kernel` skill for saved notes.", prompt_text)
+            self.assertNotIn("**Use When**", prompt_text)
+            self.assertNotIn("**Reason**", prompt_text)
+            self.assertIn("| Delivered Via | `rally-kernel` |", prompt_text)
             self.assertIn("Artistic Rationale", prompt_text)
-            self.assertIn("### Rally Turn Result", prompt_text)
+            self.assertIn("### Poem Writer Turn Result", prompt_text)
             self.assertNotIn("\n### Writer Turn Result\n", prompt_text)
-            self.assertIn("## Rally Note", issue_text)
-            self.assertIn("- Source: `rally runtime review`", issue_text)
-            self.assertIn("### Findings First", issue_text)
+            self.assertIn("Always send every field in this schema.", prompt_text)
+            self.assertNotIn("## Rally Note", issue_text)
+            self.assertIn("Review Verdict: `accept`", issue_text)
+            self.assertIn("Findings First: The poem is ready to keep as written.", issue_text)
             self.assertIn("The poem is ready to keep as written.", issue_text)
+            self.assertIn("```json\n{\n  \"verdict\": \"accept\"", issue_text)
+            self.assertIn('"reviewed_artifact": "home:artifacts/poem.md"', issue_text)
+            self.assertIn("## Previous Turn Inputs", prompt_text)
+            self.assertIn("### PreviousMuseTurn", prompt_text)
+            self.assertIn('"poem_type": "sonnet"', previous_turn_inputs)
+            self.assertIn('"subject": "moon"', previous_turn_inputs)
 
     def test_resume_run_rebuilds_flow_and_stdlib_prompt_sources_before_next_turn(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -789,15 +1441,12 @@ class RunnerTests(unittest.TestCase):
                 + "\n[[tool.doctrine.emit.targets]]\n"
                 'name = "rally-kernel"\n'
                 'entrypoint = "skills/rally-kernel/prompts/SKILL.prompt"\n'
-                'output_dir = "skills/rally-kernel/build"\n'
-                "\n[[tool.doctrine.emit.targets]]\n"
-                'name = "rally-memory"\n'
-                'entrypoint = "skills/rally-memory/prompts/SKILL.prompt"\n'
-                'output_dir = "skills/rally-memory/build"\n',
+                'output_dir = "skills/rally-kernel/build"\n',
                 encoding="utf-8",
             )
-            shutil.rmtree(repo_root / "skills" / "rally-kernel")
-            shutil.rmtree(repo_root / "skills" / "rally-memory")
+            if (repo_root / "skills" / "rally-kernel").exists():
+                shutil.rmtree(repo_root / "skills" / "rally-kernel")
+            self._write_framework_stdlib(framework_root=repo_root)
             self._write_framework_builtin_skills(framework_root=repo_root)
 
             flow_path = repo_root / "flows" / "poem_loop" / "flow.yaml"
@@ -812,10 +1461,14 @@ class RunnerTests(unittest.TestCase):
                         "thread_id": "session-poem-1",
                         "last_message": {
                             "kind": "handoff",
-                            "next_owner": "poem_critic",
+                            "next_route": "poem_writer",
                             "summary": None,
                             "reason": None,
                             "sleep_duration_seconds": None,
+                            "poem_type": "sonnet",
+                            "subject": "moon",
+                            "creative_direction": "Keep the moon close and tidal.",
+                            "revision_goal": "Make the imagery more vivid.",
                         },
                     }
                 ]
@@ -844,25 +1497,25 @@ class RunnerTests(unittest.TestCase):
 
             run_dir = find_run_dir(repo_root=repo_root, run_id="POM-1")
             self.assertEqual(first_result.status, RunStatus.BLOCKED)
-            self.assertEqual(first_result.current_agent_key, "02_poem_critic")
+            self.assertEqual(first_result.current_agent_key, "01_poem_writer")
 
-            flow_prompt_path = repo_root / "flows" / "poem_loop" / "prompts" / "roles" / "poem_critic.prompt"
-            flow_prompt_marker = "Call out the anchor image before the verdict."
+            flow_prompt_path = repo_root / "flows" / "poem_loop" / "prompts" / "roles" / "poem_writer.prompt"
+            flow_prompt_marker = "Keep one image line sharper than the rest."
             flow_prompt_path.write_text(
                 flow_prompt_path.read_text(encoding="utf-8").replace(
-                    '    "Accept only when you would be glad to hand the poem back as finished."\n',
-                    '    "Accept only when you would be glad to hand the poem back as finished."\n'
+                    '    "A strong draft gives the critic one clear thing to judge: the poem itself."\n',
+                    '    "A strong draft gives the critic one clear thing to judge: the poem itself."\n'
                     f'    "{flow_prompt_marker}"\n',
                 ),
                 encoding="utf-8",
             )
 
             stdlib_prompt_path = repo_root / "stdlib" / "rally" / "prompts" / "rally" / "base_agent.prompt"
-            stdlib_prompt_marker = "Keep the newest proof in view when Rally rules mention the CLI."
+            stdlib_prompt_marker = "Keep the shared Rally rules short and action-first."
             stdlib_prompt_path.write_text(
                 stdlib_prompt_path.read_text(encoding="utf-8").replace(
-                    '        "Use `RALLY_CLI_BIN` when a flow tells you to call the Rally CLI."\n',
-                    '        "Use `RALLY_CLI_BIN` when a flow tells you to call the Rally CLI."\n'
+                    '        "End the turn with the final JSON this turn declares."\n',
+                    '        "End the turn with the final JSON this turn declares."\n'
                     f'        "{stdlib_prompt_marker}"\n',
                 ),
                 encoding="utf-8",
@@ -873,10 +1526,12 @@ class RunnerTests(unittest.TestCase):
                     {
                         "thread_id": "session-poem-2",
                         "last_message": {
-                            "verdict": "accept",
-                            "reviewed_artifact": "home:artifacts/poem.md",
-                            "analysis_performed": "The sonnet keeps its moon focus, the images stay clear, and the draft now feels finished.",
-                            "findings_first": "The poem is ready to keep as written.",
+                            "kind": "handoff",
+                            "next_route": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                            "inspiration": "silver tide",
                         },
                     }
                 ]
@@ -897,21 +1552,23 @@ class RunnerTests(unittest.TestCase):
 
             prompt_text = second_turn.calls[0]["kwargs"]["input"]
             repo_readback = (
-                repo_root / "flows" / "poem_loop" / "build" / "agents" / "poem_critic" / "AGENTS.md"
+                repo_root / "flows" / "poem_loop" / "build" / "agents" / "poem_writer" / "AGENTS.md"
             ).read_text(encoding="utf-8")
-            run_home_readback = (run_dir / "home" / "agents" / "poem_critic" / "AGENTS.md").read_text(encoding="utf-8")
+            run_home_readback = (run_dir / "home" / "agents" / "poem_writer" / "AGENTS.md").read_text(encoding="utf-8")
 
             # Prompt source is the shipped truth. A resume must rebuild prompt
             # source edits and send that updated text on the very next turn.
-            self.assertEqual(second_result.status, RunStatus.DONE)
+            self.assertEqual(second_result.status, RunStatus.BLOCKED)
+            self.assertEqual(second_result.current_agent_key, "02_poem_critic")
             self.assertIn(flow_prompt_marker, prompt_text)
             self.assertIn(stdlib_prompt_marker, prompt_text)
             self.assertIn(flow_prompt_marker, repo_readback)
             self.assertIn(stdlib_prompt_marker, repo_readback)
             self.assertIn(flow_prompt_marker, run_home_readback)
             self.assertIn(stdlib_prompt_marker, run_home_readback)
+            self.assertIn("### PreviousMuseTurn", prompt_text)
 
-    def test_run_flow_syncs_builtin_skills_into_workspace_when_missing(self) -> None:
+    def test_run_flow_materializes_builtin_skills_without_workspace_copies(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir).resolve()
             self._write_demo_repo(repo_root=repo_root, copy_framework_builtins=False)
@@ -951,86 +1608,11 @@ class RunnerTests(unittest.TestCase):
 
             run_dir = find_run_dir(repo_root=repo_root, run_id="DMO-1")
             self.assertEqual(result.status, RunStatus.DONE)
-            self.assertTrue((repo_root / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertTrue((repo_root / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((repo_root / "skills" / "rally-kernel").exists())
+            self.assertFalse((repo_root / "skills" / "rally-memory").exists())
+            self.assertFalse((repo_root / "stdlib" / "rally").exists())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
-
-    def test_resume_run_passes_workspace_dir_to_prompt_input_command(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            repo_root = Path(temp_dir).resolve()
-            self._write_demo_repo(
-                repo_root=repo_root,
-                runtime_env={
-                    "PROJECT_ROOT": "workspace:fixtures/project",
-                    "FLOW_ONLY": "from-flow",
-                },
-            )
-            flow_path = repo_root / "flows" / "demo" / "flow.yaml"
-            flow_text = flow_path.read_text(encoding="utf-8")
-            flow_path.write_text(
-                flow_text.replace(
-                    "  adapter_args:\n",
-                    "  prompt_input_command: flow:setup/prompt_inputs.py\n  adapter_args:\n",
-                ),
-                encoding="utf-8",
-            )
-            (repo_root / "flows" / "demo" / "setup").mkdir(parents=True, exist_ok=True)
-            (repo_root / "flows" / "demo" / "setup" / "prompt_inputs.py").write_text("print('{}')\n", encoding="utf-8")
-
-            captured_env: dict[str, str] = {}
-
-            def prompt_input_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-                self.assertEqual(command[0], sys.executable)
-                self.assertIn("RALLY_WORKSPACE_DIR", kwargs["env"])
-                self.assertIn("RALLY_CLI_BIN", kwargs["env"])
-                captured_env.update(kwargs["env"])
-                return subprocess.CompletedProcess(
-                    args=command,
-                    returncode=0,
-                    stdout=json.dumps({"Env": {"workspace_dir": kwargs["env"]["RALLY_WORKSPACE_DIR"]}}),
-                    stderr="",
-                )
-
-            run_dir = self._create_pending_run(repo_root=repo_root)
-            self._write_issue(run_dir=run_dir)
-            fake_run = _FakeCodexRun(
-                [
-                    {
-                        "thread_id": "session-1",
-                        "last_message": {
-                            "kind": "done",
-                            "next_owner": None,
-                            "summary": "done",
-                            "reason": None,
-                            "sleep_duration_seconds": None,
-                        },
-                    }
-                ]
-            )
-
-            with patch.dict(os.environ, {"FLOW_ONLY": "from-shell"}, clear=False), patch(
-                "rally.services.runner.subprocess.run",
-                side_effect=prompt_input_run,
-            ):
-                result = resume_run(
-                    repo_root=repo_root,
-                    request=ResumeRequest(run_id="DMO-1"),
-                    subprocess_run=fake_run,
-                )
-
-            prompt_text = fake_run.calls[0]["kwargs"]["input"]
-            launch_record = json.loads(
-                (run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(result.status, RunStatus.DONE)
-            self.assertEqual(captured_env["RALLY_WORKSPACE_DIR"], str(repo_root))
-            self.assertEqual(captured_env["PROJECT_ROOT"], str(repo_root / "fixtures" / "project"))
-            self.assertEqual(captured_env["FLOW_ONLY"], "from-flow")
-            self.assertEqual(fake_run.calls[0]["kwargs"]["env"]["PROJECT_ROOT"], str(repo_root / "fixtures" / "project"))
-            self.assertEqual(fake_run.calls[0]["kwargs"]["env"]["FLOW_ONLY"], "from-flow")
-            self.assertNotIn("FLOW_ONLY", launch_record["env"])
-            self.assertIn(str(repo_root), prompt_text)
+            self.assertFalse((run_dir / "home" / "skills" / "rally-memory").exists())
 
     def test_run_flow_passes_flow_env_to_setup_script(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1150,6 +1732,8 @@ class RunnerTests(unittest.TestCase):
                 (run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").read_text(encoding="utf-8")
             )
             mcp_config = json.loads((run_dir / "home" / "claude_code" / "mcp.json").read_text(encoding="utf-8"))
+            events_text = (run_dir / "logs" / "events.jsonl").read_text(encoding="utf-8")
+            rendered_text = (run_dir / "logs" / "rendered.log").read_text(encoding="utf-8")
 
             self.assertEqual(result.status, RunStatus.DONE)
             self.assertEqual(fake_run.calls[0]["command"][0], "claude")
@@ -1175,6 +1759,16 @@ class RunnerTests(unittest.TestCase):
                 str(Path("/tmp/fixture-repo").resolve(strict=False)),
             )
             self.assertTrue((run_dir / "home" / ".claude" / "skills").is_symlink())
+            self.assertIn('"code": "RAWJSON"', events_text)
+            self.assertIn('"code": "FINALJSON"', events_text)
+            self.assertIn('"payload_source": "adapter_stdout"', events_text)
+            self.assertIn('"payload_source": "last_message"', events_text)
+            self.assertIn('"adapter_event_type": "assistant"', events_text)
+            self.assertIn('"adapter_event_type": "result"', events_text)
+            self.assertIn('"raw_payload": {"kind": "handoff", "next_owner": "change_engineer"', events_text)
+            self.assertIn('"raw_payload": {"kind": "done", "next_owner": null, "reason": null, "sleep_duration_seconds": null, "summary": "verified"}', events_text)
+            self.assertNotIn("RAWJSON", rendered_text)
+            self.assertNotIn("FINALJSON", rendered_text)
 
     def test_resume_run_blocks_before_turn_when_required_claude_mcp_cannot_start(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1252,6 +1846,12 @@ class RunnerTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            (
+                repo_root / "flows" / "demo" / "build" / "agents" / "change_engineer" / "AGENTS.md"
+            ).write_text(
+                self._render_compiled_agent_markdown(name="ChangeEngineer", allowed_skills=("demo-git",)),
+                encoding="utf-8",
+            )
 
             observed_skill_sets: list[set[str]] = []
 
@@ -1311,8 +1911,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(
                 observed_skill_sets,
                 [
-                    {"repo-search", "rally-kernel", "rally-memory"},
-                    {"demo-git", "rally-kernel", "rally-memory"},
+                    {"repo-search", "rally-kernel"},
+                    {"demo-git", "rally-kernel"},
                 ],
             )
             self.assertTrue((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "repo-search" / "SKILL.md").is_file())
@@ -1358,6 +1958,12 @@ class RunnerTests(unittest.TestCase):
                 "    allowed_skills: [pytest-local]\n",
             )
             flow_path.write_text(flow_text, encoding="utf-8")
+            (
+                repo_root / "flows" / "demo" / "build" / "agents" / "change_engineer" / "AGENTS.md"
+            ).write_text(
+                self._render_compiled_agent_markdown(name="ChangeEngineer", allowed_skills=("pytest-local",)),
+                encoding="utf-8",
+            )
 
             run_dir = self._create_pending_run(repo_root=repo_root)
             self._write_issue(run_dir=run_dir)
@@ -1405,8 +2011,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(
                 observed_skill_sets,
                 [
-                    {"repo-search", "rally-kernel", "rally-memory"},
-                    {"pytest-local", "rally-kernel", "rally-memory"},
+                    {"repo-search", "rally-kernel"},
+                    {"pytest-local", "rally-kernel"},
                 ],
             )
             self.assertTrue((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "repo-search" / "SKILL.md").is_file())
@@ -1438,7 +2044,7 @@ class RunnerTests(unittest.TestCase):
                     "Line 3 lands. Line 2 still needs a sharper image before this poem is ready."
                 ),
                 "current_artifact": "home:artifacts/poem.md",
-                "next_owner": "poem_writer",
+                "next_owner": "muse",
                 "failure_detail": {
                     "blocked_gate": None,
                     "failing_gates": [
@@ -1452,23 +2058,38 @@ class RunnerTests(unittest.TestCase):
                         "session_id": "claude-poem-1",
                         "structured_output": {
                             "kind": "handoff",
-                            "next_owner": "poem_critic",
+                            "next_route": "poem_writer",
                             "summary": None,
                             "reason": None,
                             "sleep_duration_seconds": None,
+                            "poem_type": "haiku",
+                            "subject": "being stranded in interstellar space",
+                            "creative_direction": "Use cold emptiness and one sharp machine detail.",
+                            "revision_goal": "Make the middle line feel stranded instead of explained.",
                         },
                     },
                     {
                         "session_id": "claude-poem-2",
+                        "structured_output": {
+                            "kind": "handoff",
+                            "next_route": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                            "inspiration": "cold antenna",
+                        },
+                    },
+                    {
+                        "session_id": "claude-poem-3",
                         "stdout_lines": [
                             {
                                 "type": "system",
                                 "subtype": "init",
-                                "session_id": "claude-poem-2",
+                                "session_id": "claude-poem-3",
                             },
                             {
                                 "type": "assistant",
-                                "session_id": "claude-poem-2",
+                                "session_id": "claude-poem-3",
                                 "message": {
                                     "content": [
                                         {
@@ -1480,7 +2101,7 @@ class RunnerTests(unittest.TestCase):
                             },
                             {
                                 "type": "result",
-                                "session_id": "claude-poem-2",
+                                "session_id": "claude-poem-3",
                                 "usage": {
                                     "input_tokens": 5,
                                     "output_tokens": 13,
@@ -1495,13 +2116,37 @@ class RunnerTests(unittest.TestCase):
                         ],
                     },
                     {
-                        "session_id": "claude-poem-3",
+                        "session_id": "claude-poem-4",
                         "structured_output": {
-                            "kind": "done",
-                            "next_owner": None,
-                            "summary": "revised poem ready",
+                            "kind": "handoff",
+                            "next_route": "poem_writer",
+                            "summary": None,
                             "reason": None,
                             "sleep_duration_seconds": None,
+                            "poem_type": "haiku",
+                            "subject": "being stranded in interstellar space",
+                            "creative_direction": "Keep the last line, but make the middle line a sharper image.",
+                            "revision_goal": "Replace explanation with one concrete image of stranding.",
+                        },
+                    },
+                    {
+                        "session_id": "claude-poem-5",
+                        "structured_output": {
+                            "kind": "handoff",
+                            "next_route": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                            "inspiration": "radio frost",
+                        },
+                    },
+                    {
+                        "session_id": "claude-poem-6",
+                        "structured_output": {
+                            "verdict": "accept",
+                            "reviewed_artifact": "home:artifacts/poem.md",
+                            "analysis_performed": "The revision keeps the strong last line and the middle line now shows the stranding with a concrete image.",
+                            "findings_first": "The poem is ready to keep as written.",
                         },
                     },
                 ]
@@ -1532,19 +2177,126 @@ class RunnerTests(unittest.TestCase):
             state = load_run_state(run_dir=run_dir)
             issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
             critic_last_message = json.loads(
-                (run_dir / "home" / "sessions" / "poem_critic" / "turn-002" / "last_message.json").read_text(
+                (run_dir / "home" / "sessions" / "poem_critic" / "turn-003" / "last_message.json").read_text(
                     encoding="utf-8"
                 )
             )
+            muse_previous_inputs = (
+                run_dir / "home" / "sessions" / "muse" / "turn-004" / "previous_turn_inputs.md"
+            ).read_text(encoding="utf-8")
+            writer_previous_inputs = (
+                run_dir / "home" / "sessions" / "poem_writer" / "turn-005" / "previous_turn_inputs.md"
+            ).read_text(encoding="utf-8")
 
             self.assertEqual(result.status, RunStatus.DONE)
-            self.assertEqual(state.turn_index, 3)
+            self.assertEqual(state.turn_index, 6)
             self.assertEqual(critic_last_message["verdict"], "changes_requested")
-            self.assertEqual(critic_last_message["next_owner"], "poem_writer")
-            self.assertTrue((run_dir / "logs" / "adapter_launch" / "turn-003-poem_writer.json").is_file())
-            self.assertIn("### Findings First", issue_text)
+            self.assertEqual(critic_last_message["next_owner"], "muse")
+            self.assertTrue((run_dir / "logs" / "adapter_launch" / "turn-004-muse.json").is_file())
+            # The single turn-result block should keep the route visible without
+            # forcing the next reader to open the JSON payload first.
+            self.assertIn("Review Verdict: `changes_requested`", issue_text)
+            self.assertIn("Next Owner: `muse`", issue_text)
+            self.assertIn("Findings First: Line 3 lands. Line 2 still needs a sharper image", issue_text)
             self.assertIn("Line 3 lands. Line 2 still needs a sharper image", issue_text)
             self.assertIn("Middle line explains rather than shows the stranding.", issue_text)
+            self.assertIn("```json\n{\n  \"verdict\": \"changes_requested\"", issue_text)
+            self.assertIn('"failure_detail": {', issue_text)
+            self.assertIn('"failing_gates": [', issue_text)
+            self.assertIn("### PreviousPoemReview", muse_previous_inputs)
+            self.assertIn('"next_owner": "muse"', muse_previous_inputs)
+            self.assertIn("### PreviousMuseTurn", writer_previous_inputs)
+            self.assertIn('"revision_goal": "Replace explanation with one concrete image of stranding."', writer_previous_inputs)
+
+    def test_poem_loop_review_blocker_keeps_blocked_gate_in_turn_result_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_poem_repo(repo_root=repo_root)
+            flow_path = repo_root / "flows" / "poem_loop" / "flow.yaml"
+            flow_text = flow_path.read_text(encoding="utf-8")
+            flow_text = flow_text.replace("  adapter: claude_code\n", "  adapter: codex\n")
+            flow_text = flow_text.replace("    model: sonnet\n", "    model: gpt-5.4\n")
+            flow_path.write_text(flow_text, encoding="utf-8")
+            fake_run = _FakeCodexRun(
+                [
+                    {
+                        "thread_id": "session-poem-1",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_route": "poem_writer",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                            "poem_type": "sonnet",
+                            "subject": "moon",
+                            "creative_direction": "Make the moon feel close and tidal.",
+                            "revision_goal": "Give the draft one sharp image.",
+                        },
+                    },
+                    {
+                        "thread_id": "session-poem-2",
+                        "last_message": {
+                            "kind": "handoff",
+                            "next_route": "poem_critic",
+                            "summary": None,
+                            "reason": None,
+                            "sleep_duration_seconds": None,
+                            "inspiration": "silver tide",
+                        },
+                    },
+                    {
+                        "thread_id": "session-poem-3",
+                        "last_message": {
+                            "verdict": "changes_requested",
+                            "reviewed_artifact": "home:artifacts/poem.md",
+                            "analysis_performed": "Could not review because the poem draft is missing.",
+                            "findings_first": "The poem draft is missing, so the review cannot continue.",
+                            "current_artifact": None,
+                            "next_owner": None,
+                            "failure_detail": {
+                                "blocked_gate": "The poem draft is missing.",
+                                "failing_gates": None,
+                            },
+                        },
+                    },
+                ]
+            )
+
+            def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
+                self.assertEqual(editor_command, ("vim",))
+                issue_path.write_text("Write a sonnet about the moon.\n", encoding="utf-8")
+                return IssueEditorResult(
+                    status="saved",
+                    cleaned_text="Write a sonnet about the moon.\n",
+                )
+
+            with patch(
+                "rally.services.home_materializer.resolve_interactive_issue_editor",
+                return_value=("vim",),
+            ), patch(
+                "rally.services.home_materializer.edit_issue_file_in_editor",
+                side_effect=fake_edit_issue,
+            ):
+                result = run_flow(
+                    repo_root=repo_root,
+                    request=RunRequest(flow_name="poem_loop"),
+                    subprocess_run=fake_run,
+                )
+
+            run_dir = find_run_dir(repo_root=repo_root, run_id="POM-1")
+            state = load_run_state(run_dir=run_dir)
+            issue_text = (run_dir / "home" / "issue.md").read_text(encoding="utf-8")
+
+            self.assertEqual(result.status, RunStatus.BLOCKED)
+            self.assertEqual(state.status, RunStatus.BLOCKED)
+            self.assertEqual(state.turn_index, 3)
+            # The one runtime-owned record still needs the blocker reason in the
+            # summary lines so later readers can see why work stopped at a glance.
+            self.assertIn("Review Verdict: `changes_requested`", issue_text)
+            self.assertIn("Blocked Gate: The poem draft is missing.", issue_text)
+            self.assertNotIn("## Rally Blocked", issue_text)
+            self.assertIn("```json\n{\n  \"verdict\": \"changes_requested\"", issue_text)
+            self.assertIn('"blocked_gate": "The poem draft is missing."', issue_text)
 
     def test_run_flow_rebuild_failure_stops_before_creating_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1804,7 +2556,18 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(first_result.status, RunStatus.BLOCKED)
             self.assertTrue(first_turn.calls[0]["kwargs"]["input"].startswith("# ScopeLead\n"))
 
-            updated_markdown = "# Fresh ChangeEngineer\n"
+            updated_markdown = "\n".join(
+                (
+                    "# Fresh ChangeEngineer",
+                    "",
+                    "## Skills",
+                    "",
+                    "### rally-kernel",
+                    "",
+                    "### repo-search",
+                    "",
+                )
+            )
             (repo_root / "flows" / "demo" / "build" / "agents" / "change_engineer" / "AGENTS.md").write_text(
                 updated_markdown,
                 encoding="utf-8",
@@ -1934,7 +2697,7 @@ class RunnerTests(unittest.TestCase):
                 updated_skill,
             )
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
-            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "skills" / "rally-memory").exists())
             self.assertTrue((run_dir / "home" / "mcps" / "fixture-repo" / "server.toml").is_file())
             config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
             self.assertIn("project_doc_max_bytes = 0", config_text)
@@ -2077,7 +2840,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(first_result.status, RunStatus.BLOCKED)
             self.assertTrue((run_dir / "home" / "skills" / "repo-search" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
-            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "skills" / "rally-memory").exists())
             self.assertTrue((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "repo-search" / "SKILL.md").is_file())
             self.assertTrue(
                 (run_dir / "home" / "sessions" / "change_engineer" / "skills" / "repo-search" / "SKILL.md").is_file()
@@ -2088,6 +2851,16 @@ class RunnerTests(unittest.TestCase):
             flow_text = flow_text.replace("    allowed_skills: [repo-search]\n", "    allowed_skills: []\n")
             flow_text = flow_text.replace("    allowed_mcps: [fixture-repo]\n", "    allowed_mcps: []\n")
             flow_path.write_text(flow_text, encoding="utf-8")
+            (repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "AGENTS.md").write_text(
+                self._render_compiled_agent_markdown(name="ScopeLead", allowed_skills=()),
+                encoding="utf-8",
+            )
+            (
+                repo_root / "flows" / "demo" / "build" / "agents" / "change_engineer" / "AGENTS.md"
+            ).write_text(
+                self._render_compiled_agent_markdown(name="ChangeEngineer", allowed_skills=()),
+                encoding="utf-8",
+            )
 
             def fake_edit_issue(*, issue_path: Path, editor_command: tuple[str, ...]) -> IssueEditorResult:
                 self.assertEqual(editor_command, ("vim",))
@@ -2124,13 +2897,11 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse((run_dir / "home" / "skills" / "repo-search").exists())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertTrue((run_dir / "home" / "skills" / "rally-kernel" / "references" / "note_examples.md").is_file())
-            self.assertTrue((run_dir / "home" / "skills" / "rally-memory" / "SKILL.md").is_file())
+            self.assertFalse((run_dir / "home" / "skills" / "rally-memory").exists())
             self.assertFalse((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "repo-search").exists())
             self.assertFalse((run_dir / "home" / "sessions" / "change_engineer" / "skills" / "repo-search").exists())
             self.assertTrue((run_dir / "home" / "sessions" / "scope_lead" / "skills" / "rally-kernel" / "SKILL.md").is_file())
-            self.assertTrue(
-                (run_dir / "home" / "sessions" / "change_engineer" / "skills" / "rally-memory" / "SKILL.md").is_file()
-            )
+            self.assertTrue((run_dir / "home" / "sessions" / "change_engineer" / "skills" / "rally-kernel" / "SKILL.md").is_file())
             self.assertFalse((run_dir / "home" / "mcps" / "fixture-repo").exists())
             config_text = (run_dir / "home" / "config.toml").read_text(encoding="utf-8")
             self.assertEqual(config_text, "project_doc_max_bytes = 0\n")
@@ -2156,6 +2927,10 @@ class RunnerTests(unittest.TestCase):
                     "    allowed_skills: [repo-search, demo-git]\n",
                     1,
                 ),
+                encoding="utf-8",
+            )
+            (repo_root / "flows" / "demo" / "build" / "agents" / "scope_lead" / "AGENTS.md").write_text(
+                self._render_compiled_agent_markdown(name="ScopeLead", allowed_skills=("repo-search", "demo-git")),
                 encoding="utf-8",
             )
 
@@ -2451,10 +3226,11 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(state.last_turn_kind, "sleep")
             self.assertIn("Sleep turn results are not supported", state.blocker_reason or "")
             self.assertIn("Rally Turn Result", issue_text)
-            self.assertIn("Rally Blocked", issue_text)
+            self.assertNotIn("Rally Blocked", issue_text)
             self.assertIn("## Rally Turn Result\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
-            self.assertIn("## Rally Blocked\n- Run ID: `DMO-1`\n- Turn: `1`", issue_text)
             self.assertNotIn("Rally Sleeping", issue_text)
+            self.assertIn("```json\n{\n  \"kind\": \"sleep\"", issue_text)
+            self.assertIn('"sleep_duration_seconds": 60', issue_text)
             self.assertIn("SLEEP", rendered_text)
             self.assertIn("BLOCKED", rendered_text)
 
@@ -2620,6 +3396,223 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(archived_dir.is_dir())
             self.assertTrue(new_issue.startswith("Restart this blocked issue.\n"))
             self.assertIn("- Restarted From: `DMO-1`", new_issue)
+
+    def test_resume_run_uses_saved_overrides_when_no_new_flags_are_passed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(
+                repo_root=repo_root,
+                request=RunRequest(
+                    flow_name="demo",
+                    model_override="gpt-5.4-mini",
+                    reasoning_effort_override="high",
+                ),
+            )
+            self._write_issue(run_dir=run_dir)
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(run_id="DMO-1"),
+                subprocess_run=_FakeCodexRun(
+                    [
+                        {
+                            "thread_id": "session-1",
+                            "last_message": {
+                                "kind": "done",
+                                "next_owner": None,
+                                "summary": "saved override run",
+                                "reason": None,
+                                "sleep_duration_seconds": None,
+                            },
+                        }
+                    ]
+                ),
+            )
+
+            run_yaml_text = (run_dir / "run.yaml").read_text(encoding="utf-8")
+            launch_record = json.loads(
+                (run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("model_override: gpt-5.4-mini", run_yaml_text)
+            self.assertIn("reasoning_effort_override: high", run_yaml_text)
+            self.assertEqual(
+                launch_record["command"][launch_record["command"].index("-m") + 1],
+                "gpt-5.4-mini",
+            )
+            self.assertIn('model_reasoning_effort="high"', launch_record["command"])
+
+    def test_resume_run_updates_saved_overrides_before_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(repo_root=repo_root)
+            self._write_issue(run_dir=run_dir)
+
+            result = resume_run(
+                repo_root=repo_root,
+                request=ResumeRequest(
+                    run_id="DMO-1",
+                    model_override="gpt-5.4-mini",
+                    reasoning_effort_override="low",
+                ),
+                subprocess_run=_FakeCodexRun(
+                    [
+                        {
+                            "thread_id": "session-1",
+                            "last_message": {
+                                "kind": "done",
+                                "next_owner": None,
+                                "summary": "updated override run",
+                                "reason": None,
+                                "sleep_duration_seconds": None,
+                            },
+                        }
+                    ]
+                ),
+            )
+
+            run_yaml_text = (run_dir / "run.yaml").read_text(encoding="utf-8")
+            launch_record = json.loads(
+                (run_dir / "logs" / "adapter_launch" / "turn-001-scope_lead.json").read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("model_override: gpt-5.4-mini", run_yaml_text)
+            self.assertIn("reasoning_effort_override: low", run_yaml_text)
+            self.assertEqual(
+                launch_record["command"][launch_record["command"].index("-m") + 1],
+                "gpt-5.4-mini",
+            )
+            self.assertIn('model_reasoning_effort="low"', launch_record["command"])
+
+    def test_resume_run_restart_carries_saved_overrides_to_new_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(
+                repo_root=repo_root,
+                request=RunRequest(
+                    flow_name="demo",
+                    model_override="gpt-5.4-mini",
+                    reasoning_effort_override="high",
+                ),
+            )
+            self._write_issue(run_dir=run_dir, body="Restart this issue.\n")
+
+            with patch("rally.services.runner._confirm_replace_active_run", return_value=True):
+                result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(run_id="DMO-1", restart=True),
+                    subprocess_run=_FakeCodexRun(
+                        [
+                            {
+                                "thread_id": "session-1",
+                                "last_message": {
+                                    "kind": "done",
+                                    "next_owner": None,
+                                    "summary": "restart with saved overrides",
+                                    "reason": None,
+                                    "sleep_duration_seconds": None,
+                                },
+                            }
+                        ]
+                    ),
+                )
+
+            archived_run_yaml = (repo_root / "runs" / "archive" / "DMO-1" / "run.yaml").read_text(encoding="utf-8")
+            new_run_yaml = (repo_root / "runs" / "active" / "DMO-2" / "run.yaml").read_text(encoding="utf-8")
+            launch_record = json.loads(
+                (
+                    repo_root
+                    / "runs"
+                    / "active"
+                    / "DMO-2"
+                    / "logs"
+                    / "adapter_launch"
+                    / "turn-001-scope_lead.json"
+                ).read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(result.run_id, "DMO-2")
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("model_override: gpt-5.4-mini", archived_run_yaml)
+            self.assertIn("reasoning_effort_override: high", archived_run_yaml)
+            self.assertIn("model_override: gpt-5.4-mini", new_run_yaml)
+            self.assertIn("reasoning_effort_override: high", new_run_yaml)
+            self.assertEqual(
+                launch_record["command"][launch_record["command"].index("-m") + 1],
+                "gpt-5.4-mini",
+            )
+            self.assertIn('model_reasoning_effort="high"', launch_record["command"])
+
+    def test_resume_run_restart_prefers_new_overrides_over_saved_ones(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir).resolve()
+            self._write_demo_repo(repo_root=repo_root)
+            run_dir = self._create_pending_run(
+                repo_root=repo_root,
+                request=RunRequest(
+                    flow_name="demo",
+                    model_override="gpt-5.4-mini",
+                    reasoning_effort_override="high",
+                ),
+            )
+            self._write_issue(run_dir=run_dir, body="Restart this issue with new overrides.\n")
+
+            with patch("rally.services.runner._confirm_replace_active_run", return_value=True):
+                result = resume_run(
+                    repo_root=repo_root,
+                    request=ResumeRequest(
+                        run_id="DMO-1",
+                        restart=True,
+                        model_override="gpt-5.4-nano",
+                        reasoning_effort_override="low",
+                    ),
+                    subprocess_run=_FakeCodexRun(
+                        [
+                            {
+                                "thread_id": "session-1",
+                                "last_message": {
+                                    "kind": "done",
+                                    "next_owner": None,
+                                    "summary": "restart with new overrides",
+                                    "reason": None,
+                                    "sleep_duration_seconds": None,
+                                },
+                            }
+                        ]
+                    ),
+                )
+
+            archived_run_yaml = (repo_root / "runs" / "archive" / "DMO-1" / "run.yaml").read_text(encoding="utf-8")
+            new_run_yaml = (repo_root / "runs" / "active" / "DMO-2" / "run.yaml").read_text(encoding="utf-8")
+            launch_record = json.loads(
+                (
+                    repo_root
+                    / "runs"
+                    / "active"
+                    / "DMO-2"
+                    / "logs"
+                    / "adapter_launch"
+                    / "turn-001-scope_lead.json"
+                ).read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(result.run_id, "DMO-2")
+            self.assertEqual(result.status, RunStatus.DONE)
+            self.assertIn("model_override: gpt-5.4-nano", archived_run_yaml)
+            self.assertIn("reasoning_effort_override: low", archived_run_yaml)
+            self.assertNotIn("gpt-5.4-mini", archived_run_yaml)
+            self.assertIn("model_override: gpt-5.4-nano", new_run_yaml)
+            self.assertIn("reasoning_effort_override: low", new_run_yaml)
+            self.assertEqual(
+                launch_record["command"][launch_record["command"].index("-m") + 1],
+                "gpt-5.4-nano",
+            )
+            self.assertIn('model_reasoning_effort="low"', launch_record["command"])
 
     def test_resume_run_restart_cancels_when_replacement_not_confirmed(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3598,7 +4591,9 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("max_command_turns=1", rendered_text)
             self.assertFalse((run_dir / "logs" / "adapter_launch" / "turn-002-change_engineer.json").exists())
 
-    def _create_pending_run(self, *, repo_root: Path) -> Path:
+    def _create_pending_run(self, *, repo_root: Path, request: RunRequest | None = None) -> Path:
+        if request is None:
+            request = RunRequest(flow_name="demo")
         with patch(
             "rally.services.home_materializer.resolve_interactive_issue_editor",
             return_value=None,
@@ -3606,7 +4601,7 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaises(RallyUsageError):
                 run_flow(
                     repo_root=repo_root,
-                    request=RunRequest(flow_name="demo"),
+                    request=request,
                     subprocess_run=_FakeCodexRun([]),
                 )
         return find_run_dir(repo_root=repo_root, run_id="DMO-1")
@@ -3625,7 +4620,7 @@ class RunnerTests(unittest.TestCase):
         required_files: list[str] | None = None,
         required_directories: list[str] | None = None,
         runtime_env: dict[str, str] | None = None,
-        copy_framework_builtins: bool = True,
+        copy_framework_builtins: bool = False,
     ) -> None:
         source_root = Path(__file__).resolve().parents[2]
         (repo_root / "skills" / "repo-search").mkdir(parents=True)
@@ -3644,7 +4639,7 @@ class RunnerTests(unittest.TestCase):
         )
         if copy_framework_builtins:
             self._write_framework_builtin_skills(framework_root=repo_root)
-        shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
+            self._write_framework_stdlib(framework_root=repo_root)
 
         flow_root = repo_root / "flows" / "demo"
         (flow_root / "prompts").mkdir(parents=True)
@@ -3706,10 +4701,12 @@ class RunnerTests(unittest.TestCase):
                 "  01_scope_lead:\n"
                 "    timeout_sec: 60\n"
                 "    allowed_skills: [repo-search]\n"
+                "    system_skills: []\n"
                 "    allowed_mcps: []\n"
                 "  02_change_engineer:\n"
                 "    timeout_sec: 60\n"
                 "    allowed_skills: [repo-search]\n"
+                "    system_skills: []\n"
                 "    allowed_mcps: []\n"
                 "runtime:\n"
                 "  adapter: codex\n"
@@ -3744,16 +4741,13 @@ class RunnerTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def _write_poem_repo(self, *, repo_root: Path, copy_framework_builtins: bool = True) -> None:
+    def _write_poem_repo(self, *, repo_root: Path, copy_framework_builtins: bool = False) -> None:
         source_root = Path(__file__).resolve().parents[2]
         shutil.copytree(source_root / "flows" / "poem_loop", repo_root / "flows" / "poem_loop")
-        shutil.copytree(source_root / "stdlib" / "rally", repo_root / "stdlib" / "rally")
         self._write_poem_fixture_pyproject(repo_root=repo_root)
         if copy_framework_builtins:
-            ensure_workspace_builtins_synced(
-                workspace_root=repo_root,
-                pyproject_path=repo_root / "pyproject.toml",
-            )
+            self._write_framework_stdlib(framework_root=repo_root)
+            self._write_framework_builtin_skills(framework_root=repo_root)
         build_flow_assets(repo_root=repo_root, flow_name="poem_loop")
 
     def _write_poem_fixture_pyproject(self, *, repo_root: Path) -> None:
@@ -3766,9 +4760,6 @@ class RunnerTests(unittest.TestCase):
                     "",
                     "[tool.rally.workspace]",
                     "version = 1",
-                    "",
-                    "[tool.doctrine.compile]",
-                    'additional_prompt_roots = ["stdlib/rally/prompts"]',
                     "",
                     "[tool.doctrine.emit]",
                     "",
@@ -3785,26 +4776,14 @@ class RunnerTests(unittest.TestCase):
     def _write_framework_builtin_skills(self, *, framework_root: Path) -> None:
         source_root = Path(__file__).resolve().parents[2]
         self._copy_builtin_skill(source_root=source_root, framework_root=framework_root, skill_name="rally-kernel")
-        self._copy_builtin_skill(source_root=source_root, framework_root=framework_root, skill_name="rally-memory")
+
+    def _write_framework_stdlib(self, *, framework_root: Path) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        shutil.copytree(source_root / "stdlib" / "rally", framework_root / "stdlib" / "rally")
 
     def _copy_builtin_skill(self, *, source_root: Path, framework_root: Path, skill_name: str) -> None:
         skill_root = framework_root / "skills" / skill_name
         shutil.copytree(source_root / "skills" / skill_name, skill_root)
-        if skill_name == "rally-memory" and not (skill_root / "build" / "SKILL.md").is_file():
-            (skill_root / "build").mkdir(parents=True, exist_ok=True)
-            (skill_root / "build" / "SKILL.md").write_text(
-                textwrap.dedent(
-                    """\
-                    ---
-                    name: "rally-memory"
-                    description: "Shared Rally memory skill."
-                    ---
-
-                    # Rally Memory
-                    """
-                ),
-                encoding="utf-8",
-            )
 
     def _write_markdown_skill(
         self,
@@ -3886,8 +4865,31 @@ class RunnerTests(unittest.TestCase):
     ) -> None:
         agent_dir = flow_root / "build" / "agents" / slug
         agent_dir.mkdir(parents=True, exist_ok=True)
-        (agent_dir / "AGENTS.md").write_text(f"# {name}\n", encoding="utf-8")
-        (agent_dir / "AGENTS.contract.json").write_text(
+        (agent_dir / "AGENTS.md").write_text(
+            self._render_compiled_agent_markdown(name=name, allowed_skills=("repo-search",)),
+            encoding="utf-8",
+        )
+        schema_dir = agent_dir / "schemas"
+        schema_dir.mkdir(parents=True, exist_ok=True)
+        (schema_dir / "rally_turn_result.schema.json").write_text(
+            textwrap.dedent(
+                """\
+                {
+                  "type": "object",
+                  "required": ["kind", "next_owner", "summary", "reason", "sleep_duration_seconds"],
+                  "properties": {
+                    "kind": {"type": "string", "enum": ["handoff", "done", "blocker", "sleep"]},
+                    "next_owner": {"type": ["string", "null"]},
+                    "summary": {"type": ["string", "null"]},
+                    "reason": {"type": ["string", "null"]},
+                    "sleep_duration_seconds": {"type": ["integer", "null"]}
+                  }
+                }
+                """
+            ),
+            encoding="utf-8",
+        )
+        (agent_dir / "final_output.contract.json").write_text(
             json.dumps(
                 {
                     "contract_version": 1,
@@ -3900,10 +4902,39 @@ class RunnerTests(unittest.TestCase):
                         "exists": True,
                         "declaration_key": "DemoTurnResult",
                         "declaration_name": "DemoTurnResult",
-                        "format_mode": "json_schema",
+                        "format_mode": "json_object",
                         "schema_profile": "OpenAIStructuredOutput",
-                        "schema_file": "stdlib/rally/schemas/rally_turn_result.schema.json",
-                        "example_file": "stdlib/rally/examples/rally_turn_result.example.json",
+                        "emitted_schema_relpath": "schemas/rally_turn_result.schema.json",
+                    },
+                    "route": {
+                        "exists": True,
+                        "behavior": "conditional",
+                        "has_unrouted_branch": True,
+                        "unrouted_review_verdicts": [],
+                        "selector": {
+                            "surface": "final_output",
+                            "field_path": ["next_owner"],
+                            "null_behavior": "no_route",
+                        },
+                        "branches": [
+                            {
+                                "target": {
+                                    "key": "change_engineer" if slug == "scope_lead" else "scope_lead",
+                                    "module_parts": [],
+                                    "name": "ChangeEngineer" if slug == "scope_lead" else "ScopeLead",
+                                    "title": "Change Engineer" if slug == "scope_lead" else "Scope Lead",
+                                },
+                                "label": "Synthetic test route.",
+                                "summary": "Synthetic test route.",
+                                "choice_members": [
+                                    {
+                                        "member_key": "change_engineer" if slug == "scope_lead" else "scope_lead",
+                                        "member_title": "Change Engineer" if slug == "scope_lead" else "Scope Lead",
+                                        "member_wire": "change_engineer" if slug == "scope_lead" else "scope_lead",
+                                    }
+                                ],
+                            }
+                        ],
                     },
                 },
                 indent=2,
@@ -3911,6 +4942,12 @@ class RunnerTests(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
+
+    def _render_compiled_agent_markdown(self, *, name: str, allowed_skills: tuple[str, ...]) -> str:
+        skill_lines = ["## Skills", "", "### rally-kernel", ""]
+        for skill_name in allowed_skills:
+            skill_lines.extend((f"### {skill_name}", ""))
+        return f"# {name}\n\n" + "\n".join(skill_lines)
 
 
 class _FakeCodexRun:

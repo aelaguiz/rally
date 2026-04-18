@@ -1,10 +1,23 @@
-import rally.notes
-import rally.issue_ledger
-import rally.memory
+# This module is the shared base for normal Rally work turns.
+# It owns the run-local ledger input and saved note output. Memory stays opt-in
+# in `rally.memory` so a flow chooses it on purpose.
 
-
+# Use a tiny text shape for runtime env values.
+# Keep these inputs available for flows that truly need them, but do not make
+# them part of every managed role's always-on readback.
 output shape RallyEnvText: "Rally Env Text"
     kind: PlainText
+
+
+# This source is Rally-owned because it reopens one exact artifact from the
+# immediate previous turn through emitted `io` metadata.
+# Authors opt in case by case. Keep it out of `RallyManagedInputs` so the base
+# prompt does not load prior-turn data unless a flow asks for it.
+# The optional `output:` key lets a flow pick one exact previous emitted output.
+# When it is missing, Doctrine resolves the previous turn's exact final output.
+input source RallyPreviousTurnOutput: "Rally Previous Turn Output"
+    optional: "Optional Source Keys"
+        output: "Selected prior output declaration or output binding."
 
 
 input RallyWorkspaceDir: "Rally Workspace Dir"
@@ -39,66 +52,108 @@ input RallyAgentSlug: "Rally Agent Slug"
     "Read this environment variable as the active compiled agent slug for this turn."
 
 
+# Declare the mandatory helper as a Doctrine skill once.
+# `RallyManagedSkills` can include it by reference, and flows can inherit the
+# shared skills block instead of copying skill prose.
 skill RallyKernelSkill: "rally-kernel"
-    purpose: "Use the shared Rally kernel skill to leave notes when needed and end the turn with the declared final JSON."
-
-    use_when: "Use When"
-        "Use this when a later reader needs a note."
-        "Use this when the turn needs Rally's shared final JSON rules."
+    purpose: "Use the shared Rally kernel skill when you need one saved note on this turn."
 
 
+# This read-first block stays small on purpose.
+# It teaches the one shared habit every Rally agent should keep.
+# A workflow is the right Doctrine form here because this is turn behavior, not
+# a tool, input, output, or review rule.
+workflow RallyReadFirst: "Read First"
+    sequence steps:
+        "Read `home:issue.md` from the top, even if you've read it before."
+        "Then read this role's local rules, files, and outputs."
+
+
+# Keep shared turn rules in one workflow so flow prompts can inherit them or
+# add local rules nearby without restating Rally's base rules.
+workflow RallyHowToTakeATurn: "Shared Rules"
+    bullets rules:
+        "Use `home:issue.md` as the shared ledger for this run."
+        "Leave one short saved note through `Saved Run Note` only when later readers need it."
+        "End the turn with the final JSON this turn declares."
+        "Keep routing, `done`, `blocker`, and `sleep` in final JSON, not in notes."
+
+
+# Keep the always-on input block to the one shared ledger file.
+# Use the one-line wrapper form when a slot is only one direct declaration and
+# adds no local prose of its own.
+# Flows can opt into the env inputs below only when their authored prompt really
+# needs them.
 inputs RallyManagedInputs: "Inputs"
-    rally_workspace_dir: "Rally Workspace Dir"
-        RallyWorkspaceDir
-
-    rally_run_id: "Rally Run ID"
-        RallyRunId
-
-    rally_flow_code: "Rally Flow Code"
-        RallyFlowCode
-
-    rally_agent_slug: "Rally Agent Slug"
-        RallyAgentSlug
-
-    issue_ledger: "Issue Ledger"
-        rally.issue_ledger.RallyIssueLedger
+    issue_ledger: RallyIssueLedger
 
 
+# These runtime env wrappers are the same kind of pass-through slot.
+# Keep them short so the shared owner teaches the simplest safe pattern.
+inputs RallyRuntimeEnvInputs: "Runtime Env Inputs"
+    rally_workspace_dir: RallyWorkspaceDir
+    rally_run_id: RallyRunId
+    rally_flow_code: RallyFlowCode
+    rally_agent_slug: RallyAgentSlug
+
+
+# Group mandatory Rally skills the same way.
+# This keeps the base agent lean while still making every managed turn expose
+# the one note helper Rally provides.
 skills RallyManagedSkills: "Skills"
     skill rally_kernel: RallyKernelSkill
         requirement: Required
-        reason: "Rally provides this skill on every Rally-managed turn."
 
-    skill rally_memory: rally.memory.RallyMemorySkill
-        requirement: Required
-        reason: "Rally provides this skill on every Rally-managed turn."
+# The render profile keeps saved context compact when Doctrine emits it.
+# It changes emitted text only. It is not another runtime state path.
+render_profile CompactSavedContext:
+    properties -> sentence
 
 
+output target RallyIssueNoteAppend: "Rally Issue Note Append"
+    delivery_skill: RallyKernelSkill
+
+# This module owns Rally's shared run ledger file.
+# Keep the path here so flows import one input instead of spelling their own
+# sidecar files or raw note paths.
+input RallyIssueLedger: "Issue Ledger"
+    source: File
+        path: "home:issue.md"
+    shape: MarkdownDocument
+    requirement: Required
+
+# A saved note is advisory because notes are for later readers.
+# Routing, `done`, `blocker`, and `sleep` still belong to the declared final
+# JSON for the turn.
+output RallyIssueNote: "Issue Note"
+    target: RallyIssueNoteAppend
+    shape: MarkdownDocument
+    render_profile: CompactSavedContext
+    requirement: Advisory
+
+    properties saved_context: "Saved Context"
+        when_to_use: "When To Use"
+            "Leave one short note only when a later reader needs context."
+
+# The saved note output is advisory by design.
+# Final JSON owns routing and completion, while this output is only for context
+# a later turn should remember.
+# Keep this wrapper explicit because `Saved Run Note` is still the heading Rally
+# wants readers to see.
 outputs RallyManagedOutputs: "Outputs"
-    issue_note: "Issue Note"
-        rally.notes.RallyIssueNote
+    issue_note: "Saved Run Note"
+        RallyIssueNote
 
 
+# This shared base block is where Rally states repo-wide turn rules once.
+# Local flows can add more rules, but they should not fight this base layer.
+# `abstract agent` is the Doctrine pattern that lets flow roles inherit the
+# shared shape without creating a runnable stdlib-only agent.
 abstract agent RallyManagedBaseAgent:
-    read_first: rally.memory.RallyReadFirst
-    how_to_take_a_turn: rally.memory.RallyHowToTakeATurn
-
-    rally_contract: "Rally Rules"
-        "Rally owns the run home, the note path, and the final JSON for this turn."
-        "End the turn with the final JSON shape this turn declares."
-        "Many Rally turns use `rally.turn_results.RallyTurnResult`."
-        "Review-native turns may end with Doctrine review JSON that Rally can read."
-        "Use `home:issue.md` as the shared run ledger for this run."
-        "Leave a note only when a later reader needs context."
-        "If Rally already saves the final review to `home:issue.md`, do not leave a second note unless the flow asks for one."
-        "Use the shared `rally-kernel` skill for that note."
-        "For this turn, read skills from `home:skills/`."
-        "On Codex turns, that same folder is `$CODEX_HOME/skills/`."
-        "Do not use `~/.agents/skills` or other machine-global skill folders for this run."
-        "Do not edit `home:issue.md` directly."
-        "Use the shared `rally-memory` skill only when a past lesson could help or this turn learns a short lesson worth keeping."
-        "Read run identity from `RALLY_WORKSPACE_DIR`, `RALLY_RUN_ID`, `RALLY_FLOW_CODE`, and `RALLY_AGENT_SLUG`."
-        "Use `RALLY_CLI_BIN` when a flow tells you to call the Rally CLI."
+    rally_contract: "Rally Context"
+        "Rally is the shared control plane for this run. It gives you the shared ledger, shared skills, and the next route."
+    read_first: RallyReadFirst
+    how_to_take_a_turn: RallyHowToTakeATurn
 
     inputs: RallyManagedInputs
     skills: RallyManagedSkills
