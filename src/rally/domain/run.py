@@ -48,6 +48,21 @@ RUN_STATUS_TERMINAL: frozenset[RunStatus] = frozenset(
 )
 
 
+# Reconciled statuses that mean "this run is no longer making progress."
+# Stored-terminal statuses (DONE/BLOCKED/STOPPED) plus the computed
+# out-of-band terminal statuses (CRASHED/ORPHANED). Callers that want to
+# skip "are you sure?" prompts before replacing a run use this set.
+RECONCILED_STATUS_TERMINAL: frozenset[ReconciledStatus] = frozenset(
+    {
+        ReconciledStatus.DONE,
+        ReconciledStatus.BLOCKED,
+        ReconciledStatus.STOPPED,
+        ReconciledStatus.CRASHED,
+        ReconciledStatus.ORPHANED,
+    }
+)
+
+
 @dataclass(frozen=True)
 class RunRequest:
     flow_name: str
