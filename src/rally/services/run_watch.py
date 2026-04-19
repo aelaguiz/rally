@@ -23,6 +23,57 @@ from rally.errors import RallyUsageError
 from rally.services.run_events import RunEvent, render_plain_event_line
 from rally.services.run_store import find_run_dir, load_run_state
 
+
+_TOOL_END_CODES = {
+    "TOOL OK",
+    "CMD OK",
+    "CMD ERR",
+    "CMD NO",
+    "MCP OK",
+    "MCP ERR",
+    "COLLAB OK",
+    "COLLAB ERR",
+}
+
+
+class _TurnProgress:
+    """Tracks the currently-executing turn for an operator-friendly footer.
+
+    Reset on every `TURN` event. Grows on every tool-end event. Rendered
+    compactly after every tool-end so the operator always sees current
+    progress without needing to re-read the stream.
+    """
+
+    __slots__ = ("turn_index", "agent_slug", "tools", "errors")
+
+    def __init__(self) -> None:
+        self.turn_index: int | None = None
+        self.agent_slug: str | None = None
+        self.tools = 0
+        self.errors = 0
+
+    def begin(self, event: RunEvent) -> None:
+        self.turn_index = event.turn_index
+        self.agent_slug = event.agent_slug or event.agent_key
+        self.tools = 0
+        self.errors = 0
+
+    def note_tool(self, event: RunEvent) -> None:
+        self.tools += 1
+        if event.level == "error" or event.code.endswith(" ERR") or event.code.endswith(" NO"):
+            self.errors += 1
+
+    def render(self) -> str | None:
+        if self.turn_index is None or self.tools == 0:
+            return None
+        pieces = [f"turn {self.turn_index}"]
+        if self.agent_slug:
+            pieces.insert(0, self.agent_slug)
+        pieces.append(f"{self.tools} tools")
+        if self.errors:
+            pieces.append(f"{self.errors} err")
+        return "· " + " · ".join(pieces)
+
 __all__ = [
     "DEFAULT_POLL_INTERVAL_SECONDS",
     "watch_run",
@@ -55,16 +106,14 @@ def watch_run(
     printed = 0
     position = 0
     skip_remaining = max(0, since)
+    progress = _TurnProgress()
 
     for event, offset in _read_events_from(events_path, position):
         position = offset
         if skip_remaining > 0:
             skip_remaining -= 1
             continue
-        stream.write(render_plain_event_line(event))
-        stream.write("\n")
-        stream.flush()
-        printed += 1
+        printed += _render_watch_event(event, stream=stream, progress=progress)
 
     if not follow:
         return printed
@@ -77,15 +126,36 @@ def watch_run(
                 if skip_remaining > 0:
                     skip_remaining -= 1
                     continue
-                stream.write(render_plain_event_line(event))
-                stream.write("\n")
-                stream.flush()
-                printed += 1
+                printed += _render_watch_event(event, stream=stream, progress=progress)
     except KeyboardInterrupt:
         # Operators Ctrl-C out of `watch`; that is not an error.
         return printed
 
     return printed
+
+
+def _render_watch_event(
+    event: RunEvent, *, stream: TextIO, progress: _TurnProgress
+) -> int:
+    if event.code == "TURN":
+        progress.begin(event)
+    if event.code == "SUMMARY" and event.kind == "summary":
+        receipt = event.data.get("receipt")
+        if isinstance(receipt, str) and receipt.strip():
+            stream.write("\n")
+            stream.write(receipt.rstrip())
+            stream.write("\n\n")
+            stream.flush()
+            return 1
+    stream.write(render_plain_event_line(event))
+    stream.write("\n")
+    if event.code in _TOOL_END_CODES:
+        progress.note_tool(event)
+        rendered = progress.render()
+        if rendered:
+            stream.write(f"  {rendered}\n")
+    stream.flush()
+    return 1
 
 
 def _read_events_from(

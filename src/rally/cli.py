@@ -15,6 +15,7 @@ from rally.services.issue_ledger import append_issue_note, render_issue_current_
 from rally.services.run_status import show_status
 from rally.services.run_stop import DEFAULT_GRACE_SECONDS, kill_run, request_stop
 from rally.services.run_store import resolve_run_id
+from rally.services.run_trends import show_run_trends
 from rally.services.run_watch import watch_run
 from rally.services.runner import resume_run, run_flow
 from rally.services.workspace import resolve_workspace
@@ -427,6 +428,49 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     memory_refresh_parser.add_argument("--agent-slug", help="Override the scoped agent slug.")
     memory_refresh_parser.set_defaults(func=_memory_refresh_command)
+
+    runs_parser = subparsers.add_parser(
+        "runs",
+        help="Work with the set of Rally runs.",
+        description=(
+            "Read workspace-wide data about Rally runs.\n\n"
+            "Use this for cross-run views that sit above `rally status`."
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    runs_subparsers = runs_parser.add_subparsers(dest="runs_command", required=True)
+
+    runs_time_parser = runs_subparsers.add_parser(
+        "time",
+        help="Show longitudinal timing trends across completed runs.",
+        description=(
+            "Summarise `runs/timings.ndjson` — wall, active, tool, and token "
+            "percentiles plus a recent-run table.\n\n"
+            "Each completed Rally run appends one line to that file, so this "
+            "view grows automatically as runs reach `done`."
+        ),
+        epilog=_examples(
+            "Examples",
+            (
+                "rally runs time",
+                "rally runs time --flow CUR",
+                "rally runs time --last 5",
+            ),
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    runs_time_parser.add_argument(
+        "--flow",
+        help="Filter to one flow code (e.g. `CUR`).",
+    )
+    runs_time_parser.add_argument(
+        "--last",
+        type=int,
+        default=20,
+        help="Show this many most-recent runs. Use 0 for all. Defaults to 20.",
+    )
+    runs_time_parser.set_defaults(func=_runs_time_command)
+
     return parser
 
 
@@ -508,6 +552,18 @@ def _watch_command(args: argparse.Namespace) -> int:
         follow=args.follow,
         stream=sys.stdout,
     )
+    return 0
+
+
+def _runs_time_command(args: argparse.Namespace) -> int:
+    workspace = resolve_workspace()
+    limit = args.last if args.last and args.last > 0 else None
+    result = show_run_trends(
+        repo_root=workspace.workspace_root,
+        flow_code=args.flow,
+        limit=limit,
+    )
+    print(result.message)
     return 0
 
 

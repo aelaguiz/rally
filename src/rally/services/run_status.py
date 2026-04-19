@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 
 from rally.domain.run import ReconciledStatus, RunRecord, RunState, RunStatus
@@ -109,8 +110,73 @@ def _render_run_details(*, repo_root: Path, snapshot: _RunSnapshot) -> str:
             lines.append(f"Last Heartbeat: `{reconciled.heartbeat.ts}` (`{freshness}`)")
         if reconciled.stop_requested:
             lines.append("Stop Requested: `yes`")
+    for line in _render_time_footprint(snapshot.run_dir):
+        lines.append(line)
     lines.append(f"Next: {_render_next_action(snapshot=snapshot, repo_root=repo_root)}")
     return "\n".join(lines)
+
+
+def _render_time_footprint(run_dir: Path) -> list[str]:
+    """Return the three-line time footprint from `timing.json`, or empty.
+
+    Omits silently when `timing.json` has not been written yet (the run has
+    not completed its first terminal turn).
+    """
+    timing_path = run_dir / "timing.json"
+    if not timing_path.exists():
+        return []
+    try:
+        payload = json.loads(timing_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    wall_ms = int(payload.get("wall_ms") or 0)
+    active_ms = int(payload.get("active_ms") or 0)
+    idle_ms = int(payload.get("idle_ms") or 0)
+    top_tools = payload.get("top_tools") or []
+    tokens = payload.get("tokens") or {}
+    errors = sum(int(a.get("errors") or 0) for a in payload.get("per_agent") or [])
+
+    tool_parts: list[str] = []
+    for tool in top_tools[:2]:
+        tool_parts.append(f"{_fmt_duration(int(tool.get('total_ms') or 0))} {tool.get('tool_name') or '?'}")
+    tool_line = " · ".join(tool_parts) if tool_parts else "no tool calls"
+
+    token_parts: list[str] = []
+    if int(tokens.get("output_tokens") or 0):
+        token_parts.append(f"{_fmt_count(int(tokens['output_tokens']))} out")
+    if int(tokens.get("cache_read_input_tokens") or 0):
+        token_parts.append(f"{_fmt_count(int(tokens['cache_read_input_tokens']))} cached")
+    token_line = " · ".join(token_parts) if token_parts else "no tokens recorded"
+
+    return [
+        f"Time:   {_fmt_duration(wall_ms)} wall ({_fmt_duration(active_ms)} active · {_fmt_duration(idle_ms)} idle)",
+        f"Tools:  {tool_line}" + (f" · {errors} errors" if errors else ""),
+        f"Tokens: {token_line}",
+    ]
+
+
+def _fmt_duration(ms: int) -> str:
+    if ms < 1000:
+        return f"{ms}ms"
+    seconds = ms / 1000
+    if seconds < 60:
+        return f"{seconds:.1f}s" if seconds < 10 else f"{int(round(seconds))}s"
+    total = int(round(seconds))
+    minutes, secs = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes}m{secs:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m"
+
+
+def _fmt_count(n: int) -> str:
+    if n < 1000:
+        return str(n)
+    if n < 1_000_000:
+        k = n / 1000
+        return f"{k:.1f}k" if k < 10 else f"{int(round(k))}k"
+    m = n / 1_000_000
+    return f"{m:.2f}M" if m < 10 else f"{m:.1f}M"
 
 
 def _load_run_snapshot(*, repo_root: Path, run_id: str) -> _RunSnapshot:

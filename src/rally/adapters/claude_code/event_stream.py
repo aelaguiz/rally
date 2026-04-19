@@ -6,6 +6,7 @@ from typing import Any
 
 from rally.memory.logging import parse_memory_command, summarize_memory_command
 from rally.services.run_events import EventDraft
+from rally.services.tool_digest import classify_sub_kind, make_input_digest
 
 
 @dataclass
@@ -160,12 +161,22 @@ class ClaudeCodeEventStreamParser:
                         )
                     )
                     continue
+                tool_data: dict[str, object] = {
+                    "item_type": item_type,
+                    "tool_name": tool_name,
+                    "sub_kind": classify_sub_kind(tool_name),
+                }
+                if tool_id:
+                    tool_data["tool_use_id"] = tool_id
+                digest = make_input_digest(tool_name, tool_input)
+                if digest is not None:
+                    tool_data["input_digest"] = digest
                 drafts.append(
                     self._draft(
                         kind="tool",
                         code="TOOL",
                         message=_tool_start_message(tool_name=tool_name, tool_input=tool_input),
-                        data={"item_type": item_type, "tool_name": tool_name},
+                        data=tool_data,
                     )
                 )
         return drafts
@@ -210,6 +221,21 @@ class ClaudeCodeEventStreamParser:
                     )
                 )
                 continue
+            is_error = bool(item.get("is_error"))
+            content_text = _tool_result_text(item)
+            exit_code = _parse_exit_code(content_text) if is_error else None
+            output_tail = _first_output_line(content_text) if is_error else None
+            result_data: dict[str, object] = {
+                "tool_name": tool_name,
+                "sub_kind": classify_sub_kind(tool_name),
+                "is_error": is_error,
+            }
+            if tool_id:
+                result_data["tool_use_id"] = tool_id
+            if exit_code is not None:
+                result_data["exit_code"] = exit_code
+            if output_tail:
+                result_data["output_tail"] = output_tail
             drafts.append(
                 self._draft(
                     kind="tool",
@@ -219,7 +245,7 @@ class ClaudeCodeEventStreamParser:
                         tool_input=tool_input,
                         result_payload=item,
                     ),
-                    data={"tool_name": tool_name},
+                    data=result_data,
                 )
             )
         return drafts
@@ -341,6 +367,35 @@ def _tool_result_text(result_payload: dict[str, object]) -> str | None:
     content = result_payload.get("content")
     if isinstance(content, str) and content.strip():
         return content
+    return None
+
+
+def _parse_exit_code(content_text: str | None) -> int | None:
+    if not content_text:
+        return None
+    first_line = content_text.strip().splitlines()[0] if content_text.strip() else ""
+    lower = first_line.lower()
+    if not lower.startswith("exit code"):
+        return None
+    tail = first_line[len("exit code") :].strip()
+    try:
+        return int(tail.split()[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def _first_output_line(content_text: str | None, *, max_len: int = 160) -> str | None:
+    if not content_text:
+        return None
+    for line in content_text.strip().splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.lower().startswith("exit code"):
+            continue
+        if len(stripped) > max_len:
+            return stripped[: max_len - 1].rstrip() + "…"
+        return stripped
     return None
 
 

@@ -89,6 +89,55 @@ EOF
 
         "Neither flag is a substitute for fixing the authored surface when Rally refuses for a real reason."
 
+    section run_timing: "Run Timing And Per-Handoff Receipts"
+        """Every run Rally executes is self-diagnosable. After every terminal turn event (`handoff`, `done`, `blocker`, `sleep`), Rally computes a timing snapshot, writes it to disk, and emits a `SUMMARY` event that renders a receipt block into the live stream. You never ask for it. It is always on."""
+
+        bullets on_disk:
+            "`runs/<RUN>/timing.json` — the full cumulative snapshot. Overwritten at every terminal turn. Shape: wall/active/idle/setup ms, per-turn list with tokens and hot tools and hot commands, per-agent rollups, overall top tools and top commands."
+            "`runs/<RUN>/timing_turns.jsonl` — append-only, one line per turn that ended. Lets you replay the handoff stream later without re-reading the raw events."
+            "`runs/<RUN>/tool_calls.jsonl` — one line per paired tool call: `{turn_index, agent_slug, tool_name, tool_use_id, dur_ms, is_error, input_digest, sub_kind, ts_start, ts_end}`. Grep or jq this when you want exact evidence."
+            "`runs/timings.ndjson` — workspace-level log. One line appended per completed run (`done`), with wall/active/idle/tokens/errors. Read this for cross-run trends."
+
+        "Every terminal turn emits a `SUMMARY` event with `kind=summary`. The event carries a pre-rendered `receipt` string in `data.receipt` and the full `RunTiming` dataclass in `data.timing`. Stream displays render the receipt block inline so the user sees where time went at the moment routing happens, not just at the end."
+
+        code:
+            language: text
+            text: """CUR-8 · turn 2 complete · track_scoper → track_scope_critic
+
+this turn   12m16s  (7m10s tools · 5m06s model)   44 tools   26,503 out · 2.73M cached
+            hot tools:    Bash 7m25s × 44 (16% err) · Glob 16s × 3
+            hot commands: cd repos/psmo && …  27×  7m09s  3 err
+
+cumulative  15m25s wall · 15m25s active · 0s idle
+            2 turns · 2 agents · 62 tools · 7 errors (11.3%) · 35,389 out · 3.37M cached
+
+artifacts   runs/active/CUR-8/timing.json
+"""
+
+        bullets how_to_read:
+            "Decide whether a turn was tool-bound or model-bound by comparing `tool_ms` against `model_ms` in the turn's `timing.json` entry."
+            "Find the command that dominated a turn by reading `hot_commands` in `timing.json` — the `input_digest` is first-120-char, secret-scrubbed."
+            "Attribute errors to a specific agent and command with `jq` on `tool_calls.jsonl` — filter `is_error=true` and rollup by `agent_slug` + `input_digest`."
+            "Detect retries by grouping `tool_calls.jsonl` on `(turn_index, tool_name, input_digest)` and counting rows per group."
+            "When the user stops a run mid-flow at a handoff, the last receipt they saw is already the accurate cumulative picture — `timing.json` always reflects the last completed turn."
+
+        bullets flag_codes:
+            "`command_always_fails` (error) — ≥2 calls of the same `input_digest` with 100% error rate. Remedy: read the command output and fix the root cause; the tool will keep failing until the input changes."
+            "`tool_error_rate` (warning) — any `(agent, tool)` with ≥3 calls and >10% error rate. Remedy: the agent's prompt or the tool's usage needs tightening."
+            "`single_call_hot` (warning) — any single tool call longer than 60s. Remedy: check `tool_calls.jsonl` for the slow command."
+            "`model_spin` (warning) — any turn with 0 tool calls and >120s wall time. Remedy: the agent kept thinking without acting; tighten the prompt."
+            "`retry_group` (info) — same `(turn, tool, input_digest)` fires ≥2× in one turn. Informational."
+            "`high_idle` (info) — `wall / active > 3` when the run is not in `--step` mode. Informational; suppressed under `--step`."
+
+        bullets surfaces:
+            "`rally status <RUN>` appends a three-line **time footprint** (wall/active/idle, top tools, tokens) from `timing.json` when present."
+            "`rally watch <RUN>` renders each SUMMARY receipt inline and prints a compact per-turn counter (`agent · turn N · X tools · Y err`) after every tool-end."
+            "`rally runs time [--flow CODE] [--last N]` reports longitudinal trends over `runs/timings.ndjson` — recent-run table plus p50/p90/mean for wall, active, errors, tools, and tokens."
+
+        "The source of truth is `src/rally/services/run_timing.py`. The renderer is `src/rally/terminal/summary.py`. The adapter enrichments that make the pairing possible live in `src/rally/adapters/claude_code/event_stream.py` and `src/rally/adapters/codex/event_stream.py`, both routed through the shared digest helper in `src/rally/services/tool_digest.py`."
+
+        "This is observability, not control truth. Timing data never drives routing. Routing lives in the final JSON turn result."
+
     section related: "Related References"
         bullets refs:
             "`references/principles.md`: one-active-run-per-flow."

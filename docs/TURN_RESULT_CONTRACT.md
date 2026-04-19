@@ -144,3 +144,7 @@ role-specific overrides that all inherit from the stdlib base.
 - [RALLY_PRINCIPLES.md](RALLY_PRINCIPLES.md) — notes-are-advisory, final-JSON-is-control.
 - [RALLY_COMMUNICATION_MODEL.md](RALLY_COMMUNICATION_MODEL.md) — how turns chain.
 - [FLOW_YAML_REFERENCE.md](FLOW_YAML_REFERENCE.md) — how `final_output` is declared on an `agent` block.
+- [RALLY_RUN_TIMING.md](RALLY_RUN_TIMING.md) — the always-on per-handoff timing
+  receipt; aggregation and `SUMMARY` emission fire **after** the turn result
+  is persisted for every terminal kind (`handoff`, `done`, `blocker`,
+  `sleep`), so agents do not and cannot influence timing data.

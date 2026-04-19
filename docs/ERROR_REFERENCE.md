@@ -228,6 +228,27 @@ Remedy: make the override inherit `BaseRallyTurnResultSchema` (via
 
 ---
 
+## Run Timing Flags
+
+Timing flags are not errors. They are **rule-based diagnostic markers**
+that fire when a run shows a pattern worth a second look. Each flag
+appears in the per-handoff receipt and inside `timing.json` under
+`flags[]`. Rules live in `src/rally/services/run_timing_flags.py`.
+
+| Code | Severity | Trigger | Remedy |
+| --- | --- | --- | --- |
+| `command_always_fails` | error | ≥2 calls of the same `input_digest` with 100% error rate | Inspect the command and its environment; the tool call reliably fails. |
+| `tool_error_rate` | warning | Any `(agent, tool)` with ≥3 calls and >10% error rate | Check the agent's prompt or the tool's inputs; this agent has a systemic issue with that tool. |
+| `single_call_hot` | warning | Any single tool call longer than 60s | Usually a slow shell command or network call. Inspect `tool_calls.jsonl` for the offender. |
+| `model_spin` | warning | Any turn with 0 tool calls and >120s wall time | The agent kept thinking without taking any action. Tighten the prompt or expected next step. |
+| `retry_group` | info | Same `(turn, tool, input_digest)` fires ≥2× in one turn | Informational: the agent retried the same command. Consider whether the retry is load-bearing. |
+| `high_idle` | info | `wall / active > 3` and the run is not in step mode | The run spent most of its wall time idle between turns. Informational only; suppressed under `--step`. |
+
+See [RALLY_RUN_TIMING.md](RALLY_RUN_TIMING.md) for full schema and
+receipt-rendering details.
+
+---
+
 ## Related Docs
 
 - [RALLY_PRINCIPLES.md](RALLY_PRINCIPLES.md) — when-Rally-refuses-re-author-the-surface.

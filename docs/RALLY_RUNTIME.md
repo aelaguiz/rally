@@ -416,5 +416,9 @@ Use this doc with:
 - `docs/RALLY_COMMUNICATION_MODEL.md`
 - `docs/RALLY_CLI_AND_LOGGING.md`
 - `docs/RALLY_MEMORY.md`
+- `docs/RALLY_RUN_TIMING.md` — the always-on per-handoff receipt and the
+  four on-disk timing artifacts; timing aggregation fires after every
+  terminal turn result (handoff, done, blocker, sleep) and never before
+  routing, so agents cannot influence it
 
 Treat older planning docs as history only.

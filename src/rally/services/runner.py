@@ -49,6 +49,11 @@ from rally.services.process_identity import ProcessIdentity, capture_self
 from rally.services.reconcile import done_marker_path, reconcile_from_state
 from rally.services.run_events import EventConsumer, RunEventRecorder
 from rally.services.run_stop import clear_stop_request, is_stop_requested
+from rally.services.run_timing import (
+    compute_run_timing,
+    update_tool_calls,
+    write_run_timing,
+)
 from rally.services.run_store import (
     archive_run,
     archive_runs_dir,
@@ -1147,6 +1152,14 @@ def _execute_single_turn(
             state=blocked_state,
             turn_result=turn_result,
         )
+        _emit_run_timing_summary(
+            recorder=recorder,
+            run_dir=run_dir,
+            run_record=run_record,
+            agent=agent,
+            turn_index=turn_index,
+            turn_result=turn_result,
+        )
         _append_issue_records_for_turn_result(
             repo_root=repo_root,
             run_id=run_record.id,
@@ -1215,6 +1228,14 @@ def _execute_single_turn(
         agent=agent,
         turn_index=turn_index,
         state=next_state,
+        turn_result=turn_result,
+    )
+    _emit_run_timing_summary(
+        recorder=recorder,
+        run_dir=run_dir,
+        run_record=run_record,
+        agent=agent,
+        turn_index=turn_index,
         turn_result=turn_result,
     )
     _append_issue_records_for_turn_result(
@@ -1534,6 +1555,56 @@ def _state_from_turn_result(
             blocker_reason=turn_result.reason,
         )
     raise RallyConfigError(f"Unsupported turn result type: `{type(turn_result).__name__}`.")
+
+
+def _emit_run_timing_summary(
+    *,
+    recorder: RunEventRecorder,
+    run_dir: Path,
+    run_record: RunRecord,
+    agent: FlowAgent,
+    turn_index: int,
+    turn_result: TurnResult,
+) -> None:
+    """Compute + persist timing and emit a SUMMARY event.
+
+    Fires after every terminal turn event (handoff, done, blocker, sleep).
+    `timing.json` is overwritten with the cumulative snapshot; the just-
+    completed turn is appended to `timing_turns.jsonl`; `tool_calls.jsonl`
+    is rewritten; at `done`, a one-line workspace summary is appended to
+    `runs/timings.ndjson`.
+    """
+    from rally.terminal.summary import format_summary
+
+    try:
+        timing = compute_run_timing(run_dir)
+        is_final = isinstance(turn_result, DoneTurnResult)
+        write_run_timing(run_dir, timing, final=is_final)
+        update_tool_calls(run_dir, since_turn=0)
+        current_turn = next(
+            (t for t in reversed(timing.turns) if t.turn_index == turn_index),
+            None,
+        )
+        receipt = format_summary(timing, turn=current_turn, style="plain")
+    except Exception:  # pragma: no cover - telemetry must never break a run
+        return
+
+    recorder.emit(
+        source="rally",
+        kind="summary",
+        code="SUMMARY",
+        message=f"Run `{run_record.id}` timing after turn {turn_index}.",
+        turn_index=turn_index,
+        agent_key=agent.key,
+        agent_slug=agent.slug,
+        data={"receipt": receipt, "timing": _timing_event_payload(timing)},
+    )
+
+
+def _timing_event_payload(timing) -> dict[str, object]:
+    from dataclasses import asdict
+
+    return asdict(timing)
 
 
 def _emit_turn_result_event(

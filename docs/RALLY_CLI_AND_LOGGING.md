@@ -69,6 +69,9 @@ What it does today:
 - prints the flow, status, current agent, turn, update time, issue path, and next-action hint
 - shows saved model and thinking overrides when `run.yaml` stores them
 - shows blocker reason, done summary, sleep details, and last result kind when those fields exist
+- appends a three-line **time footprint** (wall/active/idle, top tools,
+  tokens) derived from `timing.json` when that file is present; silently
+  omits the block before the run has completed its first terminal turn
 - keeps the command read-only and filesystem-first
 
 Current limits:
@@ -232,6 +235,12 @@ What it does today:
   a terminal status (`done`, `blocked`, `stopped`)
 - tolerates partial writes by rewinding before an incomplete line so the
   next poll picks it up whole
+- inlines the pre-rendered `SUMMARY` receipt whenever a `kind=summary`
+  event lands in the stream, so per-handoff diagnostics flow through the
+  watcher for free
+- prints a compact progress line (`agent · turn N · X tools · Y err`)
+  after every tool-end event so the operator sees live turn-in-progress
+  state between receipts
 - the command is read-only; Ctrl-C exits cleanly with the events printed
   so far
 
@@ -386,6 +395,27 @@ What it does today:
 - rebuilds the scoped QMD collection from the markdown source files
 - is the repair path when QMD state drifts or is cleared
 - writes a first-class memory event in the canonical runtime stream
+
+### `rally runs time`
+
+Current shape:
+
+```bash
+rally runs time [--flow <CODE>] [--last <N>]
+```
+
+What it does today:
+
+- reads `runs/timings.ndjson` (the workspace-level trend log, appended one
+  line per completed run) and prints a recent-run table plus p50 / p90 /
+  mean stats for wall time, active time, errors, tools called, output
+  tokens, and cached input tokens
+- `--flow CUR` filters to one flow code (case-insensitive)
+- `--last N` shows the most recent N rows (defaults to 20; pass `0` for
+  all)
+- treats a missing or empty `timings.ndjson` as a friendly "no completed
+  Rally runs yet" message with exit 0
+- is read-only; never writes, never mutates runs
 
 ### Flow-code aliases and `runs/latest/`
 
@@ -651,12 +681,29 @@ That event stream now covers:
 - adapter session start or resume events
 - assistant output lines when an adapter emits text chunks
 - reasoning summary lines when an adapter exposes them
-- tool start, success, and failure summaries when an adapter exposes them
+- tool start, success, and failure summaries when an adapter exposes them, now
+  enriched with `tool_use_id`, `input_digest` (secret-scrubbed), `is_error`,
+  `exit_code`, and `sub_kind` so downstream surfaces can pair calls and
+  roll up time spent
 - token-use summaries
+- per-handoff `SUMMARY` events (`kind=summary`, `code=SUMMARY`) that carry a
+  pre-rendered receipt in `data.receipt` plus the full `RunTiming` dataclass in
+  `data.timing`; displays render the receipt block inline at every terminal
+  turn event (handoff, done, blocker, sleep)
 - stderr lines, warnings, and hard errors
 - raw adapter stdout JSON rows as `RAWJSON` debug events
 - one `FINALJSON` debug event for each payload Rally loaded from
   `last_message.json`
+
+Rally also writes four timing artifacts alongside the event stream:
+
+- `runs/<id>/timing.json` — cumulative snapshot overwritten at every terminal
+  turn
+- `runs/<id>/timing_turns.jsonl` — append-only, one line per completed turn
+- `runs/<id>/tool_calls.jsonl` — append-only, one line per paired tool call
+- `runs/timings.ndjson` — workspace-level, one line per completed run
+
+See `docs/RALLY_RUN_TIMING.md` for schemas and the per-handoff receipt format.
 
 Those raw JSON mirror rows stay out of the live stream and
 `logs/rendered.log`.
