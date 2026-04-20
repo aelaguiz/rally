@@ -22,7 +22,7 @@ wheels = [
 
 [[package]]
 name = "doctrine-agents"
-version = "4.0.1"
+version = "5.0.0"
 source = { editable = "../doctrine" }
 dependencies = [
     { name = "interegular" },
