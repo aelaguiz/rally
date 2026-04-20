@@ -1,7 +1,3 @@
-# TODO(doctrine P3): when `typed_as:` lands, the prose bullets below could
-# lift into typed `typed_as: system_context_fact` entries so the compiler
-# can check system-context facts against a shared vocabulary instead of
-# letting each flow phrase them ad-hoc.
 workflow PoemLoopSystemContext: "System Context"
     "This flow is a small Rally proof."
     "It shows one muse, one writer, one critic, one poem file, and one shared issue ledger."

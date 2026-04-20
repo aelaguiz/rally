@@ -15,10 +15,6 @@ skill package RallyKernel: "Rally Kernel"
             "A later reader needs one short saved note on this run."
             "The note also needs short `--field key=value` labels."
 
-    # TODO(doctrine F-6): promote env-var/path host facts (`RALLY_CLI_BIN`,
-    # `RALLY_RUN_ID`, `RALLY_WORKSPACE_DIR`) into a typed `host_contract:` when
-    # Doctrine ships a scalar/env-var host slot family. v5 `host_contract:`
-    # only accepts `input|output|document|analysis|schema|table|final_output|receipt`.
     hard_rules: "Hard rules"
         bullets rules:
             "Write notes with `\"$RALLY_CLI_BIN\" issue note --run-id \"$RALLY_RUN_ID\"`."

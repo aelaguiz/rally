@@ -7,9 +7,6 @@ skill package DemoGitSkill: "Demo Git"
     "This flow has one guarded repo at `home:repos/demo_repo`."
     "Inside the prepared run home shell, use the relative path `repos/demo_repo`."
     "Work only in that repo."
-    # TODO(doctrine F-6): promote the demo repo path into a typed `host_contract:`
-    # slot when Doctrine ships a scalar/path host slot family. See the F-6 entry
-    # in `docs/RALLY_DOCTRINE_V5_EXEMPLAR_ADOPTION_PLAN_2026-04-19.md`.
 
     bullets when_to_use: "When to use"
         inspect_repo: "You need the current branch, head commit, or dirty status."

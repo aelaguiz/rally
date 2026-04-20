@@ -16,15 +16,13 @@ from rally.adapters.base import (
     RallyAdapter,
     SubprocessRunner,
     TurnArtifactPaths,
+    load_adapter_session,
+    prepare_adapter_turn_artifacts,
+    record_adapter_session,
 )
 from rally.adapters.claude_code.event_stream import ClaudeCodeEventStreamParser, extract_structured_output
 from rally.adapters.claude_code.launcher import build_claude_code_launch_env, write_claude_code_launch_record
 from rally.adapters.mcp_readiness import allowed_mcp_names, probe_stdio_startability
-from rally.adapters.claude_code.session_store import (
-    load_session as load_claude_code_session,
-    prepare_turn_artifacts as prepare_claude_code_turn_artifacts,
-    record_session as record_claude_code_session,
-)
 from rally.domain.flow import FlowAgent, FlowDefinition
 from rally.domain.rooted_path import INTERNAL_PATH_ROOTS, expand_rooted_value
 from rally.domain.run import RunRecord
@@ -80,7 +78,7 @@ class ClaudeCodeAdapter(RallyAdapter):
         agent_slug: str,
         turn_index: int,
     ) -> TurnArtifactPaths:
-        return prepare_claude_code_turn_artifacts(
+        return prepare_adapter_turn_artifacts(
             run_home=run_home,
             agent_slug=agent_slug,
             turn_index=turn_index,
@@ -92,7 +90,7 @@ class ClaudeCodeAdapter(RallyAdapter):
         run_home: Path,
         agent_slug: str,
     ) -> AdapterSessionRecord | None:
-        return load_claude_code_session(run_home=run_home, agent_slug=agent_slug)
+        return load_adapter_session(run_home=run_home, agent_slug=agent_slug)
 
     def record_session(
         self,
@@ -103,7 +101,7 @@ class ClaudeCodeAdapter(RallyAdapter):
         cwd: Path,
         now=None,
         ) -> AdapterSessionRecord:
-        return record_claude_code_session(
+        return record_adapter_session(
             run_home=run_home,
             agent_slug=agent_slug,
             session_id=session_id,

@@ -1,19 +1,37 @@
 ---
 title: "Rally - Doctrine v5.0 Exemplar Adoption - Architecture Plan"
 date: 2026-04-19
-status: active
+status: complete
+superseded_for_forward_markers_by: docs/RALLY_DOCTRINE_P2_TO_P7_ADOPTION_AUDIT_2026-04-19.md
 fallback_policy: forbidden
 owners: [Amir Elaguizy]
 reviewers: []
 doc_type: architectural_change
 related:
   - docs/RALLY_DOCTRINE_V5_ADOPTION_AUDIT_2026-04-19.md
+  - docs/RALLY_DOCTRINE_P2_TO_P7_ADOPTION_AUDIT_2026-04-19.md
   - ../doctrine/CHANGELOG.md
-  - ../doctrine/docs/DOCTRINE_LANGUAGE_GAPS_ELEGANT_CLOSURE_PLAN_2026-04-19.md
-  - ../doctrine/docs/AGENTS_MD_RENDER_OF_TYPED_CONTRACTS_2026-04-19.md
+  - ../doctrine/docs/LANGUAGE_REFERENCE.md
+  - ../doctrine/docs/COMPILER_ERRORS.md
+  - ../doctrine/examples/140_typed_gates_symbol_reference
+  - ../doctrine/examples/141_typed_gates_two_case_review_override
+  - ../doctrine/examples/142_typed_gates_handoff_receipt
+  - ../doctrine/examples/143_typed_output_shape_reference
+  - ../doctrine/examples/144_skill_mode_and_output_shape
+  - ../doctrine/examples/145_typed_agent_slot_parameter
+  - ../doctrine/examples/146_declarative_project_lint_rule
+  - "git:../../doctrine@8c3701a^:docs/DOCTRINE_LANGUAGE_GAPS_ELEGANT_CLOSURE_PLAN_2026-04-19.md"
   - ../doctrine/skills/agent-linter/
   - ../doctrine/skills/doctrine-learn/
 ---
+
+# Post-adoption status (2026-04-20)
+
+Doctrine closure-plan Phases 2-7 all shipped between 2026-04-19 and 2026-04-20 (`P2`, `P3`, `P4`, `P5`, `P6`, `P7` — see `../doctrine/CHANGELOG.md` and `../doctrine/docs/LANGUAGE_REFERENCE.md` for the fold-forward canonical surfaces). The closure-plan doc itself was retired on 2026-04-20 (Doctrine commit `8c3701a`) and is preserved in git only.
+
+The Phase 8 forward-marker outcome from this plan (short `TODO(doctrine …)` comments at P2-P7 landing sites + the three `TODO(doctrine F-6)` skill-site comments) has been fully retired by `docs/RALLY_DOCTRINE_P2_TO_P7_ADOPTION_AUDIT_2026-04-19.md` (10 retires across 7 `.prompt` files). The F-6 scalar/env-var/path host-slot concept was also retired on the Doctrine side via the request-and-deletion commit pair `d629ded` → `76011f2`; current v5 `host_contract:` slot families remain `{input / output / document / analysis / schema / table / final_output / receipt}`.
+
+For current post-adoption state, read `docs/RALLY_DOCTRINE_P2_TO_P7_ADOPTION_AUDIT_2026-04-19.md`. Sentences below that still describe F-9..F-13 / F-6 as "waiting on Doctrine" or "forward markers at P2-P7 landing sites" reflect 2026-04-19 truth and are historical.
 
 # TL;DR
 

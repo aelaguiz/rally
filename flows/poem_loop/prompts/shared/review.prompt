@@ -66,10 +66,6 @@ output PoemReviewFinalResponse[PoemReviewResponse]: "Poem Review Final Response"
     inherit {target, shape, requirement, verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail, trust_surface, standalone_read}
 
 
-# TODO(doctrine P2): when `override gates:` on review_case lands, a future
-# per-agent PoemReview variant could narrow one gate's copy without
-# restating the full `contract_checks:` block. Today poem_loop only has one
-# review case, so this is a marker for later multi-case use.
 review PoemReview: "Poem Review"
     subject: PoemDraftFile
     contract: PoemReviewContract

@@ -1,5 +1,7 @@
 # Rally Doctrine v5.0 Adoption Audit — 2026-04-19
 
+> **Post-adoption status (2026-04-20):** Doctrine closure-plan Phases 2-7 (P2 override gates, P3 receipt, P4 typed_as, P5 skill mode, P6 typed abstract params, P7 rule primitive) all shipped 2026-04-19 / 2026-04-20. Rally has since retired every `TODO(doctrine …)` comment that this audit's "Wait For" tier anticipated, per `docs/RALLY_DOCTRINE_P2_TO_P7_ADOPTION_AUDIT_2026-04-19.md` — 10 retires across 7 `.prompt` files. The F-6 scalar/env-var/path host-slot concept was retired on the Doctrine side via commit pair `d629ded` → `76011f2`. The closure-plan doc itself was retired on 2026-04-20 (Doctrine commit `8c3701a`); fold-forward canonical surfaces are `../doctrine/docs/LANGUAGE_REFERENCE.md`, `../doctrine/docs/COMPILER_ERRORS.md`, and `../doctrine/examples/140_typed_gates_symbol_reference` through `146_declarative_project_lint_rule`. Sentences below that still speak of "Wait For" or "forward markers at P2-P7 landing sites" reflect 2026-04-19 truth and are historical.
+
 Plain answer: Rally is already a strong Doctrine user. It uses `abstract agent`,
 `review_family`, `skill package`, grouped `inherit`, typed `output schema`,
 `route field`, and `schema ... gates:` correctly in most places. But v5.0
@@ -33,7 +35,7 @@ matter for Rally:
 Evidence sources:
 
 - `../doctrine/CHANGELOG.md`
-- `../doctrine/docs/DOCTRINE_LANGUAGE_GAPS_ELEGANT_CLOSURE_PLAN_2026-04-19.md`
+- `git:../../doctrine@8c3701a^:docs/DOCTRINE_LANGUAGE_GAPS_ELEGANT_CLOSURE_PLAN_2026-04-19.md` (retired 2026-04-20 via Doctrine commit `8c3701a`; fold-forward canonical surfaces are `../doctrine/docs/LANGUAGE_REFERENCE.md`, `../doctrine/docs/COMPILER_ERRORS.md`, and `../doctrine/examples/140_typed_gates_symbol_reference` through `146_declarative_project_lint_rule`)
 - `../doctrine/docs/AGENTS_MD_RENDER_OF_TYPED_CONTRACTS_2026-04-19.md`
 - `../doctrine/docs/LAYERED_AUTHORING_LANGUAGE_GAPS_2026-04-19.md`
 - `../doctrine/docs/LAYERED_AUTHORING_EXAMPLE_MISTAKES_2026-04-19.md`
@@ -396,12 +398,14 @@ Rally is, on balance, an exemplary Doctrine user. The findings above turn a
 
 ---
 
-## Closure Status — 2026-04-19
+## Closure Status — 2026-04-19 (updated 2026-04-20)
 
 Ship Now / Plan For findings (F-1 through F-8) landed in the Doctrine v5
 exemplar adoption PR on branch `feat/doctrine_v5_adoption_on_perf`. Forward
-findings (F-9 through F-13) left as typed comment markers at the P2–P7
-landing sites, tracked as `# TODO(doctrine ...)` comments in Rally source.
+findings (F-9 through F-13) were originally left as typed comment markers
+(`# TODO(doctrine ...)`) at the P2–P7 landing sites.
+
+**Update 2026-04-20.** Doctrine closure-plan phases P2-P7 shipped 2026-04-19 / 2026-04-20. Rally audited each `TODO(doctrine …)` site against shipped grammar + model + validator + example and retired every marker under `docs/RALLY_DOCTRINE_P2_TO_P7_ADOPTION_AUDIT_2026-04-19.md`. All 10 comment blocks are deleted; zero `TODO(doctrine …)` markers remain across `flows/`, `stdlib/`, and `skills/`. Per-site retire rationale lives in that plan's §10 Decision Log, each entry anchored on grammar + model + validator + example per the research-reads-source rule. The F-6 scalar/env-var/path host-slot concept was retired on the Doctrine side via commit pair `d629ded` → `76011f2`; no future slot family is planned.
 
 | Finding | Status | Landed / marker site |
 |---|---|---|
@@ -410,14 +414,14 @@ landing sites, tracked as `# TODO(doctrine ...)` comments in Rally source.
 | F-3 · Poem `workflow` → `schema ... gates:` (`AL245`) | Landed | `flows/poem_loop/prompts/shared/review.prompt:PoemReviewContract`. Added `sections:` + `gates:` blocks. Signals added in `flows/poem_loop/prompts/shared/inputs.prompt:PoemDraftFile`. |
 | F-4 · `review_fields` shorthand (`AL200` / `AL220`) | Landed (Doctrine gap named) | `review_family.fields:` in both shared review prompts. Doctrine v5 has no `final_output.review_fields: <SharedDecl>` binding, so each reviewer agent restates the shorthand. Propagation comment added at both families. |
 | F-5 · Shared work-role turn-result schema (`AL220`) | Landed | `flows/software_engineering_demo/prompts/shared/turn_results.prompt:WorkRoleTurnResultSchema`. Three role schemas inherit the shared parent. |
-| F-6 · `host_contract:` on skills (`AL930`) | Landed as forward markers | `skills/rally-kernel/prompts/SKILL.prompt`, `skills/rally-memory/prompts/SKILL.prompt`, `skills/demo-git/prompts/SKILL.prompt` carry `# TODO(doctrine F-6):` comments. Doctrine v5.0 only accepts the typed host_contract slot family (input/output/document/analysis/schema/table/final_output/receipt); env-var/scalar facts wait on a future slot family. |
+| F-6 · `host_contract:` on skills (`AL930`) | Retired 2026-04-20 | Three skill TODOs (`skills/rally-kernel`, `skills/rally-memory`, `skills/demo-git`) deleted. Scalar/env-var/path host-slot concept was filed and retired on the Doctrine side: `git:../../doctrine@d629ded:docs/SCALAR_HOST_SLOT_FAMILY_REQUEST_2026-04-20.md` → retirement commit `76011f2`. Current v5 slot families remain `{input / output / document / analysis / schema / table / final_output / receipt}`. See `docs/RALLY_DOCTRINE_P2_TO_P7_ADOPTION_AUDIT_2026-04-19.md` §10 for the retirement rationale. |
 | F-7 · rally-learn v5 refresh (`AL110` adjacent) | Landed | `skills/rally-learn/prompts/refs/turn_results_and_routing.prompt` (enum-typed section + cross-link), `authoring_patterns.prompt` (typed-gates row), `porting_anti_patterns.prompt` (AL450 + AL950 rows). |
 | F-8 · Parallel review contracts (`AL270`) | Landed | Three engineering review contracts share one `EngineeringReviewFamily` with the shared `review_fields:` shorthand; per-gate signals live on the flow-local `IssueLedger`. |
-| F-9 · `typed_as:` handoff identity (P4) | Marker | `flows/poem_loop/prompts/shared/contracts.prompt:PoemLoopSystemContext` (P3 prose lift marker stands in; typed-handoff marker continues to track the forward plan). |
-| F-10 · `host_contract:` receipt family (P3) | Marker | Three skills carry `# TODO(doctrine F-6):` — same marker covers receipt family adoption. |
-| F-11 · Skill `mode` binding (P5) | Marker | `flows/software_engineering_demo/prompts/AGENTS.prompt:RepoWorkSkills`. |
-| F-12 · Typed abstract parameters (P6) | Marker | `flows/software_engineering_demo/prompts/AGENTS.prompt:SoftwareEngineeringRole` + `flows/poem_loop/prompts/AGENTS.prompt:PoemLoopRole`. |
-| F-13 · Declarative cross-agent `rule` (P7) | Marker | `stdlib/rally/prompts/rally/base_agent/AGENTS.prompt:RallyManagedSharedRules`. |
+| F-9 · `typed_as:` on workflow prose (Doctrine P4, originally mis-labelled P3 locally) | Retired 2026-04-20 | TODO at `flows/poem_loop/prompts/shared/contracts.prompt` deleted. `typed_as:` attaches to `output_target_decl` only; the site is a `workflow PoemLoopSystemContext` with prose bullets — no output target at that shape. Anchored on grammar `output_target_typed_as_stmt` (`doctrine.lark:748-751`) + model `OutputTargetDecl.typed_as` (`_model/io.py:246-252`) + example 143. |
+| F-10 · `host_contract:` receipt family (Doctrine P3) | Retired 2026-04-20 | Same three skill TODOs as F-6 deleted. Doctrine P3 shipped receipt family (`{producer_handoff / review_decision / skill_result / diff_report}`); no Rally skill site is receipt-shaped — they produce advisory notes or guide prose, not receipts. Anchored via §10 entry in the P2-P7 adoption plan. |
+| F-11 · Skill `mode` binding (Doctrine P5) | Retired 2026-04-20 | TODO at `flows/software_engineering_demo/prompts/AGENTS.prompt:RepoWorkSkills` deleted. `mode:` governs call pattern (producer / audit / readonly per `SkillMode` enum); Rally's `requirement: Required | Advisory` governs frequency — the two concepts are orthogonal. `RepoWorkSkills` entries are all producer-shape. Anchored on grammar `mode_stmt` (`doctrine.lark:706-713`) + model `SkillEntry.mode` (`_model/workflow.py:57-63`) + example 144. |
+| F-12 · Typed abstract parameters (Doctrine P6) | Retired 2026-04-20 | TODOs at `flows/software_engineering_demo/prompts/AGENTS.prompt:SoftwareEngineeringRole` and `flows/poem_loop/prompts/AGENTS.prompt:PoemLoopRole` deleted. Both abstract agents have descendants that uniformly bind the same slots to the same values — zero per-descendant typed variation. Doctrine P6 is for per-descendant variation, not uniform binding. Anchored on grammar `agent_slot_abstract` (`doctrine.lark:168`) + model `AuthoredSlotAbstract.declared_type` (`_model/agent.py:21-24`) + example 145 (`TypedPolicyReviewer`). |
+| F-13 · Declarative cross-agent `rule` (Doctrine P7) | Retired 2026-04-20 | TODO at `stdlib/rally/prompts/rally/base_agent/AGENTS.prompt:RallyManagedSharedRules` deleted. Doctrine P7 `rule` is a compile-time safeguard over closed scope + closed assertions (`requires inherit / forbids bind / requires declare`, validated by RULE001-RULE005). The four shared-rule bullets are runtime turn instructions — none map to inheritance/binding/declaration invariants. Anchored on grammar `rule_decl` (`doctrine.lark:86-104`) + validator RULE001-RULE005 + example 146 (`rule ComposersCheckUpstream`). |
 
 **Compile evidence.** `make emit` clean across all three flows, five skill
 targets. `uv run pytest tests/unit -q` → 530 passed, 8 subtests passed.

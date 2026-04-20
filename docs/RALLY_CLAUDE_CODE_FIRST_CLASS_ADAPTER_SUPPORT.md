@@ -88,7 +88,7 @@ What is truly done:
   - `--permission-mode dontAsk`
   - explicit `--tools`
   - explicit `--allowedTools`
-  - adapter-owned `src/rally/adapters/claude_code/session_store.py`
+  - per-agent session records via the shared helpers in `src/rally/adapters/base.py`
 - the Claude fallback loader now accepts fenced JSON blocks from live Claude
   output in both `result.result` and assistant text content
 

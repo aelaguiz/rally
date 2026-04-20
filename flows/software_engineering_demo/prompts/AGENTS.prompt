@@ -104,10 +104,6 @@ output QaDocsTurnResult[rally.turn_results.BaseRallyTurnResult]: "QA Docs Turn R
         "Use `qa_reviewer` when the QA pass is ready for review."
 
 
-# TODO(doctrine P6): when `skill <name>: <Pkg> mode: <bind>` lands, replace
-# each `requirement:` + prose-side mode note with a typed `mode:` binding so
-# the compiler can check that Required/Advisory matches the skill's declared
-# call mode rather than relying on author convention.
 skills RepoWorkSkills: "Skills And Tools"
     skill rally_kernel: rally.base_agent.RallyKernelSkill
         requirement: Required
@@ -143,10 +139,6 @@ skills RepoProofSkills: "Skills And Tools"
         requirement: Advisory
 
 
-# TODO(doctrine P5): when typed abstract parameters land, lift the three
-# per-role slot refs below (`system_context:`, `issue_truth:`, `repo_rules:`)
-# into a typed parameter set so the abstract role declares its shape once
-# and each concrete agent binds by name rather than by free-text slot key.
 abstract agent SoftwareEngineeringRole[rally.base_agent.RallyManagedBaseAgent]:
     inherit {rally_contract, read_first, shared_rules}
     system_context: SoftwareEngineeringSystemContext

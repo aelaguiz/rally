@@ -144,5 +144,114 @@ class CodexEventStreamTests(unittest.TestCase):
         self.assertEqual(drafts[2].data["trace_class"], "tool")
 
 
+class CodexEventStreamBufferFlushTests(unittest.TestCase):
+    # Protects the buffer-drain invariant. Codex streams assistant and reasoning
+    # text as incremental deltas; a complete line only emits when a `\n` lands
+    # or a non-text event forces `_flush_text_buffers()`. If an adapter turn
+    # tears down with trailing text still in the buffer (stream cut, missing
+    # terminal event, final chunk without newline), the operator MUST still see
+    # that content in the run log — silent loss here looks like a "missing
+    # assistant message" bug that is nearly impossible to diagnose after the
+    # fact. These tests pin that end-of-stream drain and the mid-stream flush
+    # that runs at the head of every non-text event.
+
+    def test_flush_drains_trailing_assistant_delta_without_newline(self) -> None:
+        parser = CodexEventStreamParser(
+            turn_index=7,
+            agent_key="01_scope_lead",
+            agent_slug="scope_lead",
+        )
+
+        buffered = parser.consume_stdout_line(
+            '{"type":"assistant.message.delta","delta":"final words without newline"}\n'
+        )
+        self.assertEqual(buffered, [])
+
+        drained = parser.flush()
+        self.assertEqual(len(drained), 1)
+        self.assertEqual(drained[0].code, "ASSIST")
+        self.assertEqual(drained[0].kind, "assistant")
+        self.assertEqual(drained[0].message, "final words without newline")
+
+        self.assertEqual(parser.flush(), [])
+
+    def test_flush_drains_trailing_reasoning_delta_without_newline(self) -> None:
+        parser = CodexEventStreamParser(
+            turn_index=8,
+            agent_key="02_change_engineer",
+            agent_slug="change_engineer",
+        )
+
+        buffered = parser.consume_stdout_line(
+            '{"type":"reasoning.delta","delta":"still weighing the trade"}\n'
+        )
+        self.assertEqual(buffered, [])
+
+        drained = parser.flush()
+        self.assertEqual(len(drained), 1)
+        self.assertEqual(drained[0].code, "THINK")
+        self.assertEqual(drained[0].kind, "reasoning")
+        self.assertEqual(drained[0].message, "still weighing the trade")
+        self.assertEqual(drained[0].data["trace_class"], "thinking")
+
+    def test_non_text_event_flushes_buffered_deltas_before_its_own_draft(self) -> None:
+        parser = CodexEventStreamParser(
+            turn_index=9,
+            agent_key="03_proof_engineer",
+            agent_slug="proof_engineer",
+        )
+
+        initial = parser.consume_stdout_line(
+            '{"type":"assistant.message.delta","delta":"wrap-up without newline"}\n'
+        )
+        self.assertEqual(initial, [])
+
+        usage = parser.consume_stdout_line(
+            '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}\n'
+        )
+
+        self.assertEqual([draft.code for draft in usage], ["ASSIST", "USAGE"])
+        self.assertEqual(usage[0].message, "wrap-up without newline")
+        self.assertIn("Token use", usage[1].message)
+
+        self.assertEqual(parser.flush(), [])
+
+    def test_flush_with_empty_buffers_returns_no_drafts(self) -> None:
+        parser = CodexEventStreamParser(
+            turn_index=10,
+            agent_key="01_scope_lead",
+            agent_slug="scope_lead",
+        )
+
+        self.assertEqual(parser.flush(), [])
+
+        whitespace_only = parser.consume_stdout_line(
+            '{"type":"assistant.message.delta","delta":"   "}\n'
+        )
+        self.assertEqual(whitespace_only, [])
+        self.assertEqual(parser.flush(), [])
+
+    def test_flush_drains_both_buffers_when_both_have_content(self) -> None:
+        parser = CodexEventStreamParser(
+            turn_index=11,
+            agent_key="01_scope_lead",
+            agent_slug="scope_lead",
+        )
+
+        assistant = parser.consume_stdout_line(
+            '{"type":"assistant.message.delta","delta":"summary fragment"}\n'
+        )
+        reasoning = parser.consume_stdout_line(
+            '{"type":"reasoning.delta","delta":"thought fragment"}\n'
+        )
+        self.assertEqual(assistant, [])
+        self.assertEqual(reasoning, [])
+
+        drained = parser.flush()
+        self.assertEqual([draft.code for draft in drained], ["ASSIST", "THINK"])
+        self.assertEqual(drained[0].message, "summary fragment")
+        self.assertEqual(drained[1].message, "thought fragment")
+
+
 if __name__ == "__main__":
     unittest.main()

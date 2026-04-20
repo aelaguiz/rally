@@ -119,9 +119,6 @@ review_family EngineeringReviewFamily: "Engineering Review"
         next_owner
 
 
-# TODO(doctrine P2): when `override gates:` on review_case lands, per-case
-# reviews below can narrow or rename individual gate copy without restating
-# the whole `contract_checks:` block. Today each review repeats the rejects.
 review ArchitectReview[EngineeringReviewFamily]: "Architect Review"
     subject: IssueLedger
     contract: ArchitectReviewContract
