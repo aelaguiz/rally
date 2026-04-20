@@ -55,8 +55,58 @@ Support-surface version changes: none
 
 Use this section for work that is not public yet.
 
+## v3.0.0 - 2026-04-20
+
+Release kind: Breaking
+Release channel: stable
+Release version: v3.0.0
+Affected surfaces: Rally package metadata Doctrine floor, supported Doctrine package line, Rally stdlib output-schema authoring inherited from Doctrine Language 5.0, host-repo `.prompt` files that still use the retired `type: string` plus `enum:` form on `output schema` fields, and downstream consumers of `rally-agents` whose `pyproject.toml` still pins `rally-agents<3`.
+Who must act: (1) host authors whose `.prompt` files still declare `output schema` fields with the retired `type: string` plus `enum:` form or the retired inline `type: enum` plus `values:` form (Doctrine v5 emits `E320`); (2) host authors who consumed Rally's `RallyTurnKind` or `ReviewVerdict` enum values through bare string literals — v3 exports both as top-level `enum` declarations in `stdlib/rally/prompts/rally/turn_results/AGENTS.prompt` and `stdlib/rally/prompts/rally/review_results/AGENTS.prompt` and the inherited schemas now reference them with `type: EnumName`; (3) host repos that still ship a `doctrine-agents<5` pin alongside Rally; (4) downstream consumers of `rally-agents` (e.g. psflows) whose `pyproject.toml` still pins `rally-agents<3`.
+Who does not need to act: users who resolve `doctrine-agents` only through Rally's declared range, users whose `.prompt` files already use the `type: <EnumName>` form with a declared top-level `enum`, and users who consume emitted `schemas/<output-slug>.schema.json` wire shape (the lowered JSON Schema only gains a `One of ...` description suffix, the type contract is preserved).
+Upgrade steps: (1) install `rally-agents` v3.0.0 so Rally pulls `doctrine-agents>=5.0.0,<6`; (2) refresh any lockfile or dependency pin that still points at `doctrine-agents<5` to `doctrine-agents>=5.0.0,<6`; (3) in host `.prompt` files, replace every `output schema` field that used `type: string` plus `enum:` or `type: enum` plus `values:` with a top-level `enum X: "..."` decl plus `type: X` on the field (Doctrine compile errors cite `E320`); (4) downstream flow authors who want per-gate review `reject ... when ...` lines, per-case `override gates:`, typed `schema ... gates:`, `typed_as:` handoff identity, skill `mode` binding, typed abstract parameters, or declarative `rule` primitives can now adopt them directly — the shipped `poem_loop` and `software_engineering_demo` flows are worked exemplars under `flows/*/prompts/`; (5) rerun `uv run rally build` (or `make emit` in the Rally repo) after the upgrade so emitted build artifacts regenerate against the Doctrine 5.0 language.
+Verification: make verify
+Support-surface version changes: minimum Doctrine release v4.0.0 -> v5.0.0; supported Doctrine package line `doctrine-agents>=4.0.0,<5` -> `doctrine-agents>=5.0.0,<6`; inherited Doctrine language 4.0 -> 5.0; workspace manifest 1 (unchanged); compiled contract version 1 (unchanged)
+
 ### Added
+- Doctrine v5 exemplar adoption across Rally's stdlib and shipped flows.
+  Top-level `export enum RallyTurnKind` and `export enum ReviewVerdict`
+  declarations live in `stdlib/rally/prompts/rally/turn_results/AGENTS.prompt`
+  and `stdlib/rally/prompts/rally/review_results/AGENTS.prompt`; every
+  flow-local schema references them with `type: EnumName`. Every gate in
+  every shipped review contract carries a `reject contract.<gate> when ...`
+  line closed by `accept "..." when contract.passes`. The poem review
+  contract migrated from prose workflow to typed `schema ... gates:`. A new
+  shared `WorkRoleTurnResultSchema` parent factors the work-role turn-result
+  fields so role schemas only declare their own `next_route` field. The
+  `rally-learn` skill refs teach the v5 canonical shapes (typed enums,
+  typed gates, per-gate `accept`, anti-patterns for `contract.passes` and
+  legacy `type: string + enum:`).
+- Installable `rally-learn` skill (13 refs + `SKILL.md` + `openai.yaml`)
+  teaching flow authoring end-to-end inside Codex and Claude Code.
+  `skills/rally-learn/` is the authoring source; `skills/.curated/rally-learn`
+  is the shipped export. `make skills` emits the bundle and shells out to
+  `npx skills add .` for interactive install. `tests/unit/test_emit_skill.py`
+  covers emit-drift and end-to-end npx-skills install into a sandboxed HOME.
+- Six enduring reference docs: `docs/RALLY_PRINCIPLES.md`,
+  `docs/RALLY_QUICK_START.md`, `docs/TURN_RESULT_CONTRACT.md`,
+  `docs/FLOW_YAML_REFERENCE.md`, `docs/ERROR_REFERENCE.md`, and
+  `docs/SKILL_AUTHORING.md`. README grew Learn Rally + Reference sections.
+- Flow-code CLI aliases. Every command that takes a run-id now also accepts
+  the bare three-letter flow code, e.g. `rally watch POM -f`,
+  `rally status POM`, `rally issue current --run-id POM`. Resolver lives in
+  `src/rally/services/run_store.py::resolve_run_id`. Mutating commands
+  require an active run and surface a hint at the latest archived id when
+  only archives exist.
+- `runs/latest/<CODE>` symlinks, atomically maintained by `create_run` and
+  `archive_run` via a new `replace_symlink` helper. Targets are relative so
+  `runs/` stays relocatable. Native unix tools work without a Rally wrapper:
+  `tail -f runs/latest/POM/logs/rendered.log`,
+  `bat runs/latest/POM/home/issue.md`. Symlink updates are best-effort.
 - `rally run <flow> --detach` and `rally resume <id> --detach` start a Rally
+  run in the background via a double-fork. The parent prints the grandchild
+  pid and returns immediately; the detached worker continues the normal loop
+  with stdio redirected into `runs/active/<id>/logs/stdout.log` and
+  `stderr.log`.
   run in the background via a double-fork. The parent prints the grandchild
   pid and returns immediately; the detached worker continues the normal loop
   with stdio redirected into `runs/active/<id>/logs/stdout.log` and
