@@ -34,6 +34,29 @@ Why teams reach for Rally:
 - resume paths stay honest because the state is visible
 - Doctrine under the hood keeps the workflow authorable and maintainable like code
 
+## Learn Rally
+
+Start here if you are new to Rally:
+
+- [docs/RALLY_PRINCIPLES.md](docs/RALLY_PRINCIPLES.md) — the twelve rules every Rally flow obeys.
+- [docs/RALLY_QUICK_START.md](docs/RALLY_QUICK_START.md) — scaffold a workspace and run your first flow.
+- Install the `rally-learn` skill for an interactive teaching surface inside Codex or Claude Code:
+
+  ```bash
+  npx skills add . -g -a codex -y
+  ```
+
+  It ships as a first-party installable skill that teaches flow authoring end-to-end.
+
+### Reference
+
+- [docs/FLOW_YAML_REFERENCE.md](docs/FLOW_YAML_REFERENCE.md) — every `flow.yaml` field.
+- [docs/TURN_RESULT_CONTRACT.md](docs/TURN_RESULT_CONTRACT.md) — the control surface Rally parses after every turn.
+- [docs/SKILL_AUTHORING.md](docs/SKILL_AUTHORING.md) — how to write a flow-local skill.
+- [docs/SKILL_SCOPING.md](docs/SKILL_SCOPING.md) — the four skill tiers.
+- [docs/ERROR_REFERENCE.md](docs/ERROR_REFERENCE.md) — enduring error categories and remedies.
+- [docs/RALLY_PORTING_GUIDE.md](docs/RALLY_PORTING_GUIDE.md) — porting an existing agent system into Rally.
+
 ## Doctrine and Rally
 
 - Use Rally when you want to run a strong, stable workflow with repo-local state and strict turn routing.
@@ -367,6 +390,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). The short version:
 
 ## Read Next
 
+- [docs/RALLY_PRINCIPLES.md](docs/RALLY_PRINCIPLES.md)
+- [docs/RALLY_QUICK_START.md](docs/RALLY_QUICK_START.md)
+- [docs/FLOW_YAML_REFERENCE.md](docs/FLOW_YAML_REFERENCE.md)
+- [docs/TURN_RESULT_CONTRACT.md](docs/TURN_RESULT_CONTRACT.md)
+- [docs/SKILL_AUTHORING.md](docs/SKILL_AUTHORING.md)
+- [docs/ERROR_REFERENCE.md](docs/ERROR_REFERENCE.md)
 - [docs/VERSIONING.md](docs/VERSIONING.md)
 - [CHANGELOG.md](CHANGELOG.md)
 - [docs/RALLY_MASTER_DESIGN.md](docs/RALLY_MASTER_DESIGN.md)

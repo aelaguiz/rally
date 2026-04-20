@@ -290,9 +290,10 @@ The current checked-in runtime surface is:
   - expands optional `runtime.env` values from `flow.yaml`
   - applies that flow env to startup host-input checks, setup, and adapter launches
   - lets flow env override duplicate shell env while still keeping Rally and adapter keys last
-- `src/rally/adapters/codex/session_store.py`
-  - saves one session id per agent
-  - writes per-turn `exec.jsonl`, `stderr.log`, and `last_message.json`
+- `src/rally/adapters/base.py`
+  - owns the shared per-agent session store used by both adapters
+  - `load_adapter_session` / `record_adapter_session` manage one session id per agent
+  - `prepare_adapter_turn_artifacts` writes per-turn `exec.jsonl`, `stderr.log`, and `last_message.json`
 - `src/rally/services/runner.py`
   - rebuilds the current flow under the flow lock before loading compiled
   agents
@@ -416,5 +417,9 @@ Use this doc with:
 - `docs/RALLY_COMMUNICATION_MODEL.md`
 - `docs/RALLY_CLI_AND_LOGGING.md`
 - `docs/RALLY_MEMORY.md`
+- `docs/RALLY_RUN_TIMING.md` — the always-on per-handoff receipt and the
+  four on-disk timing artifacts; timing aggregation fires after every
+  terminal turn result (handoff, done, blocker, sleep) and never before
+  routing, so agents cannot influence it
 
 Treat older planning docs as history only.

@@ -38,6 +38,12 @@ def _append_event(
     code: str,
     message: str,
     ts: str = "2026-04-17T12:00:00Z",
+    kind: str = "lifecycle",
+    data: dict | None = None,
+    turn_index: int | None = None,
+    agent_key: str | None = None,
+    agent_slug: str | None = None,
+    level: str = "info",
 ) -> None:
     events_path = run_dir / "logs" / "events.jsonl"
     payload = {
@@ -45,14 +51,14 @@ def _append_event(
         "run_id": "DMO-1",
         "flow_code": "DMO",
         "source": "rally",
-        "kind": "lifecycle",
+        "kind": kind,
         "code": code,
         "message": message,
-        "level": "info",
-        "data": {},
-        "turn_index": None,
-        "agent_key": None,
-        "agent_slug": None,
+        "level": level,
+        "data": data or {},
+        "turn_index": turn_index,
+        "agent_key": agent_key,
+        "agent_slug": agent_slug,
     }
     with events_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, sort_keys=True))
@@ -158,6 +164,70 @@ class WatchRunTests(unittest.TestCase):
             self.assertGreaterEqual(printed, 2)
             self.assertIn("RUN ", out.getvalue())
             self.assertIn("DONE", out.getvalue())
+
+
+class WatchRunReceiptAndProgressTests(unittest.TestCase):
+    def test_summary_event_renders_receipt_inline(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            run_dir = _make_run(repo_root)
+            _append_event(
+                run_dir,
+                code="SUMMARY",
+                message="turn summary",
+                kind="summary",
+                data={"receipt": "CUR-8 · turn 1 complete\n\nthis turn   5s"},
+            )
+
+            out = io.StringIO()
+            printed = watch_run(
+                repo_root=repo_root, run_id="DMO-1", stream=out, follow=False
+            )
+
+            self.assertEqual(printed, 1)
+            output = out.getvalue()
+            self.assertIn("CUR-8 · turn 1 complete", output)
+            self.assertIn("this turn", output)
+
+    def test_tool_end_updates_live_progress_line(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            run_dir = _make_run(repo_root)
+            _append_event(
+                run_dir,
+                code="TURN",
+                message="starting",
+                turn_index=1,
+                agent_key="writer",
+                agent_slug="writer",
+            )
+            _append_event(
+                run_dir,
+                code="TOOL OK",
+                message="Bash ok",
+                turn_index=1,
+                agent_slug="writer",
+                data={"tool_name": "Bash"},
+            )
+            _append_event(
+                run_dir,
+                code="TOOL OK",
+                message="Bash err",
+                turn_index=1,
+                agent_slug="writer",
+                level="error",
+                data={"tool_name": "Bash"},
+            )
+
+            out = io.StringIO()
+            watch_run(
+                repo_root=repo_root, run_id="DMO-1", stream=out, follow=False
+            )
+
+            output = out.getvalue()
+            self.assertIn("turn 1", output)
+            self.assertIn("2 tools", output)
+            self.assertIn("1 err", output)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,97 @@
+document GettingStarted: "Getting Started"
+    """This reference is for the author who has never run Rally before. It covers: install Rally, scaffold a workspace, write the minimal flow, run it, and inspect the run on disk. The full walkthrough lives at `docs/RALLY_QUICK_START.md` in the Rally repo. This file is the teaching version — enough to get one turn on disk and understand what Rally just did."""
+
+    section install: "Install Rally"
+        """Rally ships on PyPI as `rally-agents`. Python 3.14 or newer is required. The install pins Doctrine via `doctrine-agents>=4.0.0,<5`, so you do not install Doctrine directly."""
+
+        code:
+            language: bash
+            text: """uv tool install rally-agents
+rally --version
+"""
+
+    section workspace: "Scaffold A Workspace"
+        """A Rally workspace is any directory with a `pyproject.toml` carrying a `[tool.rally.workspace]` block. The workspace holds `flows/`, `skills/`, `mcps/`, `stdlib/`, and `runs/`.
+
+Use the minimum `pyproject.toml` below. Rally does not require `[tool.setuptools]` or `data-files` for local work; those are only needed when you publish a workspace as a package.
+"""
+
+        code:
+            language: toml
+            text: """[tool.rally.workspace]
+version = 1
+
+[tool.doctrine.compile]
+additional_prompt_roots = []
+
+[tool.doctrine.emit]
+
+[[tool.doctrine.emit.targets]]
+name = "hello"
+entrypoint = "flows/hello/prompts/AGENTS.prompt"
+output_dir = "flows/hello/build/agents"
+"""
+
+    section first_flow: "Write The Minimal Flow"
+        """A flow is `flow.yaml` plus one or more `AGENTS.prompt` files. The minimum viable flow is one agent that produces a `done` turn result.
+
+Directory shape:"""
+
+        code:
+            language: text
+            text: """flows/hello/
+  flow.yaml
+  prompts/
+    AGENTS.prompt
+"""
+
+        "`flows/hello/flow.yaml` must declare three required per-agent fields (`allowed_skills`, `system_skills`, `allowed_mcps`) even when empty."
+
+        code:
+            language: yaml
+            text: """name: hello
+code: HLO
+start_agent: 00_greeter
+agents:
+  00_greeter:
+    timeout_sec: 600
+    allowed_skills: []
+    system_skills: []
+    allowed_mcps: []
+runtime:
+  adapter: codex
+  max_command_turns: 1
+"""
+
+        "`flows/hello/prompts/AGENTS.prompt` wires the agent's role and final output. Copy the shape from `flows/software_engineering_demo/prompts/AGENTS.prompt` or `flows/poem_loop/prompts/AGENTS.prompt` — both are current under Doctrine v4."
+
+    section run: "Run The Flow"
+        """`rally run <flow>` starts a new run. `--step` runs one turn and pauses, which is the right shape while you are learning."""
+
+        code:
+            language: bash
+            text: """rally run hello --step
+"""
+
+        """Rally prints the run id. The run's state is on disk under `runs/active/<ID>/`. When the flow finishes (`done`), Rally moves the directory to `runs/completed/<ID>/`."""
+
+    section inspect: "Inspect The Run"
+        """The whole run is a directory. Open `runs/active/<ID>/` (or `runs/completed/<ID>/` after `done`) and you will find:"""
+
+        bullets files:
+            "`home/issue.md` — the shared ledger the agent reads and writes."
+            "`home/sessions/<agent_slug>/turn-<NNN>/final.json` — the parsed turn result."
+            "`home/sessions/<agent_slug>/turn-<NNN>/previous_turn_inputs.md` — what Rally gave the agent as previous-turn context."
+            "`heartbeat.json` — present while the run is `RUNNING` with a detach."
+            "`done.json` — present after a terminal turn."
+
+        """That is the whole world. There is no hidden state outside this directory."""
+
+    section next_steps: "Next Steps"
+        bullets next:
+            "Load `references/flow-authoring.md` when you are ready to write a real multi-agent flow."
+            "Load `references/turn-results-and-routing.md` when you are shaping the JSON the agent will emit."
+            "Load `references/skills-and-scoping.md` before you add the first skill."
+            "Load `references/runtime-operations.md` when you want to detach, resume, or watch a run."
+
+        """**Load when:** the author is new to Rally and wants the fastest path to a working first run."""

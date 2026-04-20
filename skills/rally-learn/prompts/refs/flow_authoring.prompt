@@ -1,0 +1,111 @@
+document FlowAuthoring: "Flow Authoring"
+    """This reference owns the authoring surface of a flow: the `flow.yaml` schema, the `AGENTS.prompt` shape, path schemes, per-agent required fields, reserved keys, and `runtime.env` precedence. The canonical prose home is `docs/FLOW_YAML_REFERENCE.md`. Copy shapes from `flows/software_engineering_demo/` (richer: six agents, reviewer pairs, setup script, memory wired) or `flows/poem_loop/` (lighter: three agents, no setup, no memory). Both are on current Doctrine v4."""
+
+    section directory_layout: "Directory Layout"
+        """A flow is a directory under `flows/`. It must contain `flow.yaml` and a `prompts/AGENTS.prompt` entry. Supporting role prompts live in `prompts/roles/<role>.prompt`. Shared declarations live in `prompts/shared/<topic>.prompt`. A `setup/prepare_home.sh` is optional; it runs before the first turn if the flow declares `setup_home_script` in `flow.yaml`."""
+
+        code:
+            language: text
+            text: """flows/<flow>/
+  flow.yaml
+  prompts/
+    AGENTS.prompt           # outputs, schemas, abstract agent, concrete agents
+    roles/<role>.prompt     # role-level job, quality bar, system context
+    shared/<topic>.prompt   # shared inputs, outputs, review scaffold
+  setup/
+    prepare_home.sh         # optional
+  build/                    # compiler-owned; do not hand-edit
+"""
+
+    section flow_yaml: "flow.yaml Schema"
+        "Every key below except `external_skills` is required. Every per-agent key under `agents.<role>:` is required even when empty."
+
+        markdown:
+            text: """| Key | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `name` | string | yes | Flow directory name. Must match the directory that holds `flow.yaml`. |
+| `code` | string | yes | Three uppercase ASCII letters (`POM`, `HLO`). Used in the per-flow lock path and the run id prefix. |
+| `start_agent` | string | yes | The agent key Rally starts on. Must be a key in `agents:`. |
+| `agents.<role>.timeout_sec` | int | yes | Max seconds for one turn. Rally kills the adapter if it exceeds this. |
+| `agents.<role>.allowed_skills` | list | yes | Flow-local skills the agent may call. Allowlist. Use `[]` for none. |
+| `agents.<role>.system_skills` | list | yes | System stdlib skills the agent opts in to (e.g. `[rally-memory]`). Use `[]` for none. |
+| `agents.<role>.allowed_mcps` | list | yes | MCP servers the agent may call. Use `[]` for none. |
+| `agents.<role>.external_skills` | list | no | Aliased external skills (e.g. `myproj:writer-skill`). Omit when empty. |
+| `agents.<role>.adapter_args` | map | no | Per-agent overrides (model, reasoning_effort). |
+| `runtime.adapter` | string | yes | Adapter id: `codex` or `claude-code`. |
+| `runtime.max_command_turns` | int | yes | Hard cap on turns per run. |
+| `runtime.adapter_args` | map | no | Flow-level adapter args. Per-agent overrides win. |
+| `runtime.env` | map | no | Env vars set for the adapter. Always wins over shell env except for the reserved `RALLY_*` and adapter keys. |
+| `setup_home_script` | string | no | Script executed before turn 1, relative to flow root. |
+"""
+
+        "Validation rules:"
+        bullets rules:
+            "`name` must equal the directory name."
+            "`code` must match `^[A-Z][A-Z][A-Z]$` — exactly three uppercase ASCII letters."
+            "`start_agent` must be a key in `agents:`."
+            "Agent keys must match `^\\d{2}_[a-z][a-z0-9_]*$` (two digits, underscore, snake_case)."
+            "`allowed_skills`, `system_skills`, `allowed_mcps` must exist on every agent, even when empty."
+
+    section reserved_keys: "Reserved Keys And Patterns"
+        "Rally refuses at load time if any of these appear where Rally owns the meaning:"
+
+        bullets reserved:
+            "`path:` in a bullet block (reserved for future rooted-path parsing). Use `relative_path`, `location`, or `at` instead."
+            "`runtime.prompt_input_command` in `flow.yaml` (replaced by runtime truth through files, setup, tools, or `rally issue current`)."
+            "`rally`, `stdlib`, `system`, `flow`, `home`, `workspace`, `host`, `local`, `builtin`, `builtins` as external-skill aliases."
+
+    section path_schemes: "Path Schemes"
+        "Rally resolves four path schemes against rooted locations:"
+
+        bullets schemes:
+            "`home:<path>` — under the current run's `home/` directory."
+            "`workspace:<path>` — under the workspace root (where `pyproject.toml` lives)."
+            "`host:<path>` — the physical path on the host filesystem."
+            "`flow:<path>` — under the flow's source directory."
+
+        "`runtime.env` values can use these schemes. Rally expands them before setting env for the adapter."
+
+    section agents_prompt: "AGENTS.prompt Shape"
+        """An `AGENTS.prompt` declares outputs, schemas, one abstract agent (shared base), and one concrete `agent` block per agent key in `flow.yaml`. All concrete agents can live in the top-level `prompts/AGENTS.prompt`. That is the current convention in `flows/software_engineering_demo/prompts/AGENTS.prompt` (six agents) and `flows/poem_loop/prompts/AGENTS.prompt` (three agents)."""
+
+        code:
+            language: text
+            text: """import rally.base_agent as base
+import rally.turn_results as turn_results
+
+abstract agent MyFlowRole[base.RallyManagedBaseAgent]:
+    inherit {rally_contract, read_first, shared_rules}
+
+agent Greeter[MyFlowRole]:
+    role: "Core job: say hi once, then done."
+    inherit {rally_contract, read_first, shared_rules}
+    inputs: GreeterInputs
+    outputs[base.RallyManagedOutputs]: "Outputs"
+        inherit issue_note
+        turn_result: "Turn Result"
+            GreeterTurnResult
+    skills: base.RallyManagedSkills
+    final_output:
+        output: GreeterTurnResult
+        route: next_route
+"""
+
+        "The `agent` block names its `inputs`, `outputs`, `skills`, and `final_output`. Rally parses the emitted `final_output.contract.json` to know how to interpret the turn."
+
+    section env_precedence: "runtime.env Precedence"
+        "Values set in `flow.yaml` under `runtime.env` always win over the shell env. Rally reserves these keys and refuses flows that try to override them:"
+
+        bullets reserved:
+            "`RALLY_RUN_ID`, `RALLY_WORKSPACE_DIR`, `RALLY_FLOW_NAME`, `RALLY_AGENT_SLUG`, `RALLY_CLI_BIN`."
+            "Adapter-owned keys like `CODEX_HOME` and `CLAUDE_CODE_SESSION`."
+
+    section related: "Related References"
+        bullets refs:
+            "`references/principles.md`: filesystem-first and thin-harness rules."
+            "`references/skills-and-scoping.md`: what goes in `allowed_skills`, `system_skills`, `external_skills`."
+            "`references/turn-results-and-routing.md`: what the `final_output` contract produces."
+            "`references/build-and-emit.md`: how `AGENTS.prompt` becomes `build/agents/<slug>/AGENTS.md`."
+            "`docs/FLOW_YAML_REFERENCE.md`: canonical prose reference."
+
+        """**Load when:** the author is scaffolding a new flow, adding a new agent, or fixing a `flow.yaml` refusal."""

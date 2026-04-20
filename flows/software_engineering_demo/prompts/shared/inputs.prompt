@@ -3,6 +3,15 @@ input IssueLedger: "Issue Ledger"
         path: "home:issue.md"
     shape: MarkdownDocument
     requirement: Required
+    issue_not_understood: "Issue Not Understood"
+    repo_plan_unreal: "Repo Plan Unreal"
+    next_step_unclear: "Next Step Unclear"
+    requested_change_absent: "Requested Change Absent"
+    proof_unrecorded: "Proof Unrecorded"
+    commit_state_unclear: "Commit State Unclear"
+    requirements_unmet: "Requirements Unmet"
+    proof_unreal: "Proof Unreal"
+    finish_not_ready: "Finish Not Ready"
     "Use `home:issue.md` as the one shared human and agent ledger."
 input DemoRepoRoot: "Demo Repo Root"
     source: File

@@ -63,6 +63,13 @@ class PlainStreamDisplay:
     def emit(self, event: RunEvent) -> None:
         if not should_render_event(event):
             return
+        receipt = _summary_receipt(event)
+        if receipt is not None:
+            self._stream.write("\n")
+            self._stream.write(receipt)
+            self._stream.write("\n\n")
+            self._stream.flush()
+            return
         from rally.services.run_events import render_plain_event_line
 
         self._stream.write(render_plain_event_line(event))
@@ -88,10 +95,23 @@ class RichStreamDisplay:
     def emit(self, event: RunEvent) -> None:
         if not should_render_event(event):
             return
+        receipt = _summary_receipt(event)
+        if receipt is not None:
+            self._console.print(Panel(receipt, border_style="cyan", expand=False))
+            return
         self._console.print(_render_event_text(event, agent_styles=self._agent_styles))
 
     def close(self) -> None:
         self._console.print(Rule(style="dim"))
+
+
+def _summary_receipt(event: RunEvent) -> str | None:
+    if event.kind != "summary" or event.code != "SUMMARY":
+        return None
+    raw = event.data.get("receipt")
+    if isinstance(raw, str) and raw.strip():
+        return raw.rstrip()
+    return None
 
 
 def _render_event_text(event: RunEvent, *, agent_styles: Mapping[str, str]) -> Text:

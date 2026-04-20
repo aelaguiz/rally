@@ -13,6 +13,10 @@ related:
 
 # TL;DR
 
+> If you are porting a new project, install `rally-learn` via
+> `npx skills add . -g -a codex -y` for an interactive teaching surface
+> grounded in these same rules.
+
 ## Outcome
 
 This is the canonical guide for porting an existing agent system into Rally.
@@ -230,7 +234,102 @@ Port rule:
 - put work truth in the note plus the named current artifact
 - do not invent note-local enums and ids unless Rally truly needs them
 
-### 4. Do Not Make The Critic A Second Workflow Engine
+### 4. Do Not Put Required Typed Handoffs On The Note Target
+
+A variation of the previous anti-pattern that is worth naming on its own
+because it fails loud at runtime and the error message alone does not
+explain what to do instead.
+
+The broken pattern looks like this:
+
+```
+# In shared outputs.
+export output FooHandoffNote: "Foo Handoff Note"
+    target: base.RallyIssueNoteAppend
+    shape: MarkdownDocument
+    requirement: Required
+
+# On the producer role.
+agent FooProducer[SomeBase]:
+    outputs[base.RallyManagedOutputs]: "Outputs"
+        override issue_note: FooHandoffNote
+    ...
+
+# On the next turn (a critic).
+input PreviousProducerHandoff: "Previous Producer Handoff"
+    source: base.RallyPreviousTurnOutput
+        output: FooHandoffNote
+    requirement: Required
+```
+
+Rally refuses this at runtime with:
+
+```
+Note-backed previous output reopen is not supported for
+`PreviousProducerHandoff`. ...
+```
+
+Why it breaks:
+
+- `base.RallyIssueNoteAppend` is an append-only sink into the shared
+  `home:issue.md` ledger. Every managed role's advisory note goes there,
+  co-mingled.
+- The ledger carries no declaration identity. Rally cannot look at a
+  prior ledger block and prove which output declaration wrote it, so it
+  cannot reopen a prior note output exactly.
+- Scraping section headings out of the ledger would create a shadow
+  output store that drifts from declaration truth. Rally refuses to
+  build one — the guard is deliberate (see
+  `src/rally/services/previous_turn_inputs.py:_is_note_backed_target`).
+
+The rule:
+
+- `base.RallyIssueNoteAppend` is advisory-only. Use it for short
+  human-readable breadcrumbs that later readers may orient from.
+- Any output the next turn will reopen via `base.RallyPreviousTurnOutput`
+  must use `target: File` with a `home:` artifact path chosen by the
+  flow. That path carries declaration identity and readback is exact.
+
+The fixed pattern:
+
+```
+# In shared outputs.
+export output FooHandoff: "Foo Handoff"
+    target: File
+        path: "home:handoffs/foo.md"   # flow author chooses the path
+    shape: MarkdownDocument
+    requirement: Required
+
+# On the producer role.
+agent FooProducer[SomeBase]:
+    outputs[base.RallyManagedOutputs]: "Outputs"
+        inherit issue_note             # advisory breadcrumb stays here
+        foo_handoff: FooHandoff        # typed artifact rides a File target
+    ...
+
+# On the next turn, unchanged shape.
+input PreviousProducerHandoff: "Previous Producer Handoff"
+    source: base.RallyPreviousTurnOutput
+        output: FooHandoff
+    requirement: Required
+```
+
+Flow authors own the `home:` path convention for their own handoffs.
+Rally does not ship a canonical "handoff file" stdlib target — if a
+path convention converges organically across several flows, that is the
+signal to promote it to stdlib later.
+
+Port rule:
+
+- keep `base.RallyIssueNoteAppend` for advisory `requirement: Advisory`
+  notes only
+- move every `requirement: Required` producer→critic handoff to a
+  `target: File` output with a `home:` path
+- when the runtime fails with "Note-backed previous output reopen is
+  not supported", that is this anti-pattern — re-author the offending
+  output, do not try to work around the guard
+
+### 5. Do Not Make The Critic A Second Workflow Engine
 
 The first critic pass grew into a giant review machine:
 
@@ -276,7 +375,7 @@ Port rule:
   structured selector input
 - do not use a selector as a patch around unclear lane ownership
 
-### 5. Do Not Let "Read The Ledger" Turn Into "Guess From The Ledger"
+### 6. Do Not Let "Read The Ledger" Turn Into "Guess From The Ledger"
 
 Deleting the reducer layer is good.
 Deleting explicit pickup truth is bad.
@@ -316,7 +415,7 @@ Port rule:
 - do not feed a review summary back into prompt context when the real review
   turn result already exists in `home:issue.md`
 
-### 6. Move Bootstrap Out Of Agent Doctrine
+### 7. Move Bootstrap Out Of Agent Doctrine
 
 The source system had setup behavior that looked like a runtime skill.
 The Rally port did better when it moved that into flow-local setup:
@@ -344,7 +443,7 @@ Port rule:
 - keep runtime skills for live agent work
 - keep continuity in the prepared run home, not in a second prompt fact bag
 
-### 7. Keep One Runtime Authority For Capabilities
+### 8. Keep One Runtime Authority For Capabilities
 
 Many source systems use a second agent config file.
 Rally uses `flows/<flow>/flow.yaml`.
@@ -363,7 +462,7 @@ Port rule:
 - prompt prose should match it
 - do not keep a second live allowlist file
 
-### 8. Do Not Call A Deletion A Win Unless The Proof Survives
+### 9. Do Not Call A Deletion A Win Unless The Proof Survives
 
 The current cleanup deletes a lot:
 
@@ -391,7 +490,7 @@ Port rule:
 - prefer smoke tests, emitted-readback checks, and real run proofs over tests
   for helper machinery you are trying to delete
 
-### 9. Simplify Law, But Keep The Real Stop Lines
+### 10. Simplify Law, But Keep The Real Stop Lines
 
 The newer cleanup is right to remove a lot of overfit port machinery.
 The real risk is narrower:
@@ -416,7 +515,7 @@ Port rule:
   those rules
 - put the rule in the smallest honest owner and keep moving
 
-### 10. Compression Is Good Only When Behavior Survives
+### 11. Compression Is Good Only When Behavior Survives
 
 The current diff makes many role homes much shorter.
 That is good only when the important behavior still survives:
@@ -432,7 +531,7 @@ Port rule:
 - compress repeated prose
 - do not compress away the stop lines, recovery paths, or current-truth rules
 
-### 11. Do Not Repeat Shared Rally Law Across Three Layers
+### 12. Do Not Repeat Shared Rally Law Across Three Layers
 
 Ports often start by copying the same rule into:
 
@@ -463,7 +562,7 @@ Port rule:
 - if Rally stdlib already teaches the rule, add only local exceptions
 - keep flow-local prose for flow-local truth, not for Rally-wide behavior
 
-### 12. Prefer One Shared Review Shape Until Reality Forces A Split
+### 13. Prefer One Shared Review Shape Until Reality Forces A Split
 
 The first port overbuilt the critic.
 The newer cleanup is right to pull it back toward one shared review shape.
@@ -482,7 +581,7 @@ Port rule:
 - split only when one lane has a real different runtime contract or stop rule
 - do not rebuild a giant critic engine just to mirror the source system
 
-### 13. Keep The Verifier On The Real Runtime Path
+### 14. Keep The Verifier On The Real Runtime Path
 
 A render-diff harness is useful.
 That matters even more after a cleanup.

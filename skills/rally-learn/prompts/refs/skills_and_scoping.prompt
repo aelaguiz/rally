@@ -1,0 +1,114 @@
+document SkillsAndScoping: "Skills And Scoping"
+    """This reference owns the four skill tiers, the allowlist rule, external-root registration, and reserved aliases. The canonical prose home is `docs/SKILL_SCOPING.md`. Rally's own shipped skills live at `skills/rally-kernel/` (mandatory) and `skills/rally-memory/` (opt-in system). Flow-local examples live at `skills/demo-git/`, `skills/pytest-local/`, `skills/repo-search/`."""
+
+    section four_tiers: "The Four Tiers"
+        "Every skill an agent sees belongs to exactly one tier. Tiers cannot overlap. Rally refuses a flow that puts the same skill in two tiers."
+
+        markdown:
+            text: """| Tier | Source | How the agent gets it | Example |
+| --- | --- | --- | --- |
+| Mandatory | Shipped with Rally | Injected on every agent, always. No configuration. | `rally-kernel` |
+| System (opt-in) | Shipped with Rally | Declared per-agent via `system_skills: [name]` in `flow.yaml`. | `rally-memory` |
+| Flow-local | `skills/<name>/` under workspace root | Declared per-agent via `allowed_skills: [name]` in `flow.yaml`. | `demo-git`, `pytest-local`, `repo-search` |
+| External | Registered via `[tool.rally.workspace.external_skill_roots]` in `pyproject.toml` | Declared per-agent via `external_skills: ["alias:skill-name"]`. | `myproj:writer-skill` |
+"""
+
+    section mandatory: "Mandatory Tier"
+        """`rally-kernel` is the only mandatory skill. It is injected on every agent in every flow with no declaration needed. Its job is narrow: give the agent a short, shared note on how to save a run note through `rally issue note`. The source is `skills/rally-kernel/prompts/SKILL.prompt`.
+
+Because it is always on, the body is kept small: a quick model, when-to-use, hard rules, first move, workflow, and two short code snippets. Anything heavier would burn prompt budget on every turn for every agent."""
+
+    section system: "System Tier (Stdlib Opt-In)"
+        """System skills are shipped with Rally but not injected by default. Each one is listed in `RALLY_BUILTIN_SKILL_NAMES` (see `src/rally/services/builtin_assets.py`) and declared per-agent in `flow.yaml`.
+
+Current members:"""
+
+        bullets members:
+            "`rally-memory`: durable per-agent-slug memory. Opt in with `system_skills: [rally-memory]`."
+
+        "System skills cannot be replaced by flow-local skills with the same name. Rally refuses the overlap."
+
+    section flow_local: "Flow-Local Tier"
+        """Flow-local skills live at `skills/<name>/` under the workspace root. They can be Doctrine skill packages (with a `prompts/SKILL.prompt` source and a compiled `build/SKILL.md`) or plain Markdown skills (a hand-written `SKILL.md` at the root).
+
+Validation rules:"""
+
+        bullets rules:
+            "The directory name `<name>` matches the value in `allowed_skills: [<name>]`."
+            "Doctrine-authored skills must carry a `SKILL.prompt` source; Rally auto-emits them via the workspace's `[tool.doctrine.emit.targets]` block."
+            "Plain-Markdown skills may skip `prompts/` and put `SKILL.md` at the skill root directly."
+            "Rally refuses an agent whose `allowed_skills` names a skill that does not exist."
+            "Rally refuses a flow whose skill name overlaps with a system or mandatory skill."
+
+    section external: "External Tier"
+        """External skills live outside the workspace in another repo. Register the external root in `pyproject.toml`, then name skills with the `alias:name` form in `external_skills`.
+
+Example `pyproject.toml` fragment:"""
+
+        code:
+            language: toml
+            text: """[tool.rally.workspace.external_skill_roots]
+myproj = "../myproject/skills"
+"""
+
+        "The agent then declares:"
+
+        code:
+            language: yaml
+            text: """external_skills:
+  - myproj:writer-skill
+"""
+
+        "Validation rules:"
+        bullets rules:
+            "The alias must match `^[a-z][a-z0-9_-]*$`."
+            "Reserved aliases are rejected: `rally`, `stdlib`, `system`, `flow`, `home`, `workspace`, `host`, `local`, `builtin`, `builtins`."
+            "The external root must exist and must contain a directory matching the skill name."
+            "Doctrine-authored external skills must ship their compiled `build/SKILL.md` checked in. Rally does not cross-build Doctrine from another repo."
+
+    section allowlist_rule: "Allowlist, Not Suggestion Box"
+        """`allowed_skills`, `system_skills`, and `external_skills` are enforced allowlists validated at load time. Rally refuses to run an agent that names a skill not on one of those lists. The emitted `AGENTS.md` also validates skill bindings against the declared allowlist.
+
+Every skill on an agent's list burns always-on prompt budget on every turn. Add a skill only if that agent will call it. If two agents in the same flow call different skills, give each agent the narrow list it needs.
+
+Common mistake: copying an ambitious allowlist from a reference flow. The reference flow may have had a reason for every line; your agent probably does not. Start with `[]` and add skills only when you need them."""
+
+    section building_a_new_skill: "Building A New Flow-Local Skill"
+        "Use `skills/rally-kernel/prompts/SKILL.prompt` as the template. The body shape (short sections with `bullets points:`, `sequence steps:`, and `code` blocks) is Rally's native style. See `docs/SKILL_AUTHORING.md` for the full walkthrough."
+
+        code:
+            language: text
+            text: """skills/<name>/
+  prompts/
+    SKILL.prompt
+  build/
+    SKILL.md            # generated by emit
+"""
+
+        "Wire the emit target in `pyproject.toml`:"
+
+        code:
+            language: toml
+            text: """[[tool.doctrine.emit.targets]]
+name = "<name>"
+entrypoint = "skills/<name>/prompts/SKILL.prompt"
+output_dir = "skills/<name>/build"
+"""
+
+        "Then add the skill to the agent that needs it:"
+
+        code:
+            language: yaml
+            text: """allowed_skills:
+  - <name>
+"""
+
+    section related: "Related References"
+        bullets refs:
+            "`references/principles.md`: the allowlist-not-suggestion-box rule."
+            "`references/flow-authoring.md`: how `allowed_skills` lives on the agent."
+            "`references/build-and-emit.md`: what `emit_skill` produces for each skill tier."
+            "`docs/SKILL_SCOPING.md`: canonical prose reference."
+            "`docs/SKILL_AUTHORING.md`: walkthrough for writing a new flow-local skill."
+
+        """**Load when:** the author is adding a skill to an agent, registering an external root, or debugging a skill-not-found refusal."""

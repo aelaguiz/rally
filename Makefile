@@ -1,16 +1,19 @@
 .DEFAULT_GOAL := help
 
 UV ?= uv
+NPM ?= npm
 PYTHON ?= python
 
 UV_RUN := $(UV) run $(PYTHON)
 
-.PHONY: help setup emit test tests build-dist verify-package-wheel verify-package-sdist verify-package verify check release-prepare release-tag release-draft release-publish
+.PHONY: help setup emit skills verify-skill-install test tests build-dist verify-package-wheel verify-package-sdist verify-package verify check release-prepare release-tag release-draft release-publish
 
 help:
 	@printf '%s\n' \
-		'make setup                 Sync Rally dev dependencies.' \
+		'make setup                 Sync Rally dev dependencies and install the pinned skills CLI.' \
 		'make emit                  Compile the checked-in Rally flow and skill bundles.' \
+		'make skills                Emit rally-learn and install it via the pinned npx skills CLI.' \
+		'make verify-skill-install  Run the rally-learn skill emit + install drift tests.' \
 		'make tests                 Run the Rally unit suite.' \
 		'make test                  Alias for make tests.' \
 		'make build-dist            Build the Rally wheel and sdist.' \
@@ -24,10 +27,20 @@ help:
 
 setup:
 	$(UV) sync --dev
+	$(NPM) ci
 
 emit:
 	$(UV_RUN) -m doctrine.emit_docs --pyproject pyproject.toml --target _stdlib_smoke --target poem_loop --target software_engineering_demo
-	$(UV_RUN) -m doctrine.emit_skill --pyproject pyproject.toml --target rally-kernel --target rally-memory --target demo-git
+	$(UV_RUN) -m doctrine.emit_skill --pyproject pyproject.toml --target rally-kernel --target rally-memory --target demo-git --target rally_learn_skill --target rally_learn_public_skill
+
+skills:
+	@test -x node_modules/.bin/skills || { printf '%s\n' 'Run `make setup` (or `npm ci`) first to install the pinned `skills` CLI.'; exit 2; }
+	$(UV_RUN) -m doctrine.emit_skill --pyproject pyproject.toml --target rally_learn_public_skill
+	./node_modules/.bin/skills add .
+
+verify-skill-install:
+	@test -x node_modules/.bin/skills || { printf '%s\n' 'Run `make setup` (or `npm ci`) first to install the pinned `skills` CLI.'; exit 2; }
+	$(UV) run pytest tests/unit/test_emit_skill.py -q
 
 tests: emit
 	$(UV) run pytest tests/unit -q
@@ -44,7 +57,7 @@ verify-package-wheel: build-dist
 verify-package-sdist: build-dist
 	$(UV_RUN) -m rally._package_release smoke --artifact-type sdist
 
-verify-package: build-dist
+verify-package: verify-skill-install build-dist
 	$(UV_RUN) -m rally._package_release smoke --artifact-type wheel
 	$(UV_RUN) -m rally._package_release smoke --artifact-type sdist
 

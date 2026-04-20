@@ -6,6 +6,7 @@ from typing import Any
 
 from rally.memory.logging import parse_memory_command, summarize_memory_command
 from rally.services.run_events import EventDraft
+from rally.services.tool_digest import classify_sub_kind, make_input_digest
 
 
 @dataclass
@@ -330,11 +331,27 @@ class CodexEventStreamParser:
                 )
             ]
         detail_lines: list[str] = []
+        exit_code_value: int | None = None
         if status in {"completed", "failed", "declined"}:
-            exit_code = item.get("exit_code")
-            if isinstance(exit_code, int):
-                detail_lines.append(f"exit code {exit_code}")
+            raw_exit = item.get("exit_code")
+            if isinstance(raw_exit, int):
+                exit_code_value = raw_exit
+                detail_lines.append(f"exit code {raw_exit}")
             detail_lines.extend(_tail_output_lines(item.get("aggregated_output")))
+        extra_data: dict[str, Any] = {
+            "type": event_type,
+            "tool_name": "Bash",
+            "sub_kind": "bash",
+        }
+        digest = make_input_digest("Bash", message)
+        if digest is not None:
+            extra_data["input_digest"] = digest
+        if item_id:
+            extra_data["tool_use_id"] = item_id
+        if status in {"completed", "failed", "declined"}:
+            extra_data["is_error"] = status != "completed"
+            if exit_code_value is not None:
+                extra_data["exit_code"] = exit_code_value
         return [
             self._trace_draft(
                 kind="tool",
@@ -347,7 +364,7 @@ class CodexEventStreamParser:
                 item_phase=item_phase,
                 status=status,
                 detail_lines=detail_lines,
-                extra_data={"type": event_type},
+                extra_data=extra_data,
             )
         ]
 
@@ -372,11 +389,26 @@ class CodexEventStreamParser:
         error_summary = _mcp_error_summary(item.get("error"))
         if error_summary is not None:
             detail_lines.append(error_summary)
+        tool_name_full = f"{server}.{tool}"
+        extra_data: dict[str, Any] = {
+            "type": event_type,
+            "tool_name": tool_name_full,
+            "sub_kind": "mcp",
+        }
+        if item_id:
+            extra_data["tool_use_id"] = item_id
+        if status in {"completed", "failed", "declined"}:
+            extra_data["is_error"] = status != "completed"
+        args = item.get("arguments")
+        if isinstance(args, (dict, str)):
+            digest = make_input_digest(tool_name_full, args)
+            if digest is not None:
+                extra_data["input_digest"] = digest
         return [
             self._trace_draft(
                 kind="tool",
                 code=_status_code(base="MCP", status=status),
-                message=f"{server}.{tool}",
+                message=tool_name_full,
                 level=_status_level(status),
                 trace_class="tool",
                 item_type="mcp_tool_call",
@@ -384,7 +416,7 @@ class CodexEventStreamParser:
                 item_phase=item_phase,
                 status=status,
                 detail_lines=detail_lines,
-                extra_data={"type": event_type},
+                extra_data=extra_data,
             )
         ]
 
@@ -408,6 +440,19 @@ class CodexEventStreamParser:
         states_summary = _agents_states_summary(item.get("agents_states"))
         if states_summary is not None:
             detail_lines.append(states_summary)
+        extra_data: dict[str, Any] = {
+            "type": event_type,
+            "tool_name": tool,
+            "sub_kind": "sub_agent",
+        }
+        if item_id:
+            extra_data["tool_use_id"] = item_id
+        if status in {"completed", "failed", "declined"}:
+            extra_data["is_error"] = status != "completed"
+        if prompt is not None:
+            digest = make_input_digest("Task", {"description": prompt})
+            if digest is not None:
+                extra_data["input_digest"] = digest
         return [
             self._trace_draft(
                 kind="tool",
@@ -420,7 +465,7 @@ class CodexEventStreamParser:
                 item_phase=item_phase,
                 status=status,
                 detail_lines=detail_lines,
-                extra_data={"type": event_type},
+                extra_data=extra_data,
             )
         ]
 

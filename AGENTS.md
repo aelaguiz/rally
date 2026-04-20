@@ -76,6 +76,12 @@
 - Do not hand-edit `flows/*/build/**` to fake a compile result or cover up missing compiler behavior.
 - If the needed proof path or tool support is missing, say that plainly and stop at the real blocker.
 
+## Shipping Work
+
+- One approved plan ships as one PR. Do not split an approved plan into "phase 1 / phase 2 / phase 3" pull requests unless the user asks for that split up front.
+- Land the whole scope in one branch: code, tests, docs, skill updates, changelog. The reviewer should see the full change in one place.
+- If a plan feels too large to land at once, stop and ask the user before splitting. Do not decide on your own that "Phase 1" is enough for this PR.
+
 ## Hard Rules
 
 - Do not patch around Doctrine bugs, parser gaps, compiler gaps, or missing generic language support in Rally.
@@ -137,6 +143,7 @@
 - `docs/RALLY_CLI_AND_LOGGING.md`: focused command, issue-ledger, snapshot, and logging detail; use it when CLI shape, run logs, renderer rules, or recovery paths change
 - `docs/RALLY_COMMUNICATION_MODEL.md`: communication model; keep it aligned with the master doc when notes, end-turn control, or harness env rules change
 - `docs/RALLY_RUNTIME.md`: runtime detail; keep it aligned with the master doc when runtime scope, proof paths, or launch rules change
+- `docs/RALLY_RUN_TIMING.md`: always-on timing surface (`timing.json`, `timing_turns.jsonl`, `tool_calls.jsonl`, `runs/timings.ndjson`) and the per-handoff receipt block emitted via the `SUMMARY` event; read this when diagnosing where a run spent its time
 - `docs/RALLY_PORTING_GUIDE.md`: canonical porting rules and examples for bringing existing agent systems into Rally; add durable port lessons there
 - `flows/*/flow.yaml`: runtime config, adapter settings, and allowlisted skills and MCPs (skill tier model in `docs/SKILL_SCOPING.md`)
 - `flows/*/prompts/**`: prompt source

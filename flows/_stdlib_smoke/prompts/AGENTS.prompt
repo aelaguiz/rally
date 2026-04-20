@@ -1,6 +1,8 @@
-import rally.base_agent as base
-import rally.review_results as review_results
-import rally.turn_results as turn_results
+import rally.base_agent
+import rally.review_results
+import rally.turn_results
+from rally.review_results import ReviewVerdict
+from rally.turn_results import RallyTurnKind
 
 
 input WorkBrief: "Work Brief"
@@ -18,7 +20,7 @@ input RoutingFacts: "Routing Facts"
 
 
 input PreviousPlanAuthorTurn: "Previous Plan Author Turn"
-    source: base.RallyPreviousTurnOutput
+    source: rally.base_agent.RallyPreviousTurnOutput
     requirement: Advisory
     "Use the exact previous PlanAuthor turn JSON when RouteRepair receives a handoff."
 
@@ -29,6 +31,7 @@ input RepairPlanReviewFile: "Repair Plan Review File"
     shape: MarkdownDocument
     requirement: Required
     basis_missing: "Basis Missing"
+    artifact_unnamed: "Artifact Unnamed"
     "Use the repair plan file as the review subject for the smoke test."
 
 
@@ -40,7 +43,7 @@ output RepairPlan: "Repair Plan"
     "Write the repair plan to `home:artifacts/repair_plan.md`."
 
 
-output schema PlanAuthorTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Plan Author Turn Result Schema"
+output schema PlanAuthorTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Plan Author Turn Result Schema"
     route field next_route: "Next Route"
         route_repair: "Send the smoke test to RouteRepair." -> RouteRepair
         nullable
@@ -49,7 +52,7 @@ output schema PlanAuthorTurnResultSchema[turn_results.BaseRallyTurnResultSchema]
     inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
-output shape PlanAuthorTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Plan Author Turn Result JSON"
+output shape PlanAuthorTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Plan Author Turn Result JSON"
     inherit kind
     override schema: PlanAuthorTurnResultSchema
 
@@ -63,7 +66,7 @@ output shape PlanAuthorTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Pl
             "Use `null` for `next_route` when you block or sleep."
 
 
-output PlanAuthorTurnResult[turn_results.BaseRallyTurnResult]: "Plan Author Turn Result"
+output PlanAuthorTurnResult[rally.turn_results.BaseRallyTurnResult]: "Plan Author Turn Result"
     inherit target
     override shape: PlanAuthorTurnResultJson
     inherit requirement
@@ -78,7 +81,7 @@ output PlanAuthorTurnResult[turn_results.BaseRallyTurnResult]: "Plan Author Turn
         "Write one short closeout summary."
 
 
-output schema RouteRepairTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Route Repair Turn Result Schema"
+output schema RouteRepairTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Route Repair Turn Result Schema"
     route field next_route: "Next Route"
         closeout: "Send the smoke test to Closeout." -> Closeout
         retry: "Send the smoke test back to PlanAuthor." -> PlanAuthor
@@ -88,7 +91,7 @@ output schema RouteRepairTurnResultSchema[turn_results.BaseRallyTurnResultSchema
     inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
-output shape RouteRepairTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Route Repair Turn Result JSON"
+output shape RouteRepairTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Route Repair Turn Result JSON"
     inherit kind
     override schema: RouteRepairTurnResultSchema
 
@@ -101,7 +104,7 @@ output shape RouteRepairTurnResultJson[turn_results.BaseRallyTurnResultJson]: "R
             "Use null for `next_route` only when you block or sleep."
 
 
-output RouteRepairTurnResult[turn_results.BaseRallyTurnResult]: "Route Repair Turn Result"
+output RouteRepairTurnResult[rally.turn_results.BaseRallyTurnResult]: "Route Repair Turn Result"
     inherit target
     override shape: RouteRepairTurnResultJson
     inherit requirement
@@ -111,7 +114,7 @@ output RouteRepairTurnResult[turn_results.BaseRallyTurnResult]: "Route Repair Tu
         "Use `retry` to send it back for one more pass."
 
 
-output schema CloseoutTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Closeout Turn Result Schema"
+output schema CloseoutTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Closeout Turn Result Schema"
     inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
     field current_artifact: "Current Artifact"
@@ -129,19 +132,19 @@ output schema CloseoutTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: 
         current_artifact: "home:artifacts/repair_plan.md"
 
 
-output shape CloseoutTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Closeout Turn Result JSON"
+output shape CloseoutTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Closeout Turn Result JSON"
     inherit kind
     override schema: CloseoutTurnResultSchema
     inherit field_notes
 
 
-output CloseoutTurnResult[turn_results.BaseRallyTurnResult]: "Closeout Turn Result"
+output CloseoutTurnResult[rally.turn_results.BaseRallyTurnResult]: "Closeout Turn Result"
     inherit target
     override shape: CloseoutTurnResultJson
     inherit requirement
 
 
-output schema SmokeReviewSchema[review_results.BaseRallyReviewSchema]: "Smoke Review Schema"
+output schema SmokeReviewSchema[rally.review_results.BaseRallyReviewSchema]: "Smoke Review Schema"
     inherit {verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail}
 
     override example:
@@ -156,13 +159,13 @@ output schema SmokeReviewSchema[review_results.BaseRallyReviewSchema]: "Smoke Re
 
 # Keep the JSON shape explicit because the schema override is the main thing a
 # reader needs to spot here.
-output shape SmokeReviewJson[review_results.BaseRallyReviewJson]: "Smoke Review JSON"
+output shape SmokeReviewJson[rally.review_results.BaseRallyReviewJson]: "Smoke Review JSON"
     inherit kind
     override schema: SmokeReviewSchema
     inherit field_notes
 
 
-output SmokeReviewResponse[review_results.BaseRallyReviewResponse]: "Smoke Review Response"
+output SmokeReviewResponse[rally.review_results.BaseRallyReviewResponse]: "Smoke Review Response"
     inherit target
     override shape: SmokeReviewJson
     inherit {requirement, verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail, trust_surface, standalone_read}
@@ -203,6 +206,7 @@ review SmokeReview: "Smoke Review"
         block "The repair plan is missing." when RepairPlanReviewFile.basis_missing
 
     contract_checks: "Contract Checks"
+        reject contract.artifact_named when RepairPlanReviewFile.artifact_unnamed
         accept "The smoke review contract passes." when contract.passes
 
     on_accept:
@@ -212,21 +216,21 @@ review SmokeReview: "Smoke Review"
         current artifact RepairPlanReviewFile via SmokeReviewResponse.current_artifact
 
 
-agent PlanAuthor[base.RallyManagedBaseAgent]:
+agent PlanAuthor[rally.base_agent.RallyManagedBaseAgent]:
     role: "Write the repair plan and either pass the smoke test forward or finish it."
-    inherit {rally_contract, read_first, how_to_take_a_turn}
+    inherit {rally_contract, read_first, shared_rules}
     workflow: "Plan"
         "Write `home:artifacts/repair_plan.md`."
         "Pass the smoke test to RouteRepair only when it needs one more step."
         "Otherwise finish the smoke test here."
     # These wrapper refs are safe on one line because each slot only forwards
     # one declaration and adds no local prose.
-    inputs[base.RallyManagedInputs]: "Inputs"
+    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
         inherit issue_ledger
 
         work_brief: WorkBrief
         routing_facts: RoutingFacts
-    outputs[base.RallyManagedOutputs]: "Outputs"
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         inherit issue_note
 
         # Keep `Turn Result` explicit because the wrapper title still helps the
@@ -240,17 +244,17 @@ agent PlanAuthor[base.RallyManagedBaseAgent]:
         route: next_route
 
 
-agent RouteRepair[base.RallyManagedBaseAgent]:
+agent RouteRepair[rally.base_agent.RallyManagedBaseAgent]:
     role: "Pick the next smoke-test owner from the emitted route choice."
-    inherit {rally_contract, read_first, how_to_take_a_turn}
+    inherit {rally_contract, read_first, shared_rules}
     workflow: "Route Repair"
         "Read `Previous Plan Author Turn` first so you know why PlanAuthor sent work here."
         "Choose whether the smoke test should close out now or loop back for one more pass."
-    inputs[base.RallyManagedInputs]: "Inputs"
+    inputs[rally.base_agent.RallyManagedInputs]: "Inputs"
         inherit issue_ledger
 
         previous_plan_author_turn: PreviousPlanAuthorTurn
-    outputs[base.RallyManagedOutputs]: "Outputs"
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         inherit issue_note
 
         turn_result: "Turn Result"
@@ -260,12 +264,12 @@ agent RouteRepair[base.RallyManagedBaseAgent]:
         route: next_route
 
 
-agent Closeout[base.RallyManagedBaseAgent]:
+agent Closeout[rally.base_agent.RallyManagedBaseAgent]:
     role: "End the smoke test with a final `done` result."
-    inherit {rally_contract, read_first, how_to_take_a_turn}
+    inherit {rally_contract, read_first, shared_rules}
     workflow: "Closeout"
         "End the smoke test with one final `done` result."
-    outputs[base.RallyManagedOutputs]: "Outputs"
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         inherit issue_note
 
         turn_result: "Turn Result"

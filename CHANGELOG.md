@@ -78,6 +78,29 @@ Use this section for work that is not public yet.
   distinguish orderly termination from a crash.
 - New event codes: `DETACH`, `STOPPED`, `STOP_REQUESTED`, `HEARTBEAT`,
   `CRASH_DETECTED`.
+- Always-on run timing. At every terminal turn event (`handoff`, `done`,
+  `blocker`, `sleep`), Rally writes `runs/<id>/timing.json` (cumulative
+  snapshot), appends to `runs/<id>/timing_turns.jsonl` and
+  `runs/<id>/tool_calls.jsonl`, and emits a `SUMMARY` event that renders an
+  inline receipt showing where the last turn and the whole run spent time.
+  At `done`, a one-line summary is appended to workspace-level
+  `runs/timings.ndjson`. Both adapters now project `tool_use_id`,
+  `input_digest`, `is_error`, and `exit_code` on tool-call events. Input
+  digests are secret-scrubbed. See `docs/RALLY_RUN_TIMING.md` for schema
+  and rendering details.
+- Anomaly flags on every receipt. Six rules — `command_always_fails`,
+  `tool_error_rate`, `single_call_hot`, `model_spin`, `retry_group`,
+  `high_idle` — evaluate against the current `RunTiming` at every terminal
+  turn event and render inline under the cumulative block. `high_idle` is
+  suppressed in `--step` mode.
+- `rally status <run-id>` gains a three-line **time footprint** derived
+  from `timing.json` (wall/active/idle, top tools, token totals). Silently
+  omitted when `timing.json` is not yet present.
+- `rally watch <run-id>` now inlines SUMMARY receipts in the event stream
+  and prints a compact per-turn progress line after every tool-end event.
+- `rally runs time [--flow CODE] [--last N]` reports longitudinal trends
+  across `runs/timings.ndjson` — recent-run table plus p50 / p90 / mean for
+  wall, active, errors, tools, and tokens.
 
 ### Changed
 - `runs/active/<id>/state.yaml` and `run.yaml` writes are now atomic
