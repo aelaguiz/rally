@@ -1,9 +1,10 @@
-import rally.review_results as review_results
+import rally.review_results
+from rally.review_results import ReviewVerdict
 
 
 # Group the carried base fields when the child only keeps the shared review
 # body and example.
-output schema PoemReviewSchema[review_results.BaseRallyReviewSchema]: "Poem Review Schema"
+output schema PoemReviewSchema[rally.review_results.BaseRallyReviewSchema]: "Poem Review Schema"
     inherit {verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail}
 
     override example:
@@ -18,24 +19,29 @@ output schema PoemReviewSchema[review_results.BaseRallyReviewSchema]: "Poem Revi
 
 # Keep the JSON shape explicit because the schema override is the main thing a
 # reader needs to spot here.
-output shape PoemReviewJson[review_results.BaseRallyReviewJson]: "Poem Review JSON"
+output shape PoemReviewJson[rally.review_results.BaseRallyReviewJson]: "Poem Review JSON"
     inherit kind
     override schema: PoemReviewSchema
     inherit field_notes
 
 
-workflow PoemReviewContract: "Poem Review Contract"
-    brief_match: "Brief Match"
-        "Check that the poem fits the asked type and subject."
+schema PoemReviewContract: "Poem Review Contract"
+    sections:
+        summary: "Summary"
+            "Summarize whether the poem is ready to keep."
 
-    rationale_fit: "Rationale Fit"
-        "Check that the poem matches the writer's stated reason for this draft."
+    gates:
+        brief_match: "Brief Match"
+            "Check that the poem fits the asked type and subject."
 
-    finish_quality: "Finish Quality"
-        "Accept only when the poem feels finished and worth keeping."
+        rationale_fit: "Rationale Fit"
+            "Check that the poem matches the writer's stated reason for this draft."
+
+        finish_quality: "Finish Quality"
+            "Accept only when the poem feels finished and worth keeping."
 
 
-output PoemReviewResponse[review_results.BaseRallyReviewResponse]: "Poem Review Response"
+output PoemReviewResponse[rally.review_results.BaseRallyReviewResponse]: "Poem Review Response"
     inherit target
     override shape: PoemReviewJson
     inherit {requirement, verdict, findings_first, failure_detail}
@@ -60,6 +66,10 @@ output PoemReviewFinalResponse[PoemReviewResponse]: "Poem Review Final Response"
     inherit {target, shape, requirement, verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail, trust_surface, standalone_read}
 
 
+# TODO(doctrine P2): when `override gates:` on review_case lands, a future
+# per-agent PoemReview variant could narrow one gate's copy without
+# restating the full `contract_checks:` block. Today poem_loop only has one
+# review case, so this is a marker for later multi-case use.
 review PoemReview: "Poem Review"
     subject: PoemDraftFile
     contract: PoemReviewContract
@@ -67,6 +77,9 @@ review PoemReview: "Poem Review"
 
     # Bare names mean identity binds.
     # Keep explicit paths only where the review semantic name changes.
+    # Doctrine v5 has no `final_output.review_fields: <SharedDecl>` bind,
+    # so PoemCritic restates this same shorthand in AGENTS.prompt.
+    # When that gap lands, collapse the per-agent repeat to one shared ref.
     fields:
         verdict
         reviewed_artifact
@@ -81,6 +94,9 @@ review PoemReview: "Poem Review"
         block "The poem draft is missing." when PoemDraftFile.basis_missing
 
     contract_checks: "Contract Checks"
+        reject contract.brief_match when PoemDraftFile.brief_mismatch
+        reject contract.rationale_fit when PoemDraftFile.rationale_misfit
+        reject contract.finish_quality when PoemDraftFile.finish_rough
         accept "The poem meets the review contract." when contract.passes
 
     on_accept: "If Accepted"

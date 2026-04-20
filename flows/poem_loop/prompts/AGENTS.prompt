@@ -1,21 +1,23 @@
-import rally.base_agent as base
-import rally.turn_results as turn_results
+import rally.base_agent
+import rally.turn_results
+from rally.turn_results import RallyTurnKind
+from rally.review_results import ReviewVerdict
 
 
-inputs PoemLoopInputs[base.RallyManagedInputs]: "Inputs"
+inputs PoemLoopInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
     inherit issue_ledger
 
     poem_draft_file: PoemDraftFile
 
 
 input PreviousMuseTurn: "Previous Muse Turn"
-    source: base.RallyPreviousTurnOutput
+    source: rally.base_agent.RallyPreviousTurnOutput
     requirement: Advisory
     "Use the exact previous Muse turn JSON when PoemWriter starts a new draft."
 
 
 input PreviousPoemReview: "Previous Poem Review"
-    source: base.RallyPreviousTurnOutput
+    source: rally.base_agent.RallyPreviousTurnOutput
         output: PoemReviewFinalResponse
     requirement: Advisory
     "Use the exact previous PoemCritic review JSON when Muse is revising after a reject loop."
@@ -35,7 +37,7 @@ inputs WriterInputs[PoemLoopInputs]: "Writer Inputs"
     previous_muse_turn: PreviousMuseTurn
 
 
-output schema MuseTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Muse Turn Result Schema"
+output schema MuseTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Muse Turn Result Schema"
     route field next_route: "Next Route"
         poem_writer: "Send the guidance to PoemWriter." -> PoemWriter
         nullable
@@ -68,7 +70,7 @@ output schema MuseTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Mus
         note: "The clearest thing PoemWriter should fix or sharpen next."
 
 
-output shape MuseTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Muse Turn Result JSON"
+output shape MuseTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Muse Turn Result JSON"
     inherit kind
     override schema: MuseTurnResultSchema
 
@@ -83,7 +85,7 @@ output shape MuseTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Muse Tur
             "Set the poem fields when you hand off a new draft direction."
 
 
-output MuseTurnResult[turn_results.BaseRallyTurnResult]: "Muse Turn Result"
+output MuseTurnResult[rally.turn_results.BaseRallyTurnResult]: "Muse Turn Result"
     inherit target
     override shape: MuseTurnResultJson
     inherit requirement
@@ -104,7 +106,7 @@ output MuseTurnResult[turn_results.BaseRallyTurnResult]: "Muse Turn Result"
         "Name the clearest thing PoemWriter should fix or sharpen next."
 
 
-output schema PoemWriterTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Poem Writer Turn Result Schema"
+output schema PoemWriterTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Poem Writer Turn Result Schema"
     route field next_route: "Next Route"
         poem_critic: "Send the draft to PoemCritic." -> PoemCritic
         nullable
@@ -119,7 +121,7 @@ output schema PoemWriterTurnResultSchema[turn_results.BaseRallyTurnResultSchema]
         note: "Short image, mood, or idea that shaped the draft."
 
 
-output shape PoemWriterTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Poem Writer Turn Result JSON"
+output shape PoemWriterTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Poem Writer Turn Result JSON"
     inherit kind
     override schema: PoemWriterTurnResultSchema
 
@@ -135,7 +137,7 @@ output shape PoemWriterTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Po
             "Use `null` for `inspiration` when you block or sleep."
 
 
-output PoemWriterTurnResult[turn_results.BaseRallyTurnResult]: "Poem Writer Turn Result"
+output PoemWriterTurnResult[rally.turn_results.BaseRallyTurnResult]: "Poem Writer Turn Result"
     inherit target
     override shape: PoemWriterTurnResultJson
     inherit requirement
@@ -148,7 +150,11 @@ output PoemWriterTurnResult[turn_results.BaseRallyTurnResult]: "Poem Writer Turn
         "Use `null` when you block or sleep."
 
 
-abstract agent PoemLoopRole[base.RallyManagedBaseAgent]:
+# TODO(doctrine P5): when typed abstract parameters land, lift the three
+# per-role slot refs below (`system_context:`, `ground_truth:`, `primary_path:`)
+# into a typed parameter set so this abstract role declares its shape once
+# and each concrete agent binds by name rather than by free-text slot key.
+abstract agent PoemLoopRole[rally.base_agent.RallyManagedBaseAgent]:
     inherit {rally_contract, read_first, shared_rules}
     system_context: PoemLoopSystemContext
     ground_truth: IssueLedgerGroundTruth
@@ -161,12 +167,12 @@ agent Muse[PoemLoopRole]:
     your_job: MuseJob
     quality_bar: MuseQualityBar
     inputs: MuseInputs
-    outputs[base.RallyManagedOutputs]: "Outputs"
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         inherit issue_note
 
         turn_result: "Turn Result"
             MuseTurnResult
-    skills: base.RallyManagedSkills
+    skills: rally.base_agent.RallyManagedSkills
     final_output:
         output: MuseTurnResult
         route: next_route
@@ -178,7 +184,7 @@ agent PoemWriter[PoemLoopRole]:
     your_job: PoemWriterJob
     quality_bar: PoemWriterQualityBar
     inputs: WriterInputs
-    outputs[base.RallyManagedOutputs]: "Outputs"
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         # Keep `Turn Result` explicit because the wrapper title still helps the
         # emitted readback. The other two wrappers are safe on one line because
         # they only forward one declaration and add no local prose.
@@ -187,7 +193,7 @@ agent PoemWriter[PoemLoopRole]:
 
         turn_result: "Turn Result"
             PoemWriterTurnResult
-    skills: base.RallyManagedSkills
+    skills: rally.base_agent.RallyManagedSkills
     final_output:
         output: PoemWriterTurnResult
         route: next_route
@@ -205,7 +211,7 @@ agent PoemCritic[PoemLoopRole]:
     outputs: "Outputs"
         PoemReviewResponse
         PoemReviewFinalResponse
-    skills: base.RallyManagedSkills
+    skills: rally.base_agent.RallyManagedSkills
     final_output:
         output: PoemReviewFinalResponse
         review_fields:

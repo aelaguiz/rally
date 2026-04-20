@@ -1,0 +1,9 @@
+import rally.turn_results
+
+
+# Shared work-role turn-result schema for this flow.
+# The three role schemas (Architect, Developer, QaDocs) differ only by the
+# route target on `next_route`. This parent carries the stdlib-base field
+# set once so each child only has to declare its own route target.
+output schema WorkRoleTurnResultSchema[rally.turn_results.BaseRallyTurnResultSchema]: "Work Role Turn Result Schema"
+    inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}

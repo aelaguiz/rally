@@ -1,18 +1,22 @@
 # Keep the shared control core in one base family so flows can extend it
 # without cloning field meaning.
 
+# Shared turn-kind vocabulary: declare it once at the top so every flow reads
+# the same closed set. Use `type: RallyTurnKind` in the schema below.
+export enum RallyTurnKind: "Rally Turn Kind"
+    handoff: "handoff"
+    done: "done"
+    blocker: "blocker"
+    sleep: "sleep"
+
+
 # Base schema: the shared producer control fields Rally reads on every turn.
 # A flow that can hand off must add its own `route field` and bind it with
 # `final_output.route:`. That keeps route member names flow-owned and lets
 # Rally route from Doctrine's emitted contract instead of a copied payload key.
 export output schema BaseRallyTurnResultSchema: "Base Rally Turn Result Schema"
     field kind: "Kind"
-        type: string
-        enum:
-            handoff
-            done
-            blocker
-            sleep
+        type: RallyTurnKind
         note: "Turn result kind."
 
     field summary: "Summary"

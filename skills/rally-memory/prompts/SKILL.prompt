@@ -17,6 +17,10 @@ skill package RallyMemory: "Rally Memory"
             "You had to fix your own work and learned a short lesson worth keeping."
             "The memory index needs a refresh from the markdown source files."
 
+    # TODO(doctrine F-6): promote env-var host facts (`RALLY_CLI_BIN`,
+    # `RALLY_RUN_ID`, `RALLY_AGENT_SLUG`) into a typed `host_contract:` when
+    # Doctrine ships a scalar/env-var host slot family. See
+    # `docs/RALLY_DOCTRINE_V5_EXEMPLAR_ADOPTION_PLAN_2026-04-19.md` F-6 entry.
     hard_rules: "Hard rules"
         bullets rules:
             "Use Rally CLI for memory actions."

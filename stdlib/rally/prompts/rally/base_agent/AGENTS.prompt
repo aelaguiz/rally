@@ -74,6 +74,9 @@ export workflow RallyReadFirst: "Read First"
 # framework truths, not a turn sequence — so they ride on the `shared_rules:`
 # slot on `RallyManagedBaseAgent`. Flow authors write their own
 # `how_to_take_a_turn:` sequence; Rally does not prescribe one.
+# TODO(doctrine P7): when the declarative `rule` primitive lands, lift each
+# bullet below into a typed `rule` so the compiler can check rule wording
+# and downstream refs against the canonical rule id.
 export workflow RallyManagedSharedRules: "Shared Rules"
     bullets rules:
         "Use `home:issue.md` as the shared ledger for this run."

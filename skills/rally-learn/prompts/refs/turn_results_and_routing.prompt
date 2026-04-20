@@ -51,7 +51,7 @@ Example:"""
         """Review turns parse differently. The schema is `BaseRallyReviewFinalResponseSchema` in `stdlib/rally/prompts/rally/review_results/AGENTS.prompt`. A review turn result carries:"""
 
         bullets keys:
-            "`verdict` — `accept` or `changes_requested`."
+            "`verdict` — enum-typed field with values `accept` or `changes_requested`."
             "`reviewed_artifact` — what the reviewer looked at."
             "`analysis_performed` — short prose naming what checks ran."
             "`findings_first` — the readback Rally surfaces next."
@@ -60,6 +60,25 @@ Example:"""
             "`next_owner` — short-name route selector, like non-review turns."
 
         """Rally's runtime exposes reviewed state as `LoadedReviewTruth`. Downstream agents see `reviewed_artifact`, `analysis`, `current_artifact`, `next_owner`, and any blocked / failing gates — all typed, all loaded from the review JSON."""
+
+    section enum_typed_fields: "Enum-Typed Fields (Doctrine v5 Canonical)"
+        """Doctrine v5 lifts constant-valued fields to top-level `enum` declarations. Rally uses this for `kind` and `verdict`. Both enums live in the stdlib carriers: `RallyTurnKind` in `stdlib/rally/prompts/rally/turn_results/AGENTS.prompt` and `ReviewVerdict` in `stdlib/rally/prompts/rally/review_results/AGENTS.prompt`.
+
+The canonical shape is `export enum Name: "Title"` with per-member `key: "wire"` entries. Schemas reference the enum by `type: EnumName`, not `type: string + enum: [...]`. Anti-pattern `AL950` fires on the v4 form."""
+
+        code:
+            language: doctrine
+            text: """
+export enum ReviewVerdict: "Review Verdict"
+    accept: "accepted"
+    changes_requested: "changes requested"
+
+field verdict: "Verdict"
+    type: ReviewVerdict
+    nullable
+"""
+
+        """Cross-link: `../doctrine/skills/doctrine-learn/prompts/refs/outputs_and_schemas.prompt` is Doctrine's canonical teaching for the enum surface (see the `Enums:` subsection and the `139_enum_typed_field_bodies` example). Start there for full semantics. This reference only teaches the Rally application."""
 
     section optional_local_override: "Optional Local Override Pattern"
         """When a specific agent needs a narrower schema (for example, one where `next_owner` is never null), override the base schema in the flow's shared prompt and point the agent's `final_output` at the override.

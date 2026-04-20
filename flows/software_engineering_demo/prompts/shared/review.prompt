@@ -1,10 +1,11 @@
-import rally.base_agent as base
-import rally.review_results as review_results
+import rally.base_agent
+import rally.review_results
+from rally.review_results import ReviewVerdict
 
 
 # Group the carried base fields when the child only keeps the shared review
 # body and example.
-output schema EngineeringReviewSchema[review_results.BaseRallyReviewSchema]: "Engineering Review Schema"
+output schema EngineeringReviewSchema[rally.review_results.BaseRallyReviewSchema]: "Engineering Review Schema"
     inherit {verdict, reviewed_artifact, analysis_performed, findings_first, current_artifact, next_owner, failure_detail}
 
     override example:
@@ -19,7 +20,7 @@ output schema EngineeringReviewSchema[review_results.BaseRallyReviewSchema]: "En
 
 # Keep the JSON shape explicit because the schema override is the main thing a
 # reader needs to spot here.
-output shape EngineeringReviewJson[review_results.BaseRallyReviewJson]: "Engineering Review JSON"
+output shape EngineeringReviewJson[rally.review_results.BaseRallyReviewJson]: "Engineering Review JSON"
     inherit kind
     override schema: EngineeringReviewSchema
     inherit field_notes
@@ -73,7 +74,7 @@ schema QaReviewContract: "QA Review Contract"
             "Confirm the flow can honestly end now."
 
 
-output EngineeringReviewResponse[review_results.BaseRallyReviewResponse]: "Engineering Review Response"
+output EngineeringReviewResponse[rally.review_results.BaseRallyReviewResponse]: "Engineering Review Response"
     inherit target
     override shape: EngineeringReviewJson
     inherit {requirement, verdict, findings_first, failure_detail}
@@ -104,6 +105,9 @@ review_family EngineeringReviewFamily: "Engineering Review"
 
     # Bare names mean identity binds.
     # Keep explicit paths only where the review semantic name changes.
+    # Doctrine v5 has no `final_output.review_fields: <SharedDecl>` bind,
+    # so each reviewer agent restates this same shorthand in AGENTS.prompt.
+    # When that gap lands, collapse the per-agent repeats to one shared ref.
     fields:
         verdict
         reviewed_artifact
@@ -115,51 +119,63 @@ review_family EngineeringReviewFamily: "Engineering Review"
         next_owner
 
 
+# TODO(doctrine P2): when `override gates:` on review_case lands, per-case
+# reviews below can narrow or rename individual gate copy without restating
+# the whole `contract_checks:` block. Today each review repeats the rejects.
 review ArchitectReview[EngineeringReviewFamily]: "Architect Review"
-    subject: base.RallyIssueLedger
+    subject: IssueLedger
     contract: ArchitectReviewContract
     inherit fields
 
     contract_checks: "Contract Checks"
+        reject contract.issue_understood when IssueLedger.issue_not_understood
+        reject contract.repo_plan_real when IssueLedger.repo_plan_unreal
+        reject contract.next_step_clear when IssueLedger.next_step_unclear
         accept "The architect review contract passes." when contract.passes
 
     on_accept:
-        current artifact base.RallyIssueLedger via EngineeringReviewResponse.current_artifact
+        current artifact IssueLedger via EngineeringReviewResponse.current_artifact
         route "Accepted architecture goes to Developer." -> Developer
 
     on_reject:
-        current artifact base.RallyIssueLedger via EngineeringReviewResponse.current_artifact
+        current artifact IssueLedger via EngineeringReviewResponse.current_artifact
         route "Architect needs another pass." -> Architect
 
 
 review DeveloperReview[EngineeringReviewFamily]: "Developer Review"
-    subject: base.RallyIssueLedger
+    subject: IssueLedger
     contract: DeveloperReviewContract
     inherit fields
 
     contract_checks: "Contract Checks"
+        reject contract.requested_change_present when IssueLedger.requested_change_absent
+        reject contract.proof_recorded when IssueLedger.proof_unrecorded
+        reject contract.commit_state_clear when IssueLedger.commit_state_unclear
         accept "The developer review contract passes." when contract.passes
 
     on_accept:
-        current artifact base.RallyIssueLedger via EngineeringReviewResponse.current_artifact
+        current artifact IssueLedger via EngineeringReviewResponse.current_artifact
         route "Accepted development goes to QA." -> QaDocsTester
 
     on_reject:
-        current artifact base.RallyIssueLedger via EngineeringReviewResponse.current_artifact
+        current artifact IssueLedger via EngineeringReviewResponse.current_artifact
         route "Developer needs another pass." -> Developer
 
 
 review QaReview[EngineeringReviewFamily]: "QA Review"
-    subject: base.RallyIssueLedger
+    subject: IssueLedger
     contract: QaReviewContract
     inherit fields
 
     contract_checks: "Contract Checks"
+        reject contract.requirements_met when IssueLedger.requirements_unmet
+        reject contract.proof_real when IssueLedger.proof_unreal
+        reject contract.finish_ready when IssueLedger.finish_not_ready
         accept "The QA review contract passes." when contract.passes
 
     on_accept:
-        current artifact base.RallyIssueLedger via EngineeringReviewResponse.current_artifact
+        current artifact IssueLedger via EngineeringReviewResponse.current_artifact
 
     on_reject:
-        current artifact base.RallyIssueLedger via EngineeringReviewResponse.current_artifact
+        current artifact IssueLedger via EngineeringReviewResponse.current_artifact
         route "QA found work that still belongs in the repo." -> Developer

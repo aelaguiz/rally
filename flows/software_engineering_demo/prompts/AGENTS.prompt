@@ -1,15 +1,17 @@
-import rally.base_agent as base
-import rally.turn_results as turn_results
+import rally.base_agent
+import rally.turn_results
+from rally.turn_results import RallyTurnKind
+from rally.review_results import ReviewVerdict
 from rally.memory import RallyMemorySkill
 
 
-inputs SoftwareEngineeringDemoInputs[base.RallyManagedInputs]: "Inputs"
+inputs SoftwareEngineeringDemoInputs[rally.base_agent.RallyManagedInputs]: "Inputs"
     inherit issue_ledger
 
     demo_repo_root: DemoRepoRoot
 
 
-output schema ArchitectTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Architect Turn Result Schema"
+output schema ArchitectTurnResultSchema[WorkRoleTurnResultSchema]: "Architect Turn Result Schema"
     route field next_route: "Next Route"
         architect_reviewer: "Send the issue to ArchitectReviewer." -> ArchitectReviewer
         nullable
@@ -18,7 +20,7 @@ output schema ArchitectTurnResultSchema[turn_results.BaseRallyTurnResultSchema]:
     inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
-output shape ArchitectTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Architect Turn Result JSON"
+output shape ArchitectTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Architect Turn Result JSON"
     inherit kind
     override schema: ArchitectTurnResultSchema
 
@@ -31,7 +33,7 @@ output shape ArchitectTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Arc
             "Use null for `next_route` only when you block or sleep."
 
 
-output ArchitectTurnResult[turn_results.BaseRallyTurnResult]: "Architect Turn Result"
+output ArchitectTurnResult[rally.turn_results.BaseRallyTurnResult]: "Architect Turn Result"
     inherit target
     override shape: ArchitectTurnResultJson
     inherit requirement
@@ -40,7 +42,7 @@ output ArchitectTurnResult[turn_results.BaseRallyTurnResult]: "Architect Turn Re
         "Use `architect_reviewer` when the architect pass is ready for review."
 
 
-output schema DeveloperTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Developer Turn Result Schema"
+output schema DeveloperTurnResultSchema[WorkRoleTurnResultSchema]: "Developer Turn Result Schema"
     route field next_route: "Next Route"
         developer_reviewer: "Send the issue to DeveloperReviewer." -> DeveloperReviewer
         nullable
@@ -49,7 +51,7 @@ output schema DeveloperTurnResultSchema[turn_results.BaseRallyTurnResultSchema]:
     inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
-output shape DeveloperTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Developer Turn Result JSON"
+output shape DeveloperTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "Developer Turn Result JSON"
     inherit kind
     override schema: DeveloperTurnResultSchema
 
@@ -62,7 +64,7 @@ output shape DeveloperTurnResultJson[turn_results.BaseRallyTurnResultJson]: "Dev
             "Use null for `next_route` only when you block or sleep."
 
 
-output DeveloperTurnResult[turn_results.BaseRallyTurnResult]: "Developer Turn Result"
+output DeveloperTurnResult[rally.turn_results.BaseRallyTurnResult]: "Developer Turn Result"
     inherit target
     override shape: DeveloperTurnResultJson
     inherit requirement
@@ -71,7 +73,7 @@ output DeveloperTurnResult[turn_results.BaseRallyTurnResult]: "Developer Turn Re
         "Use `developer_reviewer` when the developer pass is ready for review."
 
 
-output schema QaDocsTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "QA Docs Turn Result Schema"
+output schema QaDocsTurnResultSchema[WorkRoleTurnResultSchema]: "QA Docs Turn Result Schema"
     route field next_route: "Next Route"
         qa_reviewer: "Send the issue to QaReviewer." -> QaReviewer
         nullable
@@ -80,7 +82,7 @@ output schema QaDocsTurnResultSchema[turn_results.BaseRallyTurnResultSchema]: "Q
     inherit {kind, summary, reason, sleep_duration_seconds, agent_issues}
 
 
-output shape QaDocsTurnResultJson[turn_results.BaseRallyTurnResultJson]: "QA Docs Turn Result JSON"
+output shape QaDocsTurnResultJson[rally.turn_results.BaseRallyTurnResultJson]: "QA Docs Turn Result JSON"
     inherit kind
     override schema: QaDocsTurnResultSchema
 
@@ -93,7 +95,7 @@ output shape QaDocsTurnResultJson[turn_results.BaseRallyTurnResultJson]: "QA Doc
             "Use null for `next_route` only when you block or sleep."
 
 
-output QaDocsTurnResult[turn_results.BaseRallyTurnResult]: "QA Docs Turn Result"
+output QaDocsTurnResult[rally.turn_results.BaseRallyTurnResult]: "QA Docs Turn Result"
     inherit target
     override shape: QaDocsTurnResultJson
     inherit requirement
@@ -102,8 +104,12 @@ output QaDocsTurnResult[turn_results.BaseRallyTurnResult]: "QA Docs Turn Result"
         "Use `qa_reviewer` when the QA pass is ready for review."
 
 
+# TODO(doctrine P6): when `skill <name>: <Pkg> mode: <bind>` lands, replace
+# each `requirement:` + prose-side mode note with a typed `mode:` binding so
+# the compiler can check that Required/Advisory matches the skill's declared
+# call mode rather than relying on author convention.
 skills RepoWorkSkills: "Skills And Tools"
-    skill rally_kernel: base.RallyKernelSkill
+    skill rally_kernel: rally.base_agent.RallyKernelSkill
         requirement: Required
 
     skill demo_git: DemoGitSkill
@@ -124,7 +130,7 @@ skills RepoWorkSkillsWithMemory[RepoWorkSkills]: "Skills And Tools"
 
 
 skills RepoProofSkills: "Skills And Tools"
-    skill rally_kernel: base.RallyKernelSkill
+    skill rally_kernel: rally.base_agent.RallyKernelSkill
         requirement: Required
 
     skill demo_git: DemoGitSkill
@@ -137,7 +143,11 @@ skills RepoProofSkills: "Skills And Tools"
         requirement: Advisory
 
 
-abstract agent SoftwareEngineeringRole[base.RallyManagedBaseAgent]:
+# TODO(doctrine P5): when typed abstract parameters land, lift the three
+# per-role slot refs below (`system_context:`, `issue_truth:`, `repo_rules:`)
+# into a typed parameter set so the abstract role declares its shape once
+# and each concrete agent binds by name rather than by free-text slot key.
+abstract agent SoftwareEngineeringRole[rally.base_agent.RallyManagedBaseAgent]:
     inherit {rally_contract, read_first, shared_rules}
     system_context: SoftwareEngineeringSystemContext
     issue_truth: IssueLedgerGroundTruth
@@ -152,7 +162,7 @@ agent Architect[SoftwareEngineeringRole]:
     quality_bar: ArchitectQualityBar
     inputs: SoftwareEngineeringDemoInputs
     skills: RepoWorkSkillsWithMemory
-    outputs[base.RallyManagedOutputs]: "Outputs"
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         # Keep `Turn Result` explicit because the wrapper title still helps the
         # emitted readback. `override issue_note:` stays short because it keeps
         # the inherited `Saved Run Note` title.
@@ -198,7 +208,7 @@ agent Developer[SoftwareEngineeringRole]:
     quality_bar: DeveloperQualityBar
     inputs: SoftwareEngineeringDemoInputs
     skills: RepoProofSkills
-    outputs[base.RallyManagedOutputs]: "Outputs"
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         override issue_note: DeveloperIssueNote
 
         turn_result: "Turn Result"
@@ -239,7 +249,7 @@ agent QaDocsTester[SoftwareEngineeringRole]:
     quality_bar: QaDocsTesterQualityBar
     inputs: SoftwareEngineeringDemoInputs
     skills: RepoProofSkills
-    outputs[base.RallyManagedOutputs]: "Outputs"
+    outputs[rally.base_agent.RallyManagedOutputs]: "Outputs"
         override issue_note: QaIssueNote
 
         turn_result: "Turn Result"
