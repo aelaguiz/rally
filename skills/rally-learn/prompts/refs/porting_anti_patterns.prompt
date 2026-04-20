@@ -118,6 +118,40 @@ The guard lives in `src/rally/services/previous_turn_inputs.py:_is_note_backed_t
     section bloated_allowed_skills: "Do Not Bloat allowed_skills"
         """Every skill in `allowed_skills` burns always-on prompt budget. Add a skill only if the agent will actually call it. A long allowlist is a smell — either the role is too broad, or most of those skills are dead."""
 
+    section coarse_contract_passes: "Do Not Gate Reviews On Coarse contract.passes"
+        """A review contract that declares gates but only closes with `accept "..." when contract.passes` leaves every gate silent. The reviewer has nothing to reject against, so partial failures cannot be expressed.
+
+Signs:"""
+
+        bullets signs:
+            "A review `schema` with declared `gates:` but no `reject contract.<gate> when <input>.<signal>` lines."
+            "One final `accept ... when contract.passes` as the only rule in the contract."
+            "Rejections encoded in prose that the compiler cannot check."
+
+        "The Doctrine v5 move:"
+
+        bullets moves:
+            "Give each gate at least one `reject contract.<gate> when <input>.<signal>` line pointing at a declared signal."
+            "Close with `accept \"...\" when contract.passes` only after the per-gate rejects exist."
+            "Anti-pattern `AL450` fires on the coarse form. See `../doctrine/skills/doctrine-learn/prompts/refs/reviews.prompt` for the full typed-gates shape."
+
+    section legacy_enum_string: "Do Not Use type: string + enum: For Vocabularies"
+        """Doctrine v5 deleted the inline `type: enum` form and the legacy `type: string + enum: [...]` form. A closed vocabulary is declared once as `export enum Name: "Title"` with one member per value, then referenced on fields with `type: Name`.
+
+Signs:"""
+
+        bullets signs:
+            "A field that reads `type: string` with an adjacent `enum: [accept, changes_requested]`."
+            "Two different fields declaring the same vocabulary inline instead of sharing one enum."
+            "An unknown enum name on a `type:` line firing `E320` at compile."
+
+        "The Doctrine v5 move:"
+
+        bullets moves:
+            "Declare the vocabulary once with `export enum Name: \"Title\"` and per-member `key: \"wire label\"` entries."
+            "Reference it on every consuming field with `type: Name`."
+            "Anti-pattern `AL950` fires on the legacy form. See `../doctrine/skills/doctrine-learn/prompts/refs/outputs_and_schemas.prompt` for the canonical enum surface."
+
     section grep_based_tests: "Do Not Write Grep-Based Tests"
         """Tests that grep a prompt for a substring to prove the rule is wired fail as soon as anyone rephrases the prompt. Prefer typed proof: assert that `flow.yaml` lists the skill, that the emitted `final_output.contract.json` carries the field, that `ensure_flow_assets_built` emits the expected schema. See `tests/unit/test_flow_loader.py` for the real shape."""
 

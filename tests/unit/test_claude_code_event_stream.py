@@ -238,6 +238,61 @@ class ClaudeCodeEventStreamTests(unittest.TestCase):
             {"kind": "done", "summary": "assistant-fenced"},
         )
 
+    def test_flush_is_no_op_because_stream_delivers_complete_blocks(self) -> None:
+        # Codifies the deliberate asymmetry with the Codex parser. Claude Code
+        # streams complete assistant content blocks per event (each `text` /
+        # `thinking` / `tool_use` item arrives whole), so there is no partial
+        # state to drain on end-of-stream — `flush()` must return an empty list
+        # even after arbitrary traffic, including a tool_use with no matching
+        # tool_result (adapter teardown mid-turn). If this ever changes, the
+        # Codex-style drain would be the wrong fix here; revisit the design
+        # instead. Operator-visible failure mode: a future refactor that tries
+        # to unify the two parsers' drain paths would silently introduce
+        # phantom drafts on Claude Code turns.
+        parser = ClaudeCodeEventStreamParser(
+            turn_index=12,
+            agent_key="01_scope_lead",
+            agent_slug="scope_lead",
+        )
+
+        self.assertEqual(parser.flush(), [])
+
+        parser.consume_stdout_line(
+            json.dumps(
+                {
+                    "type": "system",
+                    "subtype": "init",
+                    "session_id": "claude-session-flush",
+                }
+            )
+            + "\n"
+        )
+        parser.consume_stdout_line(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "session_id": "claude-session-flush",
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": "complete block"},
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_orphan",
+                                "name": "Read",
+                                "input": {"file_path": "/tmp/orphan.txt"},
+                            },
+                        ]
+                    },
+                }
+            )
+            + "\n"
+        )
+
+        # Tool_use above has no matching tool_result — parser state leaks an
+        # entry in `_tool_uses`, but `flush()` must still emit nothing.
+        self.assertIn("toolu_orphan", parser._tool_uses)
+        self.assertEqual(parser.flush(), [])
+
     def test_extract_structured_output_accepts_embedded_fenced_json_from_assistant_text(self) -> None:
         stdout_text = json.dumps(
             {

@@ -76,6 +76,10 @@ Keep these rules in front of every choice:"""
 - I need to change a stdlib turn-result rule (the five base keys, the route selector shape).
   This is a Rally release-level change, not a flow-level change. Update `stdlib/rally/prompts/rally/turn_results/AGENTS.prompt`, update every consuming flow's local override if needed, bump Doctrine if the rule needs compiler backing, and ship it as a release with a `CHANGELOG.md` entry.
   See `references/release-and-versioning.md`.
+
+- I need to teach a reviewer to gate on a typed signal per gate.
+  Model the review contract as `schema <Name>: "..."` with a `sections:` block and a `gates:` block. Give each gate one or more `reject contract.<gate> when <input>.<signal>` lines, then close with `accept "..." when contract.passes` only after the per-gate rejects exist. This is Doctrine v5 typed gates.
+  See `../doctrine/skills/doctrine-learn/prompts/refs/reviews.prompt` and the `PoemReviewContract` / `ArchitectReviewContract` schemas in `flows/poem_loop/prompts/shared/review.prompt` and `flows/software_engineering_demo/prompts/shared/review.prompt`.
 """
 
         """If none of these rows match your job, load `references/principles.md` and pick the one surface that fits before writing code."""

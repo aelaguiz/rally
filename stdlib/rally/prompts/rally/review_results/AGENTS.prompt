@@ -1,15 +1,20 @@
 # Keep review truth separate from producer control so review lanes do not carry
 # two control languages.
 
+# Shared review-verdict vocabulary: declare it once at the top so every flow
+# reads the same closed set. Guarded review sections below reference
+# `ReviewVerdict.changes_requested` directly.
+export enum ReviewVerdict: "Review Verdict"
+    accept: "accepted"
+    changes_requested: "changes requested"
+
+
 # Base review schema: shared review fields, not producer turn fields.
 # Flow review shapes inherit this and add examples or local wording without
 # changing what Rally can read back from a review turn.
 export output schema BaseRallyReviewSchema: "Base Rally Review Schema"
     field verdict: "Verdict"
-        type: string
-        enum:
-            accept
-            changes_requested
+        type: ReviewVerdict
         note: "Review verdict."
 
     field reviewed_artifact: "Reviewed Artifact"

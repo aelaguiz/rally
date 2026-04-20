@@ -11,4 +11,7 @@ input PoemDraftFile: "Poem Draft File"
     structure: PoemDraftDocument
     requirement: Advisory
     basis_missing: "Draft Missing"
+    brief_mismatch: "Brief Mismatch"
+    rationale_misfit: "Rationale Misfit"
+    finish_rough: "Finish Rough"
     "Use the current poem draft when this turn needs it."

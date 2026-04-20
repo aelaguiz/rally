@@ -32,7 +32,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "doctrine-agents>=4.0.0,<5",
+    "doctrine-agents>=5.0.0,<6",
     "psutil>=6,<7",
     "PyYAML>=6.0.3,<7",
     "rich>=15.0.0,<16",

@@ -290,9 +290,10 @@ The current checked-in runtime surface is:
   - expands optional `runtime.env` values from `flow.yaml`
   - applies that flow env to startup host-input checks, setup, and adapter launches
   - lets flow env override duplicate shell env while still keeping Rally and adapter keys last
-- `src/rally/adapters/codex/session_store.py`
-  - saves one session id per agent
-  - writes per-turn `exec.jsonl`, `stderr.log`, and `last_message.json`
+- `src/rally/adapters/base.py`
+  - owns the shared per-agent session store used by both adapters
+  - `load_adapter_session` / `record_adapter_session` manage one session id per agent
+  - `prepare_adapter_turn_artifacts` writes per-turn `exec.jsonl`, `stderr.log`, and `last_message.json`
 - `src/rally/services/runner.py`
   - rebuilds the current flow under the flow lock before loading compiled
   agents
